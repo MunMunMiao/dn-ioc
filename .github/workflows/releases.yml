@@ -1,0 +1,19 @@
+name: Releases lib
+
+on:
+  workflow_dispatch:
+
+jobs:
+  releases-core:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: cd dist && bun publish
+        env:
+          NPM_CONFIG_TOKEN: ${{secrets.NPM_TOKEN}}
