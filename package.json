@@ -1,6 +1,6 @@
 {
   "name": "dn-ioc",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -23,11 +23,14 @@
   },
   "scripts": {
     "build": "bun run scripts/build.ts && tsc",
-    "test": "bun test"
+    "test": "bun test",
+    "lint": "biome check --write --unsafe",
+    "type-check": "tsc --noEmit",
+    "type-check:watch": "tsc --noEmit --watch"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+     "@biomejs/biome": "^2.2.5"
   }
 }
-
