@@ -74,7 +74,7 @@
       "style": {
         "noInferrableTypes": "error",
         "noNamespace": "error",
-        "noNonNullAssertion": "error",
+        "noNonNullAssertion": "off",
         "useAsConstAssertion": "error",
         "useConsistentArrayType": "error",
         "useForOf": "error",

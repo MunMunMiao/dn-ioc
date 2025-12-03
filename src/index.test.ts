@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { provide, runInInjectionContext, isProvideRef, resetGlobalInstances, type Context, type Ref } from './index'
+import { type Context, isProvideRef, provide, type Ref, resetGlobalInstances, runInInjectionContext } from './index'
 
 beforeEach(() => {
   resetGlobalInstances()
@@ -189,9 +189,7 @@ describe('IoC Container', () => {
         return { info: api.getTenantInfo() }
       },
       {
-        providers: [
-          provide<Tenant>(() => ({ id: 't1', name: 'Tenant 1' }), { overrides: defaultTenantRef }),
-        ],
+        providers: [provide<Tenant>(() => ({ id: 't1', name: 'Tenant 1' }), { overrides: defaultTenantRef })],
       },
     )
 
@@ -201,9 +199,7 @@ describe('IoC Container', () => {
         return { info: api.getTenantInfo() }
       },
       {
-        providers: [
-          provide<Tenant>(() => ({ id: 't2', name: 'Tenant 2' }), { overrides: defaultTenantRef }),
-        ],
+        providers: [provide<Tenant>(() => ({ id: 't2', name: 'Tenant 2' }), { overrides: defaultTenantRef })],
       },
     )
 
@@ -224,12 +220,12 @@ describe('IoC Container', () => {
   })
 
   test('circular dependency throws error with name', () => {
-    const aRef: Ref<unknown> = provide(
-      function ServiceA({ inject }) { return inject(bRef) }
-    )
-    const bRef: Ref<unknown> = provide(
-      function ServiceB({ inject }) { return inject(aRef) }
-    )
+    const aRef: Ref<unknown> = provide(function ServiceA({ inject }) {
+      return inject(bRef)
+    })
+    const bRef: Ref<unknown> = provide(function ServiceB({ inject }) {
+      return inject(aRef)
+    })
 
     runInInjectionContext(({ inject }) => {
       expect(() => inject(aRef)).toThrow('Circular dependency detected: ServiceA')
@@ -246,9 +242,9 @@ describe('IoC Container', () => {
   })
 
   test('self-referencing circular dependency', () => {
-    const selfRef: Ref<unknown> = provide(
-      function SelfRef({ inject }) { return inject(selfRef) }
-    )
+    const selfRef: Ref<unknown> = provide(function SelfRef({ inject }) {
+      return inject(selfRef)
+    })
 
     runInInjectionContext(({ inject }) => {
       expect(() => inject(selfRef)).toThrow('Circular dependency detected: SelfRef')
@@ -330,19 +326,13 @@ describe('IoC Container - Local Providers', () => {
   test('nested local providers', () => {
     const valueRef = provide(() => 'root')
 
-    const level1Ref = provide(
-      ({ inject }) => `L1:${inject(valueRef)}`,
-      {
-        providers: [provide(() => 'level1', { overrides: valueRef })]
-      }
-    )
+    const level1Ref = provide(({ inject }) => `L1:${inject(valueRef)}`, {
+      providers: [provide(() => 'level1', { overrides: valueRef })],
+    })
 
-    const level2Ref = provide(
-      ({ inject }) => `L2:${inject(level1Ref)}`,
-      {
-        providers: [provide(() => 'level2', { overrides: valueRef })]
-      }
-    )
+    const level2Ref = provide(({ inject }) => `L2:${inject(level1Ref)}`, {
+      providers: [provide(() => 'level2', { overrides: valueRef })],
+    })
 
     runInInjectionContext(({ inject }) => {
       expect(inject(valueRef)).toBe('root')
@@ -355,15 +345,9 @@ describe('IoC Container - Local Providers', () => {
     const aRef = provide(() => 'A')
     const bRef = provide(() => 'B')
 
-    const combinedRef = provide(
-      ({ inject }) => `${inject(aRef)}-${inject(bRef)}`,
-      {
-        providers: [
-          provide(() => 'X', { overrides: aRef }),
-          provide(() => 'Y', { overrides: bRef })
-        ]
-      }
-    )
+    const combinedRef = provide(({ inject }) => `${inject(aRef)}-${inject(bRef)}`, {
+      providers: [provide(() => 'X', { overrides: aRef }), provide(() => 'Y', { overrides: bRef })],
+    })
 
     runInInjectionContext(({ inject }) => {
       expect(inject(aRef)).toBe('A')
@@ -381,8 +365,8 @@ describe('IoC Container - Local Providers', () => {
         return `service:${val}`
       },
       {
-        providers: [provide(() => 'new')]
-      }
+        providers: [provide(() => 'new')],
+      },
     )
 
     runInInjectionContext(({ inject }) => {
@@ -394,24 +378,25 @@ describe('IoC Container - Local Providers', () => {
   test('deep dependency chain with override', () => {
     const configRef = provide(() => ({ url: 'prod.com' }))
 
-    const httpRef = provide(({ inject }) => {
-      const config = inject(configRef)
-      return { baseUrl: config.url }
-    }, { mode: 'standalone' })
-
-    const apiRef = provide(({ inject }) => {
-      const http = inject(httpRef)
-      return { endpoint: `https://${http.baseUrl}/api` }
-    }, { mode: 'standalone' })
-
-    const appRef = provide(
-      ({ inject }) => inject(apiRef),
-      {
-        providers: [
-          provide(() => ({ url: 'test.com' }), { overrides: configRef })
-        ]
-      }
+    const httpRef = provide(
+      ({ inject }) => {
+        const config = inject(configRef)
+        return { baseUrl: config.url }
+      },
+      { mode: 'standalone' },
     )
+
+    const apiRef = provide(
+      ({ inject }) => {
+        const http = inject(httpRef)
+        return { endpoint: `https://${http.baseUrl}/api` }
+      },
+      { mode: 'standalone' },
+    )
+
+    const appRef = provide(({ inject }) => inject(apiRef), {
+      providers: [provide(() => ({ url: 'test.com' }), { overrides: configRef })],
+    })
 
     runInInjectionContext(({ inject }) => {
       expect(inject(appRef).endpoint).toBe('https://test.com/api')
@@ -526,9 +511,12 @@ describe('IoC Container - Mode Inheritance', () => {
   test('global dependency used by standalone parent', () => {
     let globalCounter = 0
     const globalRef = provide(() => ({ id: ++globalCounter }))
-    const standaloneRef = provide(({ inject }) => {
-      return { global: inject(globalRef) }
-    }, { mode: 'standalone' })
+    const standaloneRef = provide(
+      ({ inject }) => {
+        return { global: inject(globalRef) }
+      },
+      { mode: 'standalone' },
+    )
 
     let result1: { global: { id: number } } | undefined
     let result2: { global: { id: number } } | undefined
@@ -543,7 +531,7 @@ describe('IoC Container - Mode Inheritance', () => {
 
     // Standalone creates new wrapper, but global dependency is shared
     expect(result1).not.toBe(result2)
-    expect(result1!.global).toBe(result2!.global)
+    expect(result1?.global).toBe(result2?.global)
     expect(globalCounter).toBe(1)
   })
 
@@ -567,16 +555,22 @@ describe('IoC Container - Mode Inheritance', () => {
 
     // Global parent is cached, so standalone is only created once
     expect(result1).toBe(result2)
-    expect(result1!.standalone).toBe(result2!.standalone)
+    expect(result1?.standalone).toBe(result2?.standalone)
     expect(standaloneCounter).toBe(1)
   })
 })
 
 describe('IoC Container - Circular Dependency Details', () => {
   test('three-way circular dependency', () => {
-    const aRef: Ref<unknown> = provide(function A({ inject }) { return inject(bRef) })
-    const bRef: Ref<unknown> = provide(function B({ inject }) { return inject(cRef) })
-    const cRef: Ref<unknown> = provide(function C({ inject }) { return inject(aRef) })
+    const aRef: Ref<unknown> = provide(function A({ inject }) {
+      return inject(bRef)
+    })
+    const bRef: Ref<unknown> = provide(function B({ inject }) {
+      return inject(cRef)
+    })
+    const cRef: Ref<unknown> = provide(function C({ inject }) {
+      return inject(aRef)
+    })
 
     runInInjectionContext(({ inject }) => {
       expect(() => inject(aRef)).toThrow('Circular dependency detected: A')
@@ -584,10 +578,16 @@ describe('IoC Container - Circular Dependency Details', () => {
   })
 
   test('circular dependency detection clears after resolution', () => {
-    const nonCircularRef = provide(function NonCircular() { return 'value' })
+    const nonCircularRef = provide(function NonCircular() {
+      return 'value'
+    })
 
-    const circularARef: Ref<unknown> = provide(function CircularA({ inject }) { return inject(circularBRef) })
-    const circularBRef: Ref<unknown> = provide(function CircularB({ inject }) { return inject(circularARef) })
+    const circularARef: Ref<unknown> = provide(function CircularA({ inject }) {
+      return inject(circularBRef)
+    })
+    const circularBRef: Ref<unknown> = provide(function CircularB({ inject }) {
+      return inject(circularARef)
+    })
 
     runInInjectionContext(({ inject }) => {
       // First, circular dependency should throw
@@ -599,26 +599,28 @@ describe('IoC Container - Circular Dependency Details', () => {
   })
 
   test('diamond dependency pattern (not circular)', () => {
-    const baseRef = provide(function Base() { return { value: 'base' } })
+    const baseRef = provide(function Base() {
+      return { value: 'base' }
+    })
 
     const leftRef = provide(function Left({ inject }) {
       return {
         base: inject(baseRef),
-        side: 'left'
+        side: 'left',
       }
     })
 
     const rightRef = provide(function Right({ inject }) {
       return {
         base: inject(baseRef),
-        side: 'right'
+        side: 'right',
       }
     })
 
     const topRef = provide(function Top({ inject }) {
       return {
         left: inject(leftRef),
-        right: inject(rightRef)
+        right: inject(rightRef),
       }
     })
 

@@ -1,6 +1,6 @@
 const PROVIDE_REF = Symbol('provide_ref')
 
-export interface Ref<T> {
+export interface Ref<_T> {
   [PROVIDE_REF]: unknown
 }
 
@@ -13,9 +13,7 @@ export type ProvideOptions<T = unknown> = {
   overrides?: Ref<T>
 }
 
-export interface InjectFn {
-  <T>(refInstance: Ref<T>): T
-}
+export type InjectFn = <T>(refInstance: Ref<T>) => T
 
 export interface Context {
   inject: InjectFn
@@ -72,7 +70,9 @@ function findRefInContext(refInternal: RefInternal<unknown>, ctx: InternalContex
   let current: InternalContext | undefined = ctx
   while (current) {
     const localRef = current.localProviders.get(refInternal)
-    if (localRef) return localRef
+    if (localRef) {
+      return localRef
+    }
     current = current.parent
   }
   return refInternal
