@@ -7,7 +7,8 @@
   <a href="https://github.com/MunMunMiao/dn-ioc/blob/main/LICENSE"><img src="https://img.shields.io/github/license/MunMunMiao/dn-ioc?color=%23000&style=flat-square" alt="license"></a>
 </p>
 <p align="center">
-  A lightweight, type-safe IoC container for TypeScript. No decorators, no reflection - just functions and closures.
+  A lightweight, type-safe IoC container for TypeScript.<br>
+  No decorators, no reflection, no token registration — just functions and direct references.
 </p>
 
 ## Installation
@@ -15,1100 +16,983 @@
 ```bash
 npm install dn-ioc
 # or
-yarn add dn-ioc
-# or
 pnpm add dn-ioc
 # or
 bun add dn-ioc
 ```
 
+## Quick Start
+
+```typescript
+import { provide, runInInjectionContext } from 'dn-ioc'
+
+// Define dependencies with direct references
+const configRef = provide(() => ({ apiUrl: 'https://api.example.com' }))
+
+const serviceRef = provide(({ inject }) => {
+  const config = inject(configRef)
+  return {
+    fetch: (path: string) => fetch(`${config.apiUrl}${path}`)
+  }
+})
+
+// Run within injection context
+runInInjectionContext(({ inject }) => {
+  const service = inject(serviceRef)
+  service.fetch('/users')
+})
+```
+
+## vs Traditional DI
+
+This library takes a fundamentally different approach from traditional DI frameworks like Angular, NestJS, or Spring.
+
+### Traditional DI (Token-based)
+
+```typescript
+// 1. Define a token (indirect reference)
+const CONFIG_TOKEN = new InjectionToken<Config>('config')
+
+// 2. Register in a module (separate step)
+@Module({
+  providers: [{ provide: CONFIG_TOKEN, useValue: { apiUrl: '...' } }]
+})
+class AppModule {}
+
+// 3. Inject via token (runtime lookup)
+@Injectable()
+class UserService {
+  constructor(@Inject(CONFIG_TOKEN) private config: Config) {}
+}
+```
+
+**Characteristics:**
+- **Indirect reference**: Dependencies are identified by tokens (strings/Symbols/classes)
+- **Registration required**: Must register providers in a container/module
+- **Runtime resolution**: Container looks up matching provider at runtime
+- **Can fail**: Token not registered → runtime error
+
+### This Library (Reference-based)
+
+```typescript
+// 1. Define = Provide (direct reference)
+const configRef = provide(() => ({ apiUrl: '...' }))
+
+// 2. Use directly (no registration needed)
+const userServiceRef = provide(({ inject }) => {
+  const config = inject(configRef)  // Direct reference to configRef
+  return new UserService(config)
+})
+```
+
+**Characteristics:**
+- **Direct reference**: `configRef` is a concrete object, not a lookup key
+- **No registration**: `provide()` creates the provider immediately
+- **Compile-time safety**: TypeScript knows the type of `configRef`
+- **Cannot fail**: If the reference exists, the dependency exists
+
+### Comparison Table
+
+| Aspect | Traditional DI | This Library |
+|--------|---------------|--------------|
+| Reference | Indirect (token) | Direct (Ref object) |
+| Type Safety | Weak (runtime) | Strong (compile-time) |
+| Registration | Required | Not needed |
+| Failure Mode | Possible (token not found) | Impossible |
+| Complexity | High (tokens, modules, providers) | Low (just provide/inject) |
+
+### Is Direct Reference Still Dependency Injection?
+
+**Yes!** The core principles of DI are preserved:
+
+| DI Principle | Traditional | This Library |
+|--------------|-------------|--------------|
+| **Inversion of Control** | ✅ Container creates instances | ✅ `inject()` creates instances |
+| **Dependencies provided externally** | ✅ Container injects | ✅ `inject` function injects |
+| **Decouple creation from use** | ✅ No direct `new` | ✅ No direct factory calls |
+| **Testability** | ✅ Mock providers | ✅ `overrides` option |
+| **Lifecycle management** | ✅ singleton/transient | ✅ `global`/`standalone` |
+
+The key insight: **Direct reference ≠ Tight coupling**
+
+```typescript
+// Although it's a "direct reference", the dependency relationship is declarative
+const serviceRef = provide(({ inject }) => {
+  const config = inject(configRef)  // Declares: "I need config"
+  // ...
+})
+```
+
+The component declares *what* it needs, not *how* to get it. This is dependency injection.
+
+### Similar Modern Approaches
+
+This design aligns with modern DI patterns:
+
+- **React Context** — Direct reference to Context objects
+- **Vue provide/inject** — Direct reference to Symbol keys
+- **Go Wire** — Compile-time dependency injection with direct function references
+
 ## Core Concepts
 
-### The Ref
+### Ref
 
-A `Ref` is both a dependency provider and its identifier. Think of it as a factory function wrapped in an object that can be used as a key.
-
-```typescript
-const config = provide(() => ({ apiUrl: '/api' }));
-```
-
-That's it. No tokens, no decorators. The `Ref` itself is the identity.
-
-### Injection Context
-
-Dependencies are resolved within an injection context. **You create one context at your application's entry point - it wraps your entire application and lives for its entire lifetime.**
+A `Ref` is both a dependency definition and its identifier:
 
 ```typescript
-// main.ts - runInInjectionContext is the application shell
-import { Hono } from 'hono';
-import { serve } from '@hono/node-server';
-import { provide, inject, runInInjectionContext } from 'dn-ioc';
-
-runInInjectionContext(() => {
-  const app = inject(appProvider);
-  serve(app, { port: 3000 });
-});
+const dbRef = provide(() => new Database())
 ```
 
-`runInInjectionContext` supports both **sync and async** functions:
+### Context
+
+Dependencies are resolved within a context. The `inject` function is passed as a parameter:
 
 ```typescript
-// Async example
-runInInjectionContext(async () => {
-  const app = inject(appProvider);
-  await app.initialize();
-  serve(app, { port: 3000 });
-});
+runInInjectionContext(({ inject }) => {
+  const db = inject(dbRef)
+})
 ```
-
-This is similar to how dependency injection works in [Go Kratos](https://raw.githubusercontent.com/go-kratos/kratos-layout/refs/heads/main/cmd/server/main.go) - you wire up dependencies **once at startup**, not per-request.
 
 ### Instance Modes
 
-**Global mode** (default): Singleton across all contexts. First context to request it creates it, everyone else gets the same instance.
-
-**Standalone mode**: Each context gets its own instance. Useful for testing isolated scenarios.
+- **`global`** (default): Singleton across all contexts
+- **`standalone`**: New instance per context
 
 ```typescript
-// Singleton (default)
-const db = provide(() => new Database());
-
-// Per-context
-const testDb = provide(() => new MockDatabase(), { mode: 'standalone' });
+const singleton = provide(() => new Service())                    // global
+const perContext = provide(() => new Service(), { mode: 'standalone' })
 ```
 
-## Basic Usage
+## Nested Dependencies
 
 ```typescript
-import { Hono } from 'hono';
-import { serve } from '@hono/node-server';
-import { provide, inject, runInInjectionContext } from 'dn-ioc';
+const dbRef = provide(() => new Database())
 
-// Define dependencies
-const logger = provide(() => console);
+const repoRef = provide(({ inject }) => {
+  const db = inject(dbRef)
+  return new UserRepository(db)
+})
 
-const db = provide(() => {
-  const log = inject(logger);
-  log.log('Creating database connection...');
-  return new Database();
-});
-
-const app = provide(() => {
-  const database = inject(db);
-  const log = inject(logger);
-  
-  const hono = new Hono();
-  
-  hono.get('/', (c) => c.text('Hello Hono!'));
-  
-  hono.get('/users', async (c) => {
-    const users = await database.query('SELECT * FROM users');
-    return c.json(users);
-  });
-  
-  return hono;
-});
-
-// Bootstrap application - runInInjectionContext wraps your entire app
-runInInjectionContext(() => {
-  const application = inject(app);
-  serve(application, { port: 3000 });
-});
+const serviceRef = provide(({ inject }) => {
+  const repo = inject(repoRef)
+  return new UserService(repo)
+})
 ```
 
-## MVC Architecture Example
+## Local Providers (Overrides)
 
-Let's build a typical backend MVC setup with [Hono](https://hono.dev/docs/).
-
-### Models and Repositories
+Override dependencies for testing or specific use cases:
 
 ```typescript
-// domain/models/user.ts
+const configRef = provide(() => ({ env: 'production' }))
+
+const serviceRef = provide(
+  ({ inject }) => {
+    const config = inject(configRef)
+    return { env: config.env }
+  },
+  {
+    providers: [
+      provide(() => ({ env: 'test' }), { overrides: configRef })
+    ]
+  }
+)
+
+runInInjectionContext(({ inject }) => {
+  inject(configRef)   // { env: 'production' }
+  inject(serviceRef)  // { env: 'test' }
+})
+```
+
+### Override Behavior with Instance Modes
+
+Understanding how `providers` interacts with `global`/`standalone` modes is important:
+
+```typescript
+const urlRef = provide(() => ({ url: 'https://google.com' }))
+
+const httpClientRef = provide(({ inject }) => {
+  const config = inject(urlRef)
+  return { baseUrl: config.url }
+})  // global mode (default)
+
+const serverRef = provide(({ inject }) => {
+  const client = inject(httpClientRef)
+  return { client }
+})  // global mode (default)
+
+// Try to override urlRef
+const customServerRef = provide(
+  ({ inject }) => inject(serverRef),
+  {
+    providers: [
+      provide(() => ({ url: 'https://bing.com' }), { overrides: urlRef })
+    ]
+  }
+)
+```
+
+**Behavior depends on whether dependencies were already created:**
+
+| Scenario | httpClient uses | Reason |
+|----------|----------------|--------|
+| First call is `inject(customServerRef)` | bing.com ✅ | Dependencies created fresh with override |
+| `inject(serverRef)` called before | google.com ❌ | `httpClientRef` already cached as singleton |
+
+**This is consistent with traditional DI frameworks** (Angular, NestJS, Spring) — singletons are created once and never rebuilt.
+
+### Solution: Use `standalone` Mode
+
+If you need overrides to always apply, use `standalone` mode for the dependency chain:
+
+```typescript
+const httpClientRef = provide(({ inject }) => {
+  const config = inject(urlRef)
+  return { baseUrl: config.url }
+}, { mode: 'standalone' })  // New instance per context
+
+const serverRef = provide(({ inject }) => {
+  const client = inject(httpClientRef)
+  return { client }
+}, { mode: 'standalone' })  // New instance per context
+
+// Now override always works
+const customServerRef = provide(
+  ({ inject }) => inject(serverRef),
+  {
+    providers: [
+      provide(() => ({ url: 'https://bing.com' }), { overrides: urlRef })
+    ]
+  }
+)
+
+runInInjectionContext(({ inject }) => {
+  inject(customServerRef).client.baseUrl  // Always 'https://bing.com'
+})
+```
+
+### Advantage Over Traditional DI
+
+This library offers **more granular control** than traditional DI frameworks:
+
+| Traditional DI | This Library |
+|----------------|--------------|
+| Override at module/scope level | Override at individual `provide()` level |
+| Need to create new Module/Injector | Just add `providers` option |
+| Complex scope hierarchy | Simple parent-child context |
+
+```typescript
+// Traditional DI: Need a new module to override
+@Module({
+  providers: [{ provide: URL_TOKEN, useValue: 'https://bing.com' }]
+})
+class CustomModule {}
+
+// This library: Override inline, no extra constructs
+const customRef = provide(
+  ({ inject }) => inject(serverRef),
+  { providers: [provide(() => 'https://bing.com', { overrides: urlRef })] }
+)
+```
+```
+
+## Async Support
+
+```typescript
+const asyncRef = provide(async () => {
+  const data = await fetchData()
+  return data
+})
+
+runInInjectionContext(async ({ inject }) => {
+  const data = await inject(asyncRef)
+})
+```
+
+## Architecture Examples
+
+### MVC Architecture
+
+A typical Model-View-Controller setup with repository pattern.
+
+```
+src/
+├── models/
+│   └── user.ts
+├── repositories/
+│   └── userRepository.ts
+├── services/
+│   └── userService.ts
+├── controllers/
+│   └── userController.ts
+└── main.ts
+```
+
+**Models**
+
+```typescript
+// models/user.ts
 export interface User {
-  id: string;
-  email: string;
-  tenantId: string;
+  id: string
+  email: string
+  name: string
 }
-
-// infrastructure/repositories/userRepository.ts
-import { provide, inject } from 'dn-ioc';
-
-const db = provide(() => new Database());
-
-export const userRepository = provide(() => {
-  const database = inject(db);
-  
-  return {
-    findById: async (id: string): Promise<User | null> => {
-      return database.queryOne('SELECT * FROM users WHERE id = ?', [id]);
-    },
-    
-    findByTenantId: async (tenantId: string): Promise<User[]> => {
-      return database.query('SELECT * FROM users WHERE tenant_id = ?', [tenantId]);
-    },
-    
-    create: async (email: string, tenantId: string): Promise<User> => {
-      const id = generateId();
-      await database.query(
-        'INSERT INTO users (id, email, tenant_id) VALUES (?, ?, ?)',
-        [id, email, tenantId]
-      );
-      return { id, email, tenantId };
-    }
-  };
-});
 ```
 
-### Services
+**Repositories**
 
 ```typescript
-// application/services/userService.ts
-import { provide, inject } from 'dn-ioc';
-import { userRepository } from '../../infrastructure/repositories/userRepository';
+// repositories/userRepository.ts
+import { provide } from 'dn-ioc'
+import type { User } from '../models/user'
 
-export const userService = provide(() => {
-  const repo = inject(userRepository);
+const dbRef = provide(() => new Database())
+
+export const userRepositoryRef = provide(({ inject }) => {
+  const db = inject(dbRef)
   
   return {
-    getUsersByTenant: async (tenantId: string) => {
-      return repo.findByTenantId(tenantId);
-    },
+    findById: (id: string): Promise<User | null> => 
+      db.queryOne('SELECT * FROM users WHERE id = ?', [id]),
     
-    createUser: async (email: string, tenantId: string) => {
-      return repo.create(email, tenantId);
+    findAll: (): Promise<User[]> => 
+      db.query('SELECT * FROM users'),
+    
+    create: async (email: string, name: string): Promise<User> => {
+      const id = crypto.randomUUID()
+      await db.query('INSERT INTO users VALUES (?, ?, ?)', [id, email, name])
+      return { id, email, name }
     }
-  };
-});
+  }
+})
 ```
 
-### Controllers
+**Services**
 
 ```typescript
-// api/controllers/userController.ts
-import { provide, inject } from 'dn-ioc';
-import { userService } from '../../application/services/userService';
+// services/userService.ts
+import { provide } from 'dn-ioc'
+import { userRepositoryRef } from '../repositories/userRepository'
 
-export const userController = provide(() => {
-  const service = inject(userService);
+export const userServiceRef = provide(({ inject }) => {
+  const repo = inject(userRepositoryRef)
   
   return {
-    index: async (tenantId: string) => {
-      return service.getUsersByTenant(tenantId);
-    },
+    getUser: (id: string) => repo.findById(id),
     
-    create: async (tenantId: string, email: string) => {
-      return service.createUser(email, tenantId);
+    listUsers: () => repo.findAll(),
+    
+    createUser: async (email: string, name: string) => {
+      // Business logic: validate email
+      if (!email.includes('@')) {
+        throw new Error('Invalid email')
+      }
+      return repo.create(email, name)
     }
-  };
-});
+  }
+})
 ```
 
-### Application Bootstrap
+**Controllers**
+
+```typescript
+// controllers/userController.ts
+import { provide } from 'dn-ioc'
+import { userServiceRef } from '../services/userService'
+
+export const userControllerRef = provide(({ inject }) => {
+  const service = inject(userServiceRef)
+  
+  return {
+    index: async () => {
+      const users = await service.listUsers()
+      return { users }
+    },
+    
+    show: async (id: string) => {
+      const user = await service.getUser(id)
+      if (!user) throw new Error('User not found')
+      return { user }
+    },
+    
+    create: async (body: { email: string; name: string }) => {
+      const user = await service.createUser(body.email, body.name)
+      return { user }
+    }
+  }
+})
+```
+
+**Application Entry**
 
 ```typescript
 // main.ts
-import { Hono } from 'hono';
-import { serve } from '@hono/node-server';
-import { runInInjectionContext, inject } from 'dn-ioc';
-import { userController } from './api/controllers/userController';
+import { Hono } from 'hono'
+import { serve } from '@hono/node-server'
+import { runInInjectionContext } from 'dn-ioc'
+import { userControllerRef } from './controllers/userController'
 
-// Bootstrap application - runInInjectionContext wraps your entire app
-runInInjectionContext(() => {
-  const controller = inject(userController);
-  const app = new Hono();
+runInInjectionContext(({ inject }) => {
+  const userController = inject(userControllerRef)
+  const app = new Hono()
   
   app.get('/users', async (c) => {
-    const tenantId = c.req.header('x-tenant-id')!;
-    const users = await controller.index(tenantId);
-    return c.json(users);
-  });
+    const result = await userController.index()
+    return c.json(result)
+  })
+  
+  app.get('/users/:id', async (c) => {
+    const result = await userController.show(c.req.param('id'))
+    return c.json(result)
+  })
   
   app.post('/users', async (c) => {
-    const tenantId = c.req.header('x-tenant-id')!;
-    const { email } = await c.req.json();
-    const user = await controller.create(tenantId, email);
-    return c.json(user, 201);
-  });
+    const body = await c.req.json()
+    const result = await userController.create(body)
+    return c.json(result, 201)
+  })
   
-  serve(app, { port: 3000 });
-});
+  serve(app, { port: 3000 })
+})
 ```
 
-This follows the [Kratos pattern](https://raw.githubusercontent.com/go-kratos/kratos-layout/refs/heads/main/cmd/server/main.go) where you wire up dependencies once at startup, then pass request-scoped data (like tenant ID) as function parameters.
+---
 
-## Domain-Driven Design Example
+### DDD Architecture (Domain-Driven Design)
 
-A complete DDD architecture with aggregates, repositories, and domain services.
+A layered architecture with domain entities, repositories, application services, and infrastructure.
 
-### Domain Layer
+```
+src/
+├── domain/
+│   ├── entities/
+│   │   └── order.ts
+│   └── repositories/
+│       └── orderRepository.ts      (interface)
+├── application/
+│   └── services/
+│       └── orderService.ts
+├── infrastructure/
+│   ├── persistence/
+│   │   └── orderRepositoryImpl.ts
+│   └── events/
+│       └── eventBus.ts
+└── main.ts
+```
+
+**Domain Layer - Entities**
 
 ```typescript
-// domain/order/order.ts
+// domain/entities/order.ts
+export type OrderStatus = 'draft' | 'submitted' | 'completed'
+
+export interface OrderItem {
+  productId: string
+  quantity: number
+  price: number
+}
+
 export class Order {
   constructor(
     public readonly id: string,
     public readonly customerId: string,
-    public readonly items: OrderItem[],
-    public status: OrderStatus
+    private _items: OrderItem[] = [],
+    private _status: OrderStatus = 'draft'
   ) {}
   
+  get items(): ReadonlyArray<OrderItem> { return this._items }
+  get status(): OrderStatus { return this._status }
+  
   addItem(item: OrderItem): void {
-    if (this.status !== 'draft') {
-      throw new Error('Cannot add items to non-draft order');
+    if (this._status !== 'draft') {
+      throw new Error('Cannot modify non-draft order')
     }
-    this.items.push(item);
+    this._items.push(item)
   }
   
   submit(): void {
-    if (this.items.length === 0) {
-      throw new Error('Cannot submit empty order');
+    if (this._items.length === 0) {
+      throw new Error('Cannot submit empty order')
     }
-    this.status = 'submitted';
+    this._status = 'submitted'
   }
   
-  getTotalAmount(): number {
-    return this.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  get totalAmount(): number {
+    return this._items.reduce((sum, item) => sum + item.price * item.quantity, 0)
   }
 }
+```
 
-// domain/order/orderRepository.ts (interface)
+**Domain Layer - Repository Interface**
+
+```typescript
+// domain/repositories/orderRepository.ts
+import type { Order } from '../entities/order'
+
 export interface OrderRepository {
-  findById(id: string): Promise<Order | null>;
-  save(order: Order): Promise<void>;
-  findByCustomerId(customerId: string): Promise<Order[]>;
+  findById(id: string): Promise<Order | null>
+  save(order: Order): Promise<void>
+  findByCustomerId(customerId: string): Promise<Order[]>
 }
 ```
 
-### Infrastructure Layer
+**Infrastructure Layer - Repository Implementation**
 
 ```typescript
-// infrastructure/persistence/orderRepository.ts
-import { provide, inject } from 'dn-ioc';
-import type { OrderRepository } from '../../domain/order/orderRepository';
-
-const db = provide(() => new Database());
-
-export const orderRepository = provide<OrderRepository>(() => {
-  const database = inject(db);
-  
-  return {
-    findById: async (id: string) => {
-      const row = await database.queryOne('SELECT * FROM orders WHERE id = ?', [id]);
-      if (!row) return null;
-      return mapRowToOrder(row);
-    },
-    
-    save: async (order: Order) => {
-      await database.query(
-        'INSERT INTO orders ... ON CONFLICT UPDATE ...',
-        [order.id, order.customerId, order.status, JSON.stringify(order.items)]
-      );
-    },
-    
-    findByCustomerId: async (customerId: string) => {
-      const rows = await database.query(
-        'SELECT * FROM orders WHERE customer_id = ?',
-        [customerId]
-      );
-      return rows.map(mapRowToOrder);
-    }
-  };
-});
-
-function mapRowToOrder(row: any): Order {
-  return new Order(row.id, row.customer_id, JSON.parse(row.items), row.status);
-}
-```
-
-### Application Layer
-
-```typescript
-// application/services/orderService.ts
-import { provide, inject } from 'dn-ioc';
-import { orderRepository } from '../../infrastructure/persistence/orderRepository';
-import { Order } from '../../domain/order/order';
-
-const eventBus = provide(() => new EventBus());
-
-export const orderService = provide(() => {
-  const repo = inject(orderRepository);
-  const events = inject(eventBus);
-  
-  return {
-    createOrder: async (customerId: string, currentUser: User) => {
-      // Authorization check
-      if (currentUser.id !== customerId && currentUser.role !== 'admin') {
-        throw new Error('Unauthorized');
-      }
-      
-      const order = new Order(generateId(), customerId, [], 'draft');
-      await repo.save(order);
-      
-      events.publish('order.created', { orderId: order.id });
-      
-      return order;
-    },
-    
-    addItemToOrder: async (orderId: string, item: OrderItem, currentUser: User) => {
-      const order = await repo.findById(orderId);
-      if (!order) throw new Error('Order not found');
-      
-      if (currentUser.id !== order.customerId && currentUser.role !== 'admin') {
-        throw new Error('Unauthorized');
-      }
-      
-      order.addItem(item);
-      await repo.save(order);
-      
-      events.publish('order.itemAdded', { orderId, item });
-      
-      return order;
-    },
-    
-    submitOrder: async (orderId: string, currentUser: User) => {
-      const order = await repo.findById(orderId);
-      if (!order) throw new Error('Order not found');
-      
-      if (currentUser.id !== order.customerId && currentUser.role !== 'admin') {
-        throw new Error('Unauthorized');
-      }
-      
-      order.submit();
-      await repo.save(order);
-      
-      events.publish('order.submitted', { 
-        orderId, 
-        totalAmount: order.getTotalAmount() 
-      });
-      
-      return order;
-    }
-  };
-});
-```
-
-### API Layer
-
-```typescript
-// main.ts
-import { Hono } from 'hono';
-import { serve } from '@hono/node-server';
-import { provide, inject, runInInjectionContext } from 'dn-ioc';
-import { orderService } from './application/services/orderService';
-
-// Bootstrap application - runInInjectionContext wraps your entire app
-runInInjectionContext(() => {
-  const service = inject(orderService);
-  const app = new Hono();
-  
-  app.post('/orders', async (c) => {
-    const user = await authenticateRequest(c);
-    const { customerId } = await c.req.json();
-    
-    try {
-      const order = await service.createOrder(customerId, user);
-      return c.json(order, 201);
-    } catch (error) {
-      if (error.message === 'Unauthorized') {
-        return c.json({ error: 'Unauthorized' }, 403);
-      }
-      return c.json({ error: 'Internal server error' }, 500);
-    }
-  });
-  
-  app.patch('/orders/:orderId', async (c) => {
-    const user = await authenticateRequest(c);
-    const orderId = c.req.param('orderId');
-    const { action, item } = await c.req.json();
-    
-    try {
-      if (action === 'addItem') {
-        const order = await service.addItemToOrder(orderId, item, user);
-        return c.json(order);
-      } else if (action === 'submit') {
-        const order = await service.submitOrder(orderId, user);
-        return c.json(order);
-      }
-    } catch (error) {
-      if (error.message === 'Unauthorized') {
-        return c.json({ error: 'Unauthorized' }, 403);
-      }
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  
-  serve(app, { port: 3000 });
-});
-```
-
-### Testing with DI
-
-The beauty of this approach is testing becomes straightforward:
-
-```typescript
-// tests/orderService.test.ts
-import { provide, inject, runInInjectionContext } from 'dn-ioc';
-import { orderService } from '../application/services/orderService';
-import { orderRepository } from '../infrastructure/persistence/orderRepository';
-import { eventBus } from '../infrastructure/events/eventBus';
-
-describe('Order Service', () => {
-  it('should allow user to create their own order', () => {
-    // Mock repository
-    const mockRepo = {
-      save: jest.fn(),
-      findById: jest.fn(),
-      findByCustomerId: jest.fn()
-    };
-    
-    const mockEvents = {
-      publish: jest.fn()
-    };
-    
-    // Wire test dependencies
-    let service: any;
-    runInInjectionContext(() => {
-      const testService = provide(
-        () => inject(orderService),
-        {
-          providers: [
-            provide(() => mockRepo, { overrides: orderRepository }),
-            provide(() => mockEvents, { overrides: eventBus })
-          ]
-        }
-      );
-      
-      service = inject(testService);
-    });
-    
-    // Execute test
-    const testUser = { id: 'user-123', role: 'customer' };
-    const order = await service.createOrder('user-123', testUser);
-    
-    expect(order.customerId).toBe('user-123');
-    expect(mockRepo.save).toHaveBeenCalledWith(order);
-    expect(mockEvents.publish).toHaveBeenCalledWith(
-      'order.created',
-      { orderId: order.id }
-    );
-  });
-});
-```
-
-## Multi-Tenant Architecture
-
-Multi-tenant apps need different database connections per tenant. Here's how to handle it cleanly:
-
-```typescript
-// infrastructure/database.ts
-export class Database {
-  constructor(private url: string) {}
-  
-  async query(sql: string, params: any[]): Promise<any[]> {
-    // Execute query
-  }
-}
-
-// infrastructure/repositories/userRepository.ts
-export interface UserRepository {
-  getUsers(db: Database): Promise<User[]>;
-  createUser(db: Database, email: string): Promise<User>;
-}
-
-export const userRepository = provide<UserRepository>(() => {
-  return {
-    getUsers: async (db: Database) => {
-      return db.query('SELECT * FROM users', []);
-    },
-    
-    createUser: async (db: Database, email: string) => {
-      const id = generateId();
-      await db.query('INSERT INTO users (id, email) VALUES (?, ?)', [id, email]);
-      return { id, email };
-    }
-  };
-});
-
-// application/services/userService.ts
-export const userService = provide(() => {
-  const repo = inject(userRepository);
-  
-  return {
-    getUsers: async (tenantDb: Database) => {
-      return repo.getUsers(tenantDb);
-    },
-    
-    createUser: async (tenantDb: Database, email: string) => {
-      return repo.createUser(tenantDb, email);
-    }
-  };
-});
-
-// main.ts - Bootstrap application
-import { Hono } from 'hono';
-import { serve } from '@hono/node-server';
-
-runInInjectionContext(() => {
-  const service = inject(userService);
-  
-  // Create database pool per tenant (loaded at startup)
-  const tenantDatabases = new Map<string, Database>();
-  tenantDatabases.set('tenant1', new Database('postgresql://tenant1'));
-  tenantDatabases.set('tenant2', new Database('postgresql://tenant2'));
-  
-  const app = new Hono();
-  
-  app.get('/users', async (c) => {
-    const tenantId = c.req.header('x-tenant-id')!;
-    const db = tenantDatabases.get(tenantId);
-    
-    if (!db) {
-      return c.json({ error: 'Invalid tenant' }, 400);
-    }
-    
-    const users = await service.getUsers(db);
-    return c.json(users);
-  });
-  
-  app.post('/users', async (c) => {
-    const tenantId = c.req.header('x-tenant-id')!;
-    const db = tenantDatabases.get(tenantId);
-    
-    if (!db) {
-      return c.json({ error: 'Invalid tenant' }, 400);
-    }
-    
-    const { email } = await c.req.json();
-    const user = await service.createUser(db, email);
-    return c.json(user, 201);
-  });
-  
-  serve(app, { port: 3000 });
-});
-```
-
-## Hierarchical Injection
-
-You can override dependencies locally using the `providers` option with `overrides`. **Use this primarily for testing**, not for runtime configuration.
-
-### Testing Example
-
-```typescript
-import { provide, inject, runInInjectionContext } from 'dn-ioc';
-
-const database = provide(() => new PostgresDatabase());
-const userRepository = provide(() => new UserRepositoryImpl(inject(database)));
-
-// In tests, override with mocks
-describe('UserRepository', () => {
-  it('should find user by id', () => {
-    const mockDb = { query: jest.fn() };
-    
-    let repo: any;
-    runInInjectionContext(() => {
-      const testRepo = provide(
-        () => inject(userRepository),
-        {
-          providers: [
-            provide(() => mockDb, { overrides: database })
-          ]
-        }
-      );
-      
-      repo = inject(testRepo);
-    });
-    
-    await repo.findById('123');
-    expect(mockDb.query).toHaveBeenCalled();
-  });
-});
-```
-
-### How Overrides Work
-
-```typescript
-const config = provide(() => ({ level: 0 }));
-
-const service = provide(() => {
-  const cfg = inject(config);
-  return { level: cfg.level };
-});
-
-const overriddenService = provide(
-  () => {
-    const svc = inject(service); // This will use level: 1
-    return svc;
-  },
-  {
-    providers: [
-      provide(() => ({ level: 1 }), { overrides: config })
-    ]
-  }
-);
-
-runInInjectionContext(() => {
-  const cfg = inject(config);           // { level: 0 }
-  const svc = inject(service);          // { level: 0 }
-  const overridden = inject(overriddenService); // { level: 1 }
-});
-```
-
-When `overriddenService`'s factory calls `inject(service)`, and `service`'s factory calls `inject(config)`, the injection system looks up the context hierarchy and finds the overridden config.
-
-## When to Use Hierarchical Injection?
-
-Following the [Kratos pattern](https://raw.githubusercontent.com/go-kratos/kratos-layout/refs/heads/main/cmd/server/main.go), you wire up dependencies **once at startup**. Request-scoped data should be passed as **function parameters**.
-
-**✅ Use hierarchical injection for:**
-- Testing (swap real implementations with mocks)
-- Complex dependency graphs where you need to override shared dependencies
-- Application-wide configuration overrides
-
-**✅ Pass as parameters for:**
-- Request-scoped data (current user, tenant ID, request context)
-- Data that flows through your business logic
-- Explicit control flow
-
-### Good vs Bad Examples
-
-```typescript
-import { Hono } from 'hono';
-
-// ✅ GOOD: Request data as parameters
-runInInjectionContext(() => {
-  const service = inject(userService);
-  const app = new Hono();
-  
-  app.get('/users', async (c) => {
-    const tenantId = c.req.header('x-tenant-id');
-    const users = await service.getUsers(tenantId);
-    return c.json(users);
-  });
-  
-  serve(app, { port: 3000 });
-});
-
-// ❌ BAD: Creating new context per request
-const app = new Hono();
-app.get('/users', async (c) => {
-  const tenantId = c.req.header('x-tenant-id');
-  
-  await runInInjectionContext(async () => {
-    const scopedService = provide(
-      () => inject(userService),
-      {
-        providers: [
-          provide(() => tenantId, { overrides: tenantIdProvider })
-        ]
-      }
-    );
-    const service = inject(scopedService);
-    const users = await service.getUsers();
-    return c.json(users);
-  });
-});
-```
-
-The first approach is clearer, faster, and follows conventional patterns.
-
-## API Reference
-
-### `provide<T>(factory: () => T, options?: ProvideOptions<T>): Ref<T>`
-
-Creates a dependency provider.
-
-**Parameters:**
-- `factory`: Function that creates the dependency
-- `options` (optional):
-  - `mode`: `'global'` (default) or `'standalone'`
-  - `providers`: Array of providers available in the factory's context
-  - `overrides`: Which provider this overrides in child contexts
-
-**Returns:** A `Ref<T>` that can be used with `inject()`
-
-**Example:**
-```typescript
-const logger = provide(() => new Logger());
-
-const db = provide(() => new Database(), {
-  mode: 'global'
-});
-
-const mockDb = provide(
-  () => new MockDatabase(),
-  { overrides: db }
-);
-```
-
----
-
-### `inject<T>(ref: Ref<T>, options?: InjectOptions): T | undefined`
-
-Injects a dependency from the current context. **Must be called within `runInInjectionContext`**.
-
-**Parameters:**
-- `ref`: The provider reference to inject
-- `options` (optional):
-  - `optional`: If `true`, returns `undefined` instead of throwing when unavailable
-
-**Returns:** The injected instance, or `undefined` if optional and unavailable
-
-**Throws:** Error if called outside injection context (unless `optional: true`)
-
-**Example:**
-```typescript
-runInInjectionContext(() => {
-  const db = inject(database);
-  const logger = inject(loggerProvider, { optional: true });
-});
-```
-
----
-
-### `runInInjectionContext(fn: () => void): void`
-### `runInInjectionContext(fn: () => Promise<void>): Promise<void>`
-
-Creates an injection context that wraps your **entire application**. This is the application shell.
-
-**Parameters:**
-- `fn`: Function to execute (sync or async)
-
-**Returns:** `void` or `Promise<void>`
-
-**Usage Pattern:**
-```typescript
-// main.ts - Application entry point
-import { Hono } from 'hono';
-import { serve } from '@hono/node-server';
-
-runInInjectionContext(() => {
-  // Wire up all dependencies
-  const app = inject(appProvider);
-  const logger = inject(loggerProvider);
-  
-  // Start application - runs forever inside this context
-  serve(app, { 
-    port: 3000,
-    onStart() {
-      logger.log('Server started');
-    }
-  });
-});
-
-// Async example
-runInInjectionContext(async () => {
-  const db = inject(database);
-  await db.connect();
-  
-  const app = inject(appProvider);
-  serve(app, { port: 3000 });
-});
-```
-
-**Important:** Call this **once** at your application's entry point, not per-request.
-
----
-
-### `isInInjectionContext(): boolean`
-
-Checks if currently within an injection context.
-
-```typescript
-if (isInInjectionContext()) {
-  const value = inject(provider);
-}
-```
-
----
-
-### `isProvideRef(value: unknown): boolean`
-
-Type guard to check if a value is a Ref.
-
-```typescript
-if (isProvideRef(something)) {
-  // something is definitely a Ref
-  const value = inject(something);
-}
-```
-
-## Best Practices
-
-### 1. Clear naming without Ref suffix
-
-```typescript
-// ✅ Good - clean names
-const logger = provide(() => new Logger());
-const database = provide(() => new Database());
-const userService = provide(() => new UserService(inject(database)));
-
-// ❌ Avoid - redundant Ref suffix
-const loggerRef = provide(() => new Logger());
-const databaseRef = provide(() => new Database());
-```
-
-### 2. Use standalone mode for testing, not production
-
-```typescript
-// ✅ Good: Use for test isolation
-const testDb = provide(() => new MockDatabase(), { mode: 'standalone' });
-
-// ❌ Avoid: Don't use standalone in production for singletons
-const db = provide(() => new Database(), { mode: 'standalone' });
-```
-
-### 3. Wire once at startup
-
-```typescript
-// ✅ Good: One context at app startup
-runInInjectionContext(() => {
-  const app = inject(appProvider);
-  const logger = inject(loggerProvider);
-  
-  serve(app, { port: 3000 });
-  logger.log('Server started');
-});
-
-// ❌ Bad: Multiple contexts or per-request contexts
-app.get('/users', (c) => {
-  runInInjectionContext(() => {
-    // Don't do this!
-  });
-});
-```
-
-### 4. Type your domain interfaces
-
-```typescript
-// domain/repositories/userRepository.ts
-export interface UserRepository {
-  findById(id: string): Promise<User | null>;
-  save(user: User): Promise<void>;
-}
-
-// infrastructure/repositories/postgresUserRepository.ts
-export const userRepository = provide<UserRepository>(() => {
-  // Implementation
-});
-```
-
-This lets you swap implementations without changing business logic.
-
-### 5. Use hierarchical injection for testing only
-
-```typescript
-// ✅ Good: Testing with mocks
-describe('UserService', () => {
-  it('should create user', () => {
-    const mockRepo = { save: jest.fn() };
-    
-    let service: any;
-    runInInjectionContext(() => {
-      const testService = provide(
-        () => inject(userService),
-        { 
-          providers: [
-            provide(() => mockRepo, { overrides: userRepository })
-          ] 
-        }
-      );
-      service = inject(testService);
-    });
-    
-    await service.createUser('test@example.com');
-    expect(mockRepo.save).toHaveBeenCalled();
-  });
-});
-
-// ❌ Avoid: Using for runtime configuration
-const featureA = provide(
-  () => inject(baseFeature),
-  { providers: [provide(() => configA, { overrides: config })] }
-);
-
-// ✅ Better: Pass config explicitly
-const featureA = provide(() => {
-  const feature = inject(baseFeature);
-  return feature.configure(configA);
-});
-```
-
-## Common Patterns
-
-### Application Bootstrap
-
-Following the [Kratos framework pattern](https://raw.githubusercontent.com/go-kratos/kratos-layout/refs/heads/main/cmd/server/main.go):
-
-```typescript
-// main.ts
-import { Hono } from 'hono';
-import { serve } from '@hono/node-server';
-import { runInInjectionContext, inject } from 'dn-ioc';
-
-runInInjectionContext(async () => {
-  // Initialize resources
-  const db = inject(database);
-  await db.connect();
-  
-  const logger = inject(loggerProvider);
-  logger.info('Database connected');
-  
-  // Build and start app
-  const app = inject(appProvider);
-  
-  serve(app, { 
-    port: 3000,
-    onStart() {
-      logger.info('Server started on port 3000');
-    }
-  });
-  
-  // Graceful shutdown
-  process.on('SIGTERM', async () => {
-    logger.info('Shutting down...');
-    await db.close();
-    process.exit(0);
-  });
-});
-```
-
-### Cloudflare Workers
-
-```typescript
-// worker.ts
-import { Hono } from 'hono';
-import { runInInjectionContext, inject, provide } from 'dn-ioc';
-
-const app = provide(() => {
-  const logger = inject(loggerProvider);
-  const hono = new Hono();
-  
-  hono.get('/', (c) => c.text('Hello from Cloudflare!'));
-  
-  hono.get('/api/users', async (c) => {
-    logger.log('Fetching users');
-    const users = await fetchUsers();
-    return c.json(users);
-  });
-  
-  return hono;
-});
-
-// Export for Cloudflare Workers
-let exportedApp: any;
-runInInjectionContext(() => {
-  exportedApp = inject(app);
-});
-
-export default exportedApp;
-```
-
-### Singleton Services
-
-```typescript
-// Global singletons (default mode)
-const logger = provide(() => new Logger());
-const database = provide(() => new Database());
-const cache = provide(() => new RedisCache());
-```
-
-### Repository Pattern
-
-```typescript
-export interface UserRepository {
-  findById(id: string): Promise<User | null>;
-  save(user: User): Promise<void>;
-}
-
-export const userRepository = provide<UserRepository>(() => {
-  const db = inject(database);
+// infrastructure/persistence/orderRepositoryImpl.ts
+import { provide } from 'dn-ioc'
+import type { OrderRepository } from '../../domain/repositories/orderRepository'
+import { Order } from '../../domain/entities/order'
+
+const dbRef = provide(() => new Database())
+
+export const orderRepositoryRef = provide<OrderRepository>(({ inject }) => {
+  const db = inject(dbRef)
   
   return {
     findById: async (id) => {
-      const row = await db.queryOne('SELECT * FROM users WHERE id = ?', [id]);
-      return row ? mapToUser(row) : null;
+      const row = await db.queryOne('SELECT * FROM orders WHERE id = ?', [id])
+      return row ? hydrate(row) : null
     },
-    save: async (user) => {
-      await db.query('INSERT INTO users ... ON CONFLICT UPDATE ...', [user]);
+    
+    save: async (order) => {
+      await db.query(
+        `INSERT INTO orders (id, customer_id, items, status) 
+         VALUES (?, ?, ?, ?) 
+         ON CONFLICT(id) DO UPDATE SET items = ?, status = ?`,
+        [order.id, order.customerId, JSON.stringify(order.items), order.status,
+         JSON.stringify(order.items), order.status]
+      )
+    },
+    
+    findByCustomerId: async (customerId) => {
+      const rows = await db.query('SELECT * FROM orders WHERE customer_id = ?', [customerId])
+      return rows.map(hydrate)
     }
-  };
-});
+  }
+})
+
+function hydrate(row: any): Order {
+  return new Order(row.id, row.customer_id, JSON.parse(row.items), row.status)
+}
 ```
 
-### Service Layer
+**Infrastructure Layer - Event Bus**
 
 ```typescript
-export const userService = provide(() => {
-  const repo = inject(userRepository);
-  const events = inject(eventBus);
+// infrastructure/events/eventBus.ts
+import { provide } from 'dn-ioc'
+
+type EventHandler = (payload: any) => void
+
+export const eventBusRef = provide(() => {
+  const handlers = new Map<string, EventHandler[]>()
   
   return {
-    createUser: async (email: string, currentUser: User) => {
-      // Authorization
-      if (currentUser.role !== 'admin') {
-        throw new Error('Unauthorized');
-      }
-      
-      // Business logic
-      const user = new User(generateId(), email);
-      await repo.save(user);
-      
-      // Side effects
-      events.publish('user.created', { userId: user.id });
-      
-      return user;
+    publish: (event: string, payload: any) => {
+      handlers.get(event)?.forEach(fn => fn(payload))
+    },
+    
+    subscribe: (event: string, handler: EventHandler) => {
+      if (!handlers.has(event)) handlers.set(event, [])
+      handlers.get(event)!.push(handler)
     }
-  };
-});
+  }
+})
 ```
 
-### Dependency Composition
+**Application Layer - Service**
 
 ```typescript
-const database = provide(() => new Database());
-const cache = provide(() => new Cache());
+// application/services/orderService.ts
+import { provide } from 'dn-ioc'
+import { orderRepositoryRef } from '../../infrastructure/persistence/orderRepositoryImpl'
+import { eventBusRef } from '../../infrastructure/events/eventBus'
+import { Order, type OrderItem } from '../../domain/entities/order'
 
-const userRepository = provide(() => {
-  const db = inject(database);
-  const cacheInstance = inject(cache);
-  return new UserRepository(db, cacheInstance);
-});
+export const orderServiceRef = provide(({ inject }) => {
+  const repo = inject(orderRepositoryRef)
+  const events = inject(eventBusRef)
+  
+  return {
+    createOrder: async (customerId: string) => {
+      const order = new Order(crypto.randomUUID(), customerId)
+      await repo.save(order)
+      events.publish('order.created', { orderId: order.id })
+      return order
+    },
+    
+    addItem: async (orderId: string, item: OrderItem) => {
+      const order = await repo.findById(orderId)
+      if (!order) throw new Error('Order not found')
+      
+      order.addItem(item)
+      await repo.save(order)
+      events.publish('order.itemAdded', { orderId, item })
+      return order
+    },
+    
+    submitOrder: async (orderId: string) => {
+      const order = await repo.findById(orderId)
+      if (!order) throw new Error('Order not found')
+      
+      order.submit()
+      await repo.save(order)
+      events.publish('order.submitted', { orderId, total: order.totalAmount })
+      return order
+    },
+    
+    getOrder: (orderId: string) => repo.findById(orderId),
+    
+    getCustomerOrders: (customerId: string) => repo.findByCustomerId(customerId)
+  }
+})
 ```
 
-## Comparison with Other Frameworks
-
-This library follows similar patterns to:
-
-- **[Go Wire](https://github.com/google/wire)** - Compile-time dependency injection
-- **[Go Kratos](https://go-kratos.dev/)** - Uses Wire for DI, see [example](https://raw.githubusercontent.com/go-kratos/kratos-layout/refs/heads/main/cmd/server/main.go)
-- **InversifyJS** - Runtime DI with decorators (but we don't use decorators)
-- **Awilix** - Registration-based DI (but we use refs directly)
-
-**Key difference:** We wire dependencies **once at startup** in the main function. The entire app runs inside `runInInjectionContext()`.
-
-## TypeScript Support
-
-Full type safety with excellent type inference:
+**Application Entry**
 
 ```typescript
-interface User {
-  id: string;
-  name: string;
+// main.ts
+import { Hono } from 'hono'
+import { serve } from '@hono/node-server'
+import { runInInjectionContext } from 'dn-ioc'
+import { orderServiceRef } from './application/services/orderService'
+import { eventBusRef } from './infrastructure/events/eventBus'
+
+runInInjectionContext(({ inject }) => {
+  const orderService = inject(orderServiceRef)
+  const events = inject(eventBusRef)
+  
+  // Subscribe to domain events
+  events.subscribe('order.submitted', ({ orderId, total }) => {
+    console.log(`Order ${orderId} submitted with total: $${total}`)
+  })
+  
+  const app = new Hono()
+  
+  app.post('/orders', async (c) => {
+    const { customerId } = await c.req.json()
+    const order = await orderService.createOrder(customerId)
+    return c.json(order, 201)
+  })
+  
+  app.post('/orders/:id/items', async (c) => {
+    const item = await c.req.json()
+    const order = await orderService.addItem(c.req.param('id'), item)
+    return c.json(order)
+  })
+  
+  app.post('/orders/:id/submit', async (c) => {
+    const order = await orderService.submitOrder(c.req.param('id'))
+    return c.json(order)
+  })
+  
+  app.get('/orders/:id', async (c) => {
+    const order = await orderService.getOrder(c.req.param('id'))
+    if (!order) return c.json({ error: 'Not found' }, 404)
+    return c.json(order)
+  })
+  
+  serve(app, { port: 3000 })
+})
+```
+
+**Testing DDD with Mocks**
+
+```typescript
+// tests/orderService.test.ts
+import { describe, test, expect, mock } from 'bun:test'
+import { provide, runInInjectionContext } from 'dn-ioc'
+import { orderServiceRef } from '../application/services/orderService'
+import { orderRepositoryRef } from '../infrastructure/persistence/orderRepositoryImpl'
+import { eventBusRef } from '../infrastructure/events/eventBus'
+
+describe('OrderService', () => {
+  test('createOrder publishes event', async () => {
+    const mockRepo = {
+      save: mock(() => Promise.resolve()),
+      findById: mock(() => Promise.resolve(null)),
+      findByCustomerId: mock(() => Promise.resolve([]))
+    }
+    
+    const mockEvents = {
+      publish: mock(() => {}),
+      subscribe: mock(() => {})
+    }
+    
+    const testServiceRef = provide(
+      ({ inject }) => inject(orderServiceRef),
+      {
+        providers: [
+          provide(() => mockRepo, { overrides: orderRepositoryRef }),
+          provide(() => mockEvents, { overrides: eventBusRef })
+        ]
+      }
+    )
+    
+    await runInInjectionContext(async ({ inject }) => {
+      const service = inject(testServiceRef)
+      const order = await service.createOrder('customer-123')
+      
+      expect(order.customerId).toBe('customer-123')
+      expect(mockRepo.save).toHaveBeenCalled()
+      expect(mockEvents.publish).toHaveBeenCalledWith(
+        'order.created',
+        expect.objectContaining({ orderId: order.id })
+      )
+    })
+  })
+})
+```
+
+## API Reference
+
+### Types
+
+```typescript
+/**
+ * A reference to a dependency provider.
+ * Used as both identifier and accessor for dependencies.
+ */
+interface Ref<T> {
+  [PROVIDE_REF]: unknown
 }
 
-const user = provide<User>(() => ({
-  id: '123',
-  name: 'John'
-}));
+/**
+ * Options for creating a provider.
+ */
+type ProvideOptions<T = unknown> = {
+  /** Instance mode: 'global' (singleton) or 'standalone' (per-context) */
+  mode?: 'global' | 'standalone'
+  /** Local providers available within this provider's factory */
+  providers?: Ref<unknown>[]
+  /** Which Ref this provider overrides in child contexts */
+  overrides?: Ref<T>
+}
 
-runInInjectionContext(() => {
-  const u = inject(user);
-  // u is fully typed as User
-  console.log(u.name.toUpperCase());
-  
-  // TypeScript error: Property 'foo' does not exist
-  // console.log(u.foo);
-});
+/**
+ * The inject function signature.
+ */
+interface InjectFn {
+  <T>(ref: Ref<T>): T
+}
+
+/**
+ * Context object passed to factory functions.
+ */
+interface Context {
+  inject: InjectFn
+}
+
+/**
+ * Factory function type.
+ */
+type Factory<T> = (ctx: Context) => T
+```
+
+### Functions
+
+#### `provide<T>(factory, options?): Ref<T>`
+
+Creates a dependency provider.
+
+```typescript
+function provide<T>(
+  factory: (ctx: Context) => T,
+  options?: ProvideOptions<T>
+): Ref<T>
+```
+
+**Parameters:**
+- `factory` - Function that creates the dependency instance. Receives `Context` with `inject` function. The function name is used for error messages (e.g., circular dependency detection).
+- `options.mode` - `'global'` (default): singleton across all contexts. `'standalone'`: new instance per context.
+- `options.providers` - Array of local providers available within this factory's scope.
+- `options.overrides` - Specifies which `Ref` this provider should override in child contexts.
+
+**Returns:** A `Ref<T>` that can be used with `inject()`.
+
+**Example:**
+```typescript
+// Use named functions for better error messages
+const configRef = provide(function Config() {
+  return { apiUrl: '/api' }
+})
+
+// Provider with dependencies
+const serviceRef = provide(function ApiService({ inject }) {
+  const config = inject(configRef)
+  return new ApiServiceImpl(config)
+})
+
+// Arrow functions use variable name automatically
+const loggerRef = provide(() => new Logger(), { mode: 'standalone' })
+// Error messages will show "loggerRef" as the name
+
+// With local providers (for testing/overrides)
+const testServiceRef = provide(
+  ({ inject }) => inject(serviceRef),
+  {
+    providers: [
+      provide(() => mockConfig, { overrides: configRef })
+    ]
+  }
+)
+```
+
+---
+
+#### `runInInjectionContext<T>(fn): T`
+
+Creates an injection context and executes the given function within it.
+
+```typescript
+// Sync version
+function runInInjectionContext<T>(fn: (ctx: Context) => T): T
+
+// Async version
+function runInInjectionContext<T>(fn: (ctx: Context) => Promise<T>): Promise<T>
+```
+
+**Parameters:**
+- `fn` - Function to execute within the injection context. Receives `Context` object.
+
+**Returns:** The return value of `fn`.
+
+**Example:**
+```typescript
+// Sync
+const result = runInInjectionContext(({ inject }) => {
+  const service = inject(serviceRef)
+  return service.getData()
+})
+
+// Async
+const result = await runInInjectionContext(async ({ inject }) => {
+  const service = inject(serviceRef)
+  return await service.fetchData()
+})
+```
+
+---
+
+#### `isProvideRef(value): boolean`
+
+Type guard to check if a value is a valid `Ref`.
+
+```typescript
+function isProvideRef(value: unknown): value is Ref<unknown>
+```
+
+**Parameters:**
+- `value` - Any value to check.
+
+**Returns:** `true` if value is a `Ref`, `false` otherwise.
+
+**Example:**
+```typescript
+const ref = provide(() => 'value')
+
+isProvideRef(ref)        // true
+isProvideRef({})         // false
+isProvideRef(null)       // false
+isProvideRef(undefined)  // false
+```
+
+---
+
+#### `resetGlobalInstances(): void`
+
+Clears all cached global instances. Useful for testing to ensure a clean state between tests.
+
+```typescript
+function resetGlobalInstances(): void
+```
+
+**Example:**
+```typescript
+import { beforeEach } from 'bun:test'
+import { resetGlobalInstances } from 'dn-ioc'
+
+beforeEach(() => {
+  resetGlobalInstances()
+})
+```
+
+## Error Handling
+
+### Circular Dependency Detection
+
+The library automatically detects circular dependencies and throws a descriptive error.
+
+The error message uses the **function name** for identification:
+
+```typescript
+// Using named functions - recommended for better error messages
+const aRef = provide(function ServiceA({ inject }) {
+  return inject(bRef)
+})
+const bRef = provide(function ServiceB({ inject }) {
+  return inject(aRef)
+})
+
+runInInjectionContext(({ inject }) => {
+  inject(aRef) // throws: "Circular dependency detected: ServiceA"
+})
+```
+
+```typescript
+// Arrow functions automatically use variable name
+const userService = provide(({ inject }) => inject(authService))
+const authService = provide(({ inject }) => inject(userService))
+
+runInInjectionContext(({ inject }) => {
+  inject(userService) // throws: "Circular dependency detected: userService"
+})
+```
+
+```typescript
+// Anonymous functions show "<anonymous>"
+const ref = provide(({ inject }) => inject(ref))
+
+runInInjectionContext(({ inject }) => {
+  inject(ref) // throws: "Circular dependency detected: <anonymous>"
+})
+```
+
+**Tip:** Use named functions (`function MyService() {}`) for clearer error messages in complex dependency graphs.
+
+## Testing
+
+```typescript
+import { describe, test, expect, mock } from 'bun:test'
+
+const dbRef = provide(() => new RealDatabase())
+
+const repoRef = provide(({ inject }) => {
+  const db = inject(dbRef)
+  return new UserRepository(db)
+})
+
+describe('UserRepository', () => {
+  test('with mock database', () => {
+    const mockDb = { query: mock(() => []) }
+
+    const testRepoRef = provide(
+      ({ inject }) => inject(repoRef),
+      {
+        providers: [
+          provide(() => mockDb, { overrides: dbRef })
+        ]
+      }
+    )
+
+    runInInjectionContext(({ inject }) => {
+      const repo = inject(testRepoRef)
+      repo.findAll()
+      expect(mockDb.query).toHaveBeenCalled()
+    })
+  })
+})
 ```
 
 ## License
