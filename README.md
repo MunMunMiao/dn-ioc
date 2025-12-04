@@ -7,6 +7,9 @@
   <a href="https://github.com/MunMunMiao/dn-ioc/blob/main/LICENSE"><img src="https://img.shields.io/github/license/MunMunMiao/dn-ioc?color=%23000&style=flat-square" alt="license"></a>
 </p>
 <p align="center">
+  <a href="https://deepwiki.com/MunMunMiao/dn-ioc"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
+</p>
+<p align="center">
   A lightweight, type-safe IoC container for TypeScript.<br>
   No decorators, no reflection, no token registration — just functions and direct references.
 </p>
