@@ -4,6 +4,8 @@ export interface Ref<_T> {
   [PROVIDE_REF]: unknown
 }
 
+export type RefType<T> = T extends Ref<infer U> ? U : never
+
 export type ProvideOptions<T = unknown> = {
   /** Instance mode: 'global' (singleton) or 'standalone' (per-context) */
   mode?: 'global' | 'standalone'
