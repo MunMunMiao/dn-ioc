@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { type Context, isProvideRef, provide, type Ref, resetGlobalInstances, runInInjectionContext } from './index'
+import { type Context, isProvideRef, provide, type Ref, resetGlobalInstances, runInInjectionContext } from './ioc'
 
 beforeEach(() => {
   resetGlobalInstances()
