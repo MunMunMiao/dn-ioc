@@ -66,6 +66,8 @@ describe('IoC Container', () => {
 
     runInInjectionContext(({ inject }) => {
       value1 = inject(ref)
+      const value1Again = inject(ref)
+      expect(value1Again).toBe(value1)
     })
 
     runInInjectionContext(({ inject }) => {
@@ -76,23 +78,16 @@ describe('IoC Container', () => {
     expect(counter).toBe(1)
   })
 
-  test('standalone mode creates new instances per context', () => {
+  test('standalone mode creates new instances per inject', () => {
     let counter = 0
     const ref = provide(() => ({ id: ++counter }), { mode: 'standalone' })
 
-    let value1: { id: number } | undefined
-    let value2: { id: number } | undefined
-
     runInInjectionContext(({ inject }) => {
-      value1 = inject(ref)
+      const value1 = inject(ref)
+      const value2 = inject(ref)
+      expect(value1).not.toBe(value2)
+      expect(counter).toBe(2)
     })
-
-    runInInjectionContext(({ inject }) => {
-      value2 = inject(ref)
-    })
-
-    expect(value1).not.toBe(value2)
-    expect(counter).toBe(2)
   })
 
   test('nested dependencies with inject parameter', () => {
@@ -140,6 +135,48 @@ describe('IoC Container', () => {
     })
   })
 
+  test('override does not affect global singleton if created after', () => {
+    const configRef = provide(() => 'global config')
+
+    const serviceRef = provide(({ inject }) => inject(configRef))
+
+    const localServiceRef = provide(
+      ({ inject }) => inject(serviceRef),
+      {
+        providers: [provide(() => 'local config', { overrides: configRef })],
+      },
+    )
+
+    runInInjectionContext(({ inject }) => {
+      const globalValue = inject(serviceRef)
+      const localValue = inject(localServiceRef)
+
+      expect(globalValue).toBe('global config')
+      expect(localValue).toBe('global config')
+    })
+  })
+
+  test('override becomes global singleton when created first', () => {
+    const configRef = provide(() => 'global config')
+
+    const serviceRef = provide(({ inject }) => inject(configRef))
+
+    const localServiceRef = provide(
+      ({ inject }) => inject(serviceRef),
+      {
+        providers: [provide(() => 'local config', { overrides: configRef })],
+      },
+    )
+
+    runInInjectionContext(({ inject }) => {
+      const localValue = inject(localServiceRef)
+      const globalValue = inject(serviceRef)
+
+      expect(localValue).toBe('local config')
+      expect(globalValue).toBe('local config')
+    })
+  })
+
   test('type safety with inject parameter', () => {
     interface User {
       id: number
@@ -168,6 +205,26 @@ describe('IoC Container', () => {
     })
   })
 
+  test('captured inject works after factory returns', () => {
+    const configRef = provide(() => 'global config')
+
+    const serviceRef = provide(
+      ({ inject }) => {
+        const getConfig = () => inject(configRef)
+        return { getConfig }
+      },
+      {
+        providers: [provide(() => 'local config', { overrides: configRef })],
+      },
+    )
+
+    runInInjectionContext(({ inject }) => {
+      const service = inject(serviceRef)
+      expect(service.getConfig()).toBe('local config')
+      expect(inject(configRef)).toBe('global config')
+    })
+  })
+
   test('complex real-world scenario: multi-tenant', () => {
     interface Tenant {
       id: string
@@ -176,12 +233,15 @@ describe('IoC Container', () => {
 
     const defaultTenantRef = provide<Tenant>(() => ({ id: 'default', name: 'Default' }))
 
-    const apiServiceRef = provide(({ inject }) => {
-      const tenant = inject(defaultTenantRef)
-      return {
-        getTenantInfo: () => `${tenant.name} (${tenant.id})`,
-      }
-    })
+    const apiServiceRef = provide(
+      ({ inject }) => {
+        const tenant = inject(defaultTenantRef)
+        return {
+          getTenantInfo: () => `${tenant.name} (${tenant.id})`,
+        }
+      },
+      { mode: 'standalone' },
+    )
 
     const tenant1AppRef = provide(
       ({ inject }) => {
@@ -251,18 +311,15 @@ describe('IoC Container', () => {
     })
   })
 
-  test('resetGlobalInstances clears cached instances', () => {
+  test('resetGlobalInstances clears cached global instances', () => {
     let counter = 0
     const ref = provide(() => ({ id: ++counter }))
 
     runInInjectionContext(({ inject }) => {
       const value1 = inject(ref)
       expect(value1.id).toBe(1)
-    })
 
-    resetGlobalInstances()
-
-    runInInjectionContext(({ inject }) => {
+      resetGlobalInstances()
       const value2 = inject(ref)
       expect(value2.id).toBe(2)
     })
@@ -320,6 +377,38 @@ describe('IoC Container - Async Support', () => {
 
     expect(result).toBe('sync-async')
   })
+
+  test('async factory rejection does not cache failure', async () => {
+    let attempts = 0
+    const asyncRef = provide(async () => {
+      attempts++
+      if (attempts === 1) {
+        throw new Error('Temporary failure')
+      }
+      return { ok: true }
+    })
+
+    await runInInjectionContext(async ({ inject }) => {
+      await expect(inject(asyncRef)).rejects.toThrow('Temporary failure')
+      const value = await inject(asyncRef)
+      expect(value.ok).toBe(true)
+    })
+
+    expect(attempts).toBe(2)
+  })
+
+  test('async circular dependency throws error', async () => {
+    const aRef: Ref<unknown> = provide(async function A({ inject }) {
+      return await inject(bRef)
+    })
+    const bRef: Ref<unknown> = provide(async function B({ inject }) {
+      return await inject(aRef)
+    })
+
+    await runInInjectionContext(async ({ inject }) => {
+      await expect(inject(aRef)).rejects.toThrow('Circular dependency detected: A')
+    })
+  })
 })
 
 describe('IoC Container - Local Providers', () => {
@@ -353,6 +442,26 @@ describe('IoC Container - Local Providers', () => {
       expect(inject(aRef)).toBe('A')
       expect(inject(bRef)).toBe('B')
       expect(inject(combinedRef)).toBe('X-Y')
+    })
+  })
+
+  test('global refs are shared across provider scopes within a run', () => {
+    let counter = 0
+    const globalRef = provide(() => ({ id: ++counter }))
+    const dummyRef = provide(() => 'root')
+    const childRef = provide(
+      ({ inject }) => inject(globalRef),
+      {
+        providers: [provide(() => 'child', { overrides: dummyRef })],
+      },
+    )
+
+    runInInjectionContext(({ inject }) => {
+      const rootValue = inject(globalRef)
+      const childValue = inject(childRef)
+
+      expect(childValue).toBe(rootValue)
+      expect(counter).toBe(1)
     })
   })
 
@@ -420,7 +529,7 @@ describe('IoC Container - Edge Cases', () => {
     })
   })
 
-  test('standalone ref in same context returns same instance', () => {
+  test('standalone ref in same context returns new instances', () => {
     let counter = 0
     const ref = provide(() => ({ id: ++counter }), { mode: 'standalone' })
 
@@ -428,8 +537,8 @@ describe('IoC Container - Edge Cases', () => {
       const a = inject(ref)
       const b = inject(ref)
 
-      expect(a).toBe(b)
-      expect(counter).toBe(1)
+      expect(a).not.toBe(b)
+      expect(counter).toBe(2)
     })
   })
 
@@ -529,7 +638,7 @@ describe('IoC Container - Mode Inheritance', () => {
       result2 = inject(standaloneRef)
     })
 
-    // Standalone creates new wrapper, but global dependency is shared
+    // Standalone creates new wrapper, but global dependency is shared across the program
     expect(result1).not.toBe(result2)
     expect(result1?.global).toBe(result2?.global)
     expect(globalCounter).toBe(1)
@@ -553,7 +662,7 @@ describe('IoC Container - Mode Inheritance', () => {
       result2 = inject(globalRef)
     })
 
-    // Global parent is cached, so standalone is only created once
+    // Global parent is shared across the program
     expect(result1).toBe(result2)
     expect(result1?.standalone).toBe(result2?.standalone)
     expect(standaloneCounter).toBe(1)
@@ -653,38 +762,28 @@ describe('IoC Container - Concurrent Safety', () => {
     expect(ids.size).toBe(10)
   })
 
-  test('context isolation during interleaved async operations', async () => {
-    const contextIdRef = provide(() => Math.random(), { mode: 'standalone' })
+  test('standalone creates new instances under interleaved async operations', async () => {
+    let counter = 0
+    const contextIdRef = provide(() => ++counter, { mode: 'standalone' })
     const results: { step: string; id: number }[] = []
 
     await Promise.all([
       runInInjectionContext(async ({ inject }) => {
-        const id = inject(contextIdRef)
-        results.push({ step: 'A-start', id })
+        const id1 = inject(contextIdRef)
+        results.push({ step: 'A-1', id: id1 })
         await new Promise(r => setTimeout(r, 30))
-        results.push({ step: 'A-middle', id })
         const id2 = inject(contextIdRef)
-        expect(id2).toBe(id)
-        await new Promise(r => setTimeout(r, 30))
-        results.push({ step: 'A-end', id })
+        results.push({ step: 'A-2', id: id2 })
       }),
       runInInjectionContext(async ({ inject }) => {
-        const id = inject(contextIdRef)
-        results.push({ step: 'B-start', id })
+        const id1 = inject(contextIdRef)
+        results.push({ step: 'B-1', id: id1 })
         await new Promise(r => setTimeout(r, 20))
-        results.push({ step: 'B-middle', id })
         const id2 = inject(contextIdRef)
-        expect(id2).toBe(id)
-        await new Promise(r => setTimeout(r, 20))
-        results.push({ step: 'B-end', id })
+        results.push({ step: 'B-2', id: id2 })
       }),
     ])
 
-    const aResults = results.filter(r => r.step.startsWith('A-'))
-    const bResults = results.filter(r => r.step.startsWith('B-'))
-
-    expect(new Set(aResults.map(r => r.id)).size).toBe(1)
-    expect(new Set(bResults.map(r => r.id)).size).toBe(1)
-    expect(aResults[0].id).not.toBe(bResults[0].id)
+    expect(new Set(results.map(r => r.id)).size).toBe(results.length)
   })
 })

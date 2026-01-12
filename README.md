@@ -127,8 +127,8 @@ runInInjectionContext(({ inject }) => {
 
 | Mode | Behavior |
 |------|----------|
-| `global` (default) | Singleton across all contexts |
-| `standalone` | New instance per context |
+| `global` (default) | Singleton for the program lifetime |
+| `standalone` | New instance per `inject` call |
 
 ```typescript
 const singleton = provide(() => new Service())
@@ -180,7 +180,7 @@ runInInjectionContext(({ inject }) => {
 
 ### Override Behavior with Instance Modes
 
-When using `global` mode (default), singletons are cached after first creation:
+When using `global` mode (default), singletons are cached **program-wide** after first creation. If a singleton is first created inside an override scope, that overridden instance becomes the global singleton for that ref.
 
 ```typescript
 const urlRef = provide(() => ({ url: 'https://google.com' }))
@@ -207,22 +207,10 @@ const customServerRef = provide(
 
 | Scenario | Result | Reason |
 |----------|--------|--------|
-| First call: `inject(customServerRef)` | bing.com | Dependencies created with override |
+| First call: `inject(customServerRef)` | bing.com | Singleton created with override |
 | `inject(serverRef)` called before | google.com | Singleton already cached |
 
-To ensure overrides always apply, use `standalone` mode:
-
-```typescript
-const httpClientRef = provide(({ inject }) => {
-  const config = inject(urlRef)
-  return { baseUrl: config.url }
-}, { mode: 'standalone' })
-
-const serverRef = provide(({ inject }) => {
-  const client = inject(httpClientRef)
-  return { client }
-}, { mode: 'standalone' })
-```
+To ensure overrides always apply without affecting global singletons, use `standalone` mode for the dependent providers (note: it creates a new instance per `inject`).
 
 ### Async Factories
 
@@ -485,8 +473,8 @@ export const orderServiceRef = provide(({ inject }) => {
 ### Mocking Dependencies
 
 ```typescript
-import { describe, test, expect, mock, beforeEach } from 'bun:test'
-import { provide, runInInjectionContext, resetGlobalInstances } from 'dn-ioc'
+import { beforeEach, describe, test, expect, mock } from 'bun:test'
+import { provide, resetGlobalInstances, runInInjectionContext } from 'dn-ioc'
 
 const dbRef = provide(() => new RealDatabase())
 
@@ -556,7 +544,7 @@ Creates a dependency provider.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `factory` | `(ctx: Context) => T` | Factory function. Function name is used in error messages. |
-| `options.mode` | `'global' \| 'standalone'` | Instance mode. Default: `'global'` |
+| `options.mode` | `'global' \| 'standalone'` | Instance mode. `global` is singleton for program lifetime; `standalone` creates a new instance per `inject`. Default: `'global'` |
 | `options.providers` | `Ref<unknown>[]` | Local providers for this factory's scope |
 | `options.overrides` | `Ref<T>` | Which Ref this provider overrides |
 
@@ -606,14 +594,18 @@ isProvideRef(null)  // false
 
 #### `resetGlobalInstances(): void`
 
-Clears all cached global instances. Required for test isolation.
+Clears cached global instances. Useful for test isolation or when you want to re-create singletons during runtime.
 
 ```typescript
-import { beforeEach } from 'bun:test'
-import { resetGlobalInstances } from 'dn-ioc'
+import { provide, resetGlobalInstances, runInInjectionContext } from 'dn-ioc'
 
-beforeEach(() => {
+const ref = provide(() => ({ id: Math.random() }))
+
+runInInjectionContext(({ inject }) => {
+  const a = inject(ref)
   resetGlobalInstances()
+  const b = inject(ref)
+  // a !== b
 })
 ```
 

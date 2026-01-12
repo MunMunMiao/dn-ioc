@@ -7,7 +7,7 @@ export interface Ref<_T> {
 export type RefType<T> = T extends Ref<infer U> ? U : never
 
 export type ProvideOptions<T = unknown> = {
-  /** Instance mode: 'global' (singleton) or 'standalone' (per-context) */
+  /** Instance mode: 'global' (singleton for program lifetime) or 'standalone' (new per inject) */
   mode?: 'global' | 'standalone'
   /** Local providers available within this provider's factory */
   providers?: Ref<unknown>[]
@@ -31,22 +31,18 @@ interface RefInternal<T> extends Ref<T> {
 }
 
 interface InternalContext {
-  instances: Map<RefInternal<unknown>, unknown>
   localProviders: Map<Ref<unknown>, RefInternal<unknown>>
-  creating: Set<RefInternal<unknown>>
   parent?: InternalContext
   inject: InjectFn
 }
 
 const globalInstances = new Map<RefInternal<unknown>, unknown>()
-const globalCreating = new Set<RefInternal<unknown>>()
 
 /**
- * Reset all global instances. Useful for testing.
+ * Reset cached global instances. Useful for testing.
  */
 export function resetGlobalInstances(): void {
   globalInstances.clear()
-  globalCreating.clear()
 }
 
 export function provide<T>(factory: Factory<T>, options?: ProvideOptions<T>): Ref<T> {
@@ -68,6 +64,14 @@ function getRefName(ref: RefInternal<unknown>): string {
   return ref.factory.name || '<anonymous>'
 }
 
+function isPromiseLike<T>(value: unknown): value is Promise<T> {
+  return (
+    (typeof value === 'object' || typeof value === 'function') &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === 'function'
+  )
+}
+
 function findRefInContext(refInternal: RefInternal<unknown>, ctx: InternalContext): RefInternal<unknown> {
   let current: InternalContext | undefined = ctx
   while (current) {
@@ -82,51 +86,115 @@ function findRefInContext(refInternal: RefInternal<unknown>, ctx: InternalContex
 
 function createInternalContext(parent?: InternalContext): InternalContext {
   const ctx: InternalContext = {
-    instances: new Map(),
     localProviders: new Map(),
-    creating: new Set(),
     parent,
     inject: null!,
   }
 
-  const inject: InjectFn = <T>(refInstance: Ref<T>): T => {
-    const refInternal = findRefInContext(refInstance as RefInternal<unknown>, ctx) as RefInternal<T>
-    const isGlobal = refInternal.mode === 'global'
-    const useGlobalCache = isGlobal && !ctx.parent
-    const cache = useGlobalCache ? globalInstances : ctx.instances
-    const creating = useGlobalCache ? globalCreating : ctx.creating
-
-    if (cache.has(refInternal as RefInternal<unknown>)) {
-      return cache.get(refInternal as RefInternal<unknown>) as T
+  const makeInject = (
+    targetCtx: InternalContext,
+    stack: RefInternal<unknown>[],
+  ): { inject: InjectFn; deactivate: () => void } => {
+    let active = true
+    const inject: InjectFn = <T>(refInstance: Ref<T>): T => {
+      const currentStack = active ? stack : []
+      return injectInternal(refInstance, targetCtx, currentStack)
     }
+    const deactivate = () => {
+      active = false
+    }
+    return { inject, deactivate }
+  }
 
-    // Circular dependency detection
-    if (creating.has(refInternal as RefInternal<unknown>)) {
+  const injectInternal = <T>(
+    refInstance: Ref<T>,
+    targetCtx: InternalContext,
+    stack: RefInternal<unknown>[],
+  ): T => {
+    const refInternal = findRefInContext(refInstance as RefInternal<unknown>, targetCtx) as RefInternal<T>
+
+    if (stack.includes(refInternal as RefInternal<unknown>)) {
       throw new Error(`Circular dependency detected: ${getRefName(refInternal)}`)
     }
-    creating.add(refInternal as RefInternal<unknown>)
 
+    if (refInternal.mode === 'global' && globalInstances.has(refInternal as RefInternal<unknown>)) {
+      return globalInstances.get(refInternal as RefInternal<unknown>) as T
+    }
+
+    const nextStack = [...stack, refInternal as RefInternal<unknown>]
     let instance: T
+    const { inject, deactivate } = makeInject(targetCtx, nextStack)
+    let childInject: { inject: InjectFn; deactivate: () => void } | null = null
+
     try {
       if (refInternal.providers?.length) {
-        const childCtx = createInternalContext(ctx)
+        const childCtx = createInternalContext(targetCtx)
         for (const provider of refInternal.providers) {
           const p = provider as RefInternal<unknown>
           childCtx.localProviders.set(p.overrides || provider, p)
         }
-        instance = refInternal.factory({ inject: childCtx.inject })
+        childInject = makeInject(childCtx, nextStack)
+        instance = refInternal.factory({ inject: childInject.inject })
+        if (isPromiseLike(instance)) {
+          const promise = Promise.resolve(instance)
+          if (refInternal.mode === 'global') {
+            globalInstances.set(refInternal as RefInternal<unknown>, promise)
+          }
+          void promise.then(
+            () => {
+              childInject?.deactivate()
+              deactivate()
+            },
+            () => {
+              if (refInternal.mode === 'global') {
+                if (globalInstances.get(refInternal as RefInternal<unknown>) === promise) {
+                  globalInstances.delete(refInternal as RefInternal<unknown>)
+                }
+              }
+              childInject?.deactivate()
+              deactivate()
+            },
+          )
+          return promise as T
+        }
+        childInject.deactivate()
       } else {
         instance = refInternal.factory({ inject })
+        if (isPromiseLike(instance)) {
+          const promise = Promise.resolve(instance)
+          if (refInternal.mode === 'global') {
+            globalInstances.set(refInternal as RefInternal<unknown>, promise)
+          }
+          void promise.then(
+            () => {
+              deactivate()
+            },
+            () => {
+              if (refInternal.mode === 'global') {
+                if (globalInstances.get(refInternal as RefInternal<unknown>) === promise) {
+                  globalInstances.delete(refInternal as RefInternal<unknown>)
+                }
+              }
+              deactivate()
+            },
+          )
+          return promise as T
+        }
       }
-    } finally {
-      creating.delete(refInternal as RefInternal<unknown>)
+    } catch (error) {
+      childInject?.deactivate()
+      deactivate()
+      throw error
     }
 
-    cache.set(refInternal as RefInternal<unknown>, instance)
+    deactivate()
+    if (refInternal.mode === 'global') {
+      globalInstances.set(refInternal as RefInternal<unknown>, instance)
+    }
     return instance
   }
 
-  ctx.inject = inject
+  ctx.inject = (refInstance => injectInternal(refInstance, ctx, [])) as InjectFn
   return ctx
 }
 

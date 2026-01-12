@@ -38,10 +38,20 @@ async function buildAll() {
 async function generatePackageJson() {
   const packageJson = await file(join(__dirname, '../package.json')).json()
 
-  packageJson.main = 'index.js'
-  packageJson.types = 'index.d.ts'
-  delete packageJson.scripts
-  delete packageJson.devDependencies
+  packageJson.main = './index.js'
+  packageJson.types = './index.d.ts'
+  packageJson.module = './index.js'
+  packageJson.exports = {
+    '.': {
+      types: './index.d.ts',
+      import: './index.js',
+      default: './index.js',
+    },
+  }
+  packageJson.unpkg = './index.min.js'
+  packageJson.jsdelivr = './index.min.js'
+  delete packageJson['scripts']
+  delete packageJson['devDependencies']
 
   await write(join(distPath, 'package.json'), JSON.stringify(packageJson, null, 2))
 }
