@@ -50,8 +50,8 @@ async function generatePackageJson() {
   }
   packageJson.unpkg = './index.min.js'
   packageJson.jsdelivr = './index.min.js'
-  delete packageJson['scripts']
-  delete packageJson['devDependencies']
+  delete packageJson.scripts
+  delete packageJson.devDependencies
 
   await write(join(distPath, 'package.json'), JSON.stringify(packageJson, null, 2))
 }
