@@ -71,6 +71,14 @@ That means:
 - install inside a provider -> shared only by that provider subtree
 - install again deeper -> the deeper subtree gets a new instance
 
+## Runtime Handles and Security Boundary
+
+`dn-ioc` returns opaque frozen handles from `token()`, `provide()`, `provideFor()`, and `bundleProviders()`.
+
+The public handle objects do not expose internal fields such as factory, id, local providers, or bundle items. Normal user code cannot reassign those internals or forge a valid handle by copying an object shape.
+
+This is still an in-process DI kernel for trusted application code. It is not a JavaScript sandbox and should not be used as the only isolation boundary for untrusted plugins or third-party code.
+
 ## Ref vs Token
 
 `Ref` and `Token` look similar from the outside, but they have different jobs.
@@ -99,6 +107,8 @@ This keeps the rule simple:
 
 - explicit installation decides visibility
 - first resolution decides where a self-providing `Ref` binds by default
+
+Local providers do not retroactively change a consumer `Ref` that has already been bound or cached in a parent scope. If a local override must affect a consumer service, install or rebind both the dependency and that consumer `Ref` in the same local `providers` list.
 
 ## Public API
 
@@ -351,6 +361,30 @@ await bootstrapApp(async ({ inject }) => {
 ```
 
 The same rule also applies to `provideFor(...)`.
+
+For a pure async contract, put the promise in the token type:
+
+```ts
+type Settings = { ready: boolean }
+
+const settingsToken = token<Promise<Settings>>('Settings')
+
+await bootstrapApp(
+  async ({ inject }) => {
+    const settings = await inject(settingsToken)
+    console.log(settings.ready)
+  },
+  {
+    providers: [
+      provideFor(settingsToken, async () => {
+        return { ready: true }
+      }),
+    ],
+  },
+)
+```
+
+Using `Token<Settings>` with an async factory is a type error, because `inject(settingsToken)` would otherwise look synchronous while actually returning a promise.
 
 Async results are cached inside the same installation scope. If an async provider rejects, the failure is not cached and a later injection can retry.
 

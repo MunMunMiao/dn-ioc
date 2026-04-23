@@ -1,19 +1,22 @@
-const INTERNAL_KIND = Symbol('dn_ioc.kind')
+declare const TOKEN_TYPE: unique symbol
+declare const REF_TYPE: unique symbol
+declare const PROVIDER_DEF_TYPE: unique symbol
+declare const PROVIDER_BUNDLE_TYPE: unique symbol
 
 export interface Token<T> {
-  readonly __dnIocToken__?: T
+  readonly [TOKEN_TYPE]: T
 }
 
 export interface Ref<T> extends Token<T> {
-  readonly __dnIocRef__?: true
+  readonly [REF_TYPE]: true
 }
 
 export interface ProviderDef<T> {
-  readonly __dnIocProviderDef__?: T
+  readonly [PROVIDER_DEF_TYPE]: T
 }
 
 export interface ProviderBundle {
-  readonly __dnIocProviderBundle__?: true
+  readonly [PROVIDER_BUNDLE_TYPE]: true
 }
 
 export type RefType<T> = T extends Ref<infer U> ? U : never
@@ -23,7 +26,7 @@ export type InjectKey<T> = Token<T> | Ref<T>
 export type ProviderInput = Ref<unknown> | ProviderDef<unknown> | ProviderBundle | readonly ProviderInput[]
 
 export type ProviderOptions = {
-  providers?: ProviderInput[]
+  providers?: readonly ProviderInput[]
 }
 
 export type InjectFn = <T>(key: InjectKey<T>) => T
@@ -37,34 +40,34 @@ export type Factory<T> = (ctx: Context) => T
 export type BootstrapAppFn<TResult> = (ctx: Context) => TResult | Promise<TResult>
 
 export interface BootstrapAppOptions {
-  providers?: ProviderInput[]
+  providers?: readonly ProviderInput[]
 }
 
 type InternalKind = 'token' | 'ref' | 'binding' | 'bundle'
 
-interface InternalToken<T> extends Token<T> {
-  [INTERNAL_KIND]: 'token'
+interface InternalToken<_T> {
+  kind: 'token'
   description?: string
   id: symbol
 }
 
-interface InternalRef<T> extends Ref<T> {
-  [INTERNAL_KIND]: 'ref'
+interface InternalRef<T> {
+  kind: 'ref'
   description?: string
   factory: Factory<T>
   id: symbol
-  providers?: ProviderInput[]
+  providers?: readonly ProviderInput[]
 }
 
-interface InternalProviderDef<T> extends ProviderDef<T> {
-  [INTERNAL_KIND]: 'binding'
+interface InternalProviderDef<T> {
+  kind: 'binding'
   factory: Factory<T>
   key: InternalKey<T>
-  providers?: ProviderInput[]
+  providers?: readonly ProviderInput[]
 }
 
-interface InternalProviderBundle extends ProviderBundle {
-  [INTERNAL_KIND]: 'bundle'
+interface InternalProviderBundle {
+  kind: 'bundle'
   items: readonly ProviderInput[]
 }
 
@@ -72,12 +75,31 @@ type InternalKey<T> = InternalToken<T> | InternalRef<T>
 type InternalProvider = InternalRef<unknown> | InternalProviderDef<unknown>
 type InternalRuntimeValue = InternalToken<unknown> | InternalRef<unknown> | InternalProviderDef<unknown> | InternalProviderBundle
 
+type ResolvedInstance<T> = {
+  state: 'resolved'
+  value: T
+}
+
+type PendingInstance<T> = {
+  dependencies: Set<PendingInstance<unknown>>
+  key: InternalKey<T>
+  promise: Promise<unknown>
+  settled: boolean
+  state: 'pending'
+}
+
+type InstanceRecord<T> = PendingInstance<T> | ResolvedInstance<T>
+
 interface ScopeNode {
   parent?: ScopeNode
   bindings: Map<symbol, InternalProviderDef<unknown>>
-  instances: Map<symbol, unknown>
+  instances: Map<symbol, InstanceRecord<unknown>>
   attachedChildScopes: Map<symbol, ScopeNode>
 }
+
+const keyMetadata = new WeakMap<object, InternalKey<unknown>>()
+const providerDefMetadata = new WeakMap<object, InternalProviderDef<unknown>>()
+const providerBundleMetadata = new WeakMap<object, InternalProviderBundle>()
 
 export function token<T>(description?: string): Token<T> {
   return createTokenInternal(description)
@@ -117,59 +139,114 @@ function createScope(parent?: ScopeNode): ScopeNode {
   }
 }
 
-function createTokenInternal<T>(description?: string): InternalToken<T> {
-  return {
-    [INTERNAL_KIND]: 'token',
-    description,
-    id: Symbol(description),
-  }
+function createHandle<T extends object>(): T {
+  return Object.freeze({}) as T
 }
 
-function createRefInternal<T>(factory: Factory<T>, providers?: ProviderInput[]): InternalRef<T> {
-  return {
-    [INTERNAL_KIND]: 'ref',
+function createTokenInternal<T>(description?: string): Token<T> {
+  const handle = createHandle<Token<T>>()
+  keyMetadata.set(handle, {
+    kind: 'token',
+    description,
+    id: Symbol(description),
+  })
+  return handle
+}
+
+function createRefInternal<T>(factory: Factory<T>, providers?: readonly ProviderInput[]): Ref<T> {
+  const handle = createHandle<Ref<T>>()
+  keyMetadata.set(handle, {
+    kind: 'ref',
     description: factory.name || undefined,
     factory,
     id: Symbol(factory.name || 'ref'),
-    providers,
-  }
+    providers: snapshotProviderInputs(providers),
+  })
+  return handle
 }
 
-function createProviderDefInternal<T>(key: InternalKey<T>, factory: Factory<T>, providers?: ProviderInput[]): InternalProviderDef<T> {
+function createProviderDefInternal<T>(key: InternalKey<T>, factory: Factory<T>, providers?: readonly ProviderInput[]): ProviderDef<T> {
+  const handle = createHandle<ProviderDef<T>>()
+  providerDefMetadata.set(handle, createProviderDefMetadata(key, factory, providers))
+  return handle
+}
+
+function createProviderBundleInternal(items: readonly ProviderInput[]): ProviderBundle {
+  const handle = createHandle<ProviderBundle>()
+  providerBundleMetadata.set(handle, {
+    kind: 'bundle',
+    items: snapshotProviderInputs(items) ?? Object.freeze([]),
+  })
+  return handle
+}
+
+function createProviderDefMetadata<T>(
+  key: InternalKey<T>,
+  factory: Factory<T>,
+  providers?: readonly ProviderInput[],
+): InternalProviderDef<T> {
   return {
-    [INTERNAL_KIND]: 'binding',
+    kind: 'binding',
     factory,
     key,
-    providers,
+    providers: snapshotProviderInputs(providers),
   }
 }
 
-function createProviderBundleInternal(items: readonly ProviderInput[]): InternalProviderBundle {
-  return {
-    [INTERNAL_KIND]: 'bundle',
-    items,
-  }
-}
-
-function getInternalKind(value: unknown): InternalKind | undefined {
-  if (typeof value !== 'object' || value === null || !(INTERNAL_KIND in value)) {
+function snapshotProviderInputs(inputs?: readonly ProviderInput[]): readonly ProviderInput[] | undefined {
+  if (!inputs) {
     return undefined
   }
 
-  return (value as InternalRuntimeValue)[INTERNAL_KIND]
+  return Object.freeze(inputs.map(snapshotProviderInput))
+}
+
+function snapshotProviderInput(input: ProviderInput): ProviderInput {
+  if (Array.isArray(input)) {
+    return Object.freeze(input.map(snapshotProviderInput)) as readonly ProviderInput[]
+  }
+
+  return input
+}
+
+function getRuntimeObject(value: unknown): object | undefined {
+  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) {
+    return undefined
+  }
+
+  return value
+}
+
+function getKeyMetadata(value: unknown): InternalKey<unknown> | undefined {
+  const objectValue = getRuntimeObject(value)
+  return objectValue ? keyMetadata.get(objectValue) : undefined
+}
+
+function getProviderDefMetadata(value: unknown): InternalProviderDef<unknown> | undefined {
+  const objectValue = getRuntimeObject(value)
+  return objectValue ? providerDefMetadata.get(objectValue) : undefined
+}
+
+function getProviderBundleMetadata(value: unknown): InternalProviderBundle | undefined {
+  const objectValue = getRuntimeObject(value)
+  return objectValue ? providerBundleMetadata.get(objectValue) : undefined
+}
+
+function getInternalMetadata(value: unknown): InternalRuntimeValue | undefined {
+  return getKeyMetadata(value) ?? getProviderDefMetadata(value) ?? getProviderBundleMetadata(value)
+}
+
+function getInternalKind(value: unknown): InternalKind | undefined {
+  return getInternalMetadata(value)?.kind
 }
 
 function asInternalKey<T>(key: InjectKey<T>): InternalKey<T> {
-  const kind = getInternalKind(key)
-  if (kind === 'token' || kind === 'ref') {
-    return key as InternalKey<T>
+  const metadata = getKeyMetadata(key)
+  if (metadata) {
+    return metadata as InternalKey<T>
   }
 
   throw new Error('Invalid inject key received')
-}
-
-function isInternalProviderDef(value: unknown): value is InternalProviderDef<unknown> {
-  return getInternalKind(value) === 'binding'
 }
 
 function isPromiseLike<T>(value: unknown): value is Promise<T> {
@@ -184,8 +261,11 @@ function getKeyName(key: InternalKey<unknown>): string {
 
 function formatCircularDependency(stack: InternalKey<unknown>[], key: InternalKey<unknown>): string {
   const startIndex = stack.indexOf(key)
-  const cycle = [...stack.slice(startIndex >= 0 ? startIndex : 0), key].map(getKeyName).join(' -> ')
-  return `Circular dependency detected: ${cycle}`
+  return formatCircularDependencyPath([...stack.slice(startIndex >= 0 ? startIndex : 0), key])
+}
+
+function formatCircularDependencyPath(path: InternalKey<unknown>[]): string {
+  return `Circular dependency detected: ${path.map(getKeyName).join(' -> ')}`
 }
 
 function flattenProviders(inputs: readonly ProviderInput[]): InternalProvider[] {
@@ -197,13 +277,21 @@ function flattenProviders(inputs: readonly ProviderInput[]): InternalProvider[] 
       continue
     }
 
-    if (getInternalKind(input) === 'bundle') {
-      flattened.push(...flattenProviders((input as InternalProviderBundle).items))
+    const bundle = getProviderBundleMetadata(input)
+    if (bundle) {
+      flattened.push(...flattenProviders(bundle.items))
       continue
     }
 
-    if (getInternalKind(input) === 'ref' || isInternalProviderDef(input)) {
-      flattened.push(input as InternalProvider)
+    const key = getKeyMetadata(input)
+    if (key?.kind === 'ref') {
+      flattened.push(key)
+      continue
+    }
+
+    const binding = getProviderDefMetadata(input)
+    if (binding) {
+      flattened.push(binding)
       continue
     }
 
@@ -215,10 +303,7 @@ function flattenProviders(inputs: readonly ProviderInput[]): InternalProvider[] 
 
 function installProviders(scope: ScopeNode, inputs: readonly ProviderInput[]): void {
   for (const provider of flattenProviders(inputs)) {
-    const binding =
-      getInternalKind(provider) === 'ref'
-        ? createProviderDefInternal(provider as InternalRef<unknown>, (provider as InternalRef<unknown>).factory, provider.providers)
-        : (provider as InternalProviderDef<unknown>)
+    const binding = provider.kind === 'ref' ? createProviderDefMetadata(provider, provider.factory, provider.providers) : provider
 
     scope.bindings.set(binding.key.id, binding)
   }
@@ -240,7 +325,7 @@ function findBindingScope(start: ScopeNode, key: InternalKey<unknown>): ScopeNod
 
 function ensureRefBindingInScope(ref: InternalRef<unknown>, scope: ScopeNode): ScopeNode {
   if (!scope.bindings.has(ref.id)) {
-    installProviders(scope, [ref])
+    scope.bindings.set(ref.id, createProviderDefMetadata(ref, ref.factory, ref.providers))
   }
 
   return scope
@@ -252,7 +337,7 @@ function findOrCreateBindingScope(key: InternalKey<unknown>, activeScope: ScopeN
     return existingScope
   }
 
-  if (getInternalKind(key) === 'token') {
+  if (key.kind === 'token') {
     throw new Error(`No provider for token: ${getKeyName(key)}`)
   }
 
@@ -291,14 +376,64 @@ function createInject(
   }
 }
 
+function getCurrentPending(scope: ScopeNode, stack: InternalKey<unknown>[]): PendingInstance<unknown> | undefined {
+  const currentKey = stack[stack.length - 1]
+  if (!currentKey) {
+    return undefined
+  }
+
+  const currentRecord = scope.instances.get(currentKey.id)
+  if (currentRecord?.state !== 'pending' || currentRecord.settled || currentRecord.key !== currentKey) {
+    return undefined
+  }
+
+  return currentRecord
+}
+
+function findPendingDependencyPath(from: PendingInstance<unknown>, target: PendingInstance<unknown>): InternalKey<unknown>[] | undefined {
+  if (from === target) {
+    return [from.key]
+  }
+
+  for (const dependency of from.dependencies) {
+    const path = findPendingDependencyPath(dependency, target)
+    if (!path) {
+      continue
+    }
+    return [from.key, ...path]
+  }
+
+  return undefined
+}
+
+function registerPendingDependency(dependent: PendingInstance<unknown> | undefined, dependency: PendingInstance<unknown>): void {
+  if (!dependent || dependency.settled) {
+    return
+  }
+
+  const cyclePath = findPendingDependencyPath(dependency, dependent)
+  if (cyclePath) {
+    throw new Error(formatCircularDependencyPath([dependent.key, ...cyclePath]))
+  }
+
+  dependent.dependencies.add(dependency)
+}
+
 function resolveCachedOrCreate<T>(
   key: InternalKey<T>,
   binding: InternalProviderDef<T>,
   resolutionScope: ScopeNode,
+  activeScope: ScopeNode,
   stack: InternalKey<unknown>[],
 ): T {
-  if (resolutionScope.instances.has(key.id)) {
-    return resolutionScope.instances.get(key.id) as T
+  const cached = resolutionScope.instances.get(key.id) as InstanceRecord<T> | undefined
+  if (cached) {
+    if (cached.state === 'resolved') {
+      return cached.value
+    }
+
+    registerPendingDependency(getCurrentPending(activeScope, stack), cached)
+    return cached.promise as T
   }
 
   const nextStack = [...stack, key]
@@ -308,25 +443,40 @@ function resolveCachedOrCreate<T>(
     const value = binding.factory({ inject }) as T
 
     if (isPromiseLike(value)) {
+      const pendingRecord: PendingInstance<T> = {
+        dependencies: new Set(),
+        key,
+        promise: Promise.resolve(undefined),
+        settled: false,
+        state: 'pending',
+      }
       const pending = Promise.resolve(value).then(
         resolved => {
+          pendingRecord.settled = true
+          pendingRecord.dependencies.clear()
           deactivate()
           return resolved
         },
         error => {
-          if (resolutionScope.instances.get(key.id) === pending) {
+          if (resolutionScope.instances.get(key.id) === pendingRecord) {
             resolutionScope.instances.delete(key.id)
           }
+          pendingRecord.settled = true
+          pendingRecord.dependencies.clear()
           deactivate()
           throw error
         },
       )
 
-      resolutionScope.instances.set(key.id, pending)
+      pendingRecord.promise = pending
+      resolutionScope.instances.set(key.id, pendingRecord)
       return pending as T
     }
 
-    resolutionScope.instances.set(key.id, value)
+    resolutionScope.instances.set(key.id, {
+      state: 'resolved',
+      value,
+    })
     deactivate()
     return value
   } catch (error) {
@@ -349,5 +499,5 @@ function resolve<T>(key: InjectKey<T>, activeScope: ScopeNode, stack: InternalKe
   const binding = bindingScope.bindings.get(internalKey.id) as InternalProviderDef<T>
   const resolutionScope = ensureAttachedScope(bindingScope, binding)
 
-  return resolveCachedOrCreate(internalKey, binding, resolutionScope, stack)
+  return resolveCachedOrCreate(internalKey, binding, resolutionScope, activeScope, stack)
 }

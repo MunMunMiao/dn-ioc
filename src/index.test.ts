@@ -1,5 +1,16 @@
 import { describe, expect, test } from 'bun:test'
-import { bootstrapApp, bundleProviders, type Context, isProvideRef, provide, provideFor, type Token, token } from './ioc'
+import {
+  bootstrapApp,
+  bundleProviders,
+  type Context,
+  isProvideRef,
+  type ProviderInput,
+  provide,
+  provideFor,
+  type Ref,
+  type Token,
+  token,
+} from './index'
 
 describe('IoC Container', () => {
   test('basic provide and inject with bootstrapApp', async () => {
@@ -84,6 +95,77 @@ describe('IoC Container', () => {
     expect(isProvideRef(null)).toBe(false)
   })
 
+  test('runtime handles are frozen and do not expose internal metadata', async () => {
+    const configToken = token<string>('Config')
+    const ref = provide(() => 'safe value')
+    const binding = provideFor(configToken, () => 'bound value')
+    const bundle = bundleProviders(binding)
+
+    for (const handle of [configToken, ref, binding, bundle]) {
+      expect(Object.isFrozen(handle)).toBe(true)
+      expect(Object.keys(handle)).toEqual([])
+      expect(Object.getOwnPropertySymbols(handle)).toEqual([])
+    }
+
+    expect(() => {
+      Object.defineProperty(ref, 'factory', { value: () => 'tampered value' })
+    }).toThrow()
+
+    const result = await bootstrapApp(({ inject }) => inject(ref))
+
+    expect(result).toBe('safe value')
+  })
+
+  test('forged runtime handles are rejected', async () => {
+    const forgedRef = Object.freeze({
+      [Symbol('dn_ioc.kind')]: 'ref',
+      factory: () => 'forged value',
+      id: Symbol('forged'),
+    }) as unknown as Ref<string>
+
+    const forgedProvider = Object.freeze({
+      [Symbol('dn_ioc.kind')]: 'binding',
+      factory: () => 'forged provider',
+      id: Symbol('forged-provider'),
+    }) as unknown as ProviderInput
+
+    await expect(bootstrapApp(({ inject }) => inject(forgedRef))).rejects.toThrow('Invalid inject key received')
+    await expect(
+      bootstrapApp(() => 'ok', {
+        providers: [forgedProvider],
+      }),
+    ).rejects.toThrow('Invalid provider input received')
+  })
+
+  test('provider inputs are snapshotted when handles are created', async () => {
+    const labelToken = token<string>('Label')
+    const nestedProviders: ProviderInput[] = [provideFor(labelToken, () => 'initial')]
+    const scopedRef = provide(({ inject }) => inject(labelToken), {
+      providers: [nestedProviders],
+    })
+
+    nestedProviders[0] = provideFor(labelToken, () => 'mutated')
+
+    const result = await bootstrapApp(({ inject }) => inject(scopedRef))
+
+    expect(result).toBe('initial')
+  })
+
+  test('token identity does not depend on description text', async () => {
+    const firstToken = token<string>('SharedName')
+    const secondToken = token<string>('SharedName')
+
+    await bootstrapApp(
+      ({ inject }) => {
+        expect(inject(firstToken)).toBe('first')
+        expect(() => inject(secondToken)).toThrow('No provider for token: SharedName')
+      },
+      {
+        providers: [provideFor(firstToken, () => 'first')],
+      },
+    )
+  })
+
   test('local providers create a shared subtree instance', async () => {
     const serviceToken = token<{ id: number }>('Service')
     let counter = 0
@@ -120,6 +202,45 @@ describe('IoC Container', () => {
       expect(() => inject(serviceToken)).toThrow('No provider for token: LocalOnly')
       expect(inject(scopedRef)).toBe('local value')
       expect(() => inject(serviceToken)).toThrow('No provider for token: LocalOnly')
+    })
+  })
+
+  test('local providers fall back to parent bindings when not overridden', async () => {
+    const configToken = token<string>('Config')
+    const unrelatedToken = token<string>('Unrelated')
+    const scopedRef = provide(
+      ({ inject }) => ({
+        config: inject(configToken),
+        unrelated: inject(unrelatedToken),
+      }),
+      {
+        providers: [provideFor(unrelatedToken, () => 'local')],
+      },
+    )
+
+    const result = await bootstrapApp(({ inject }) => inject(scopedRef), {
+      providers: [provideFor(configToken, () => 'root')],
+    })
+
+    expect(result).toEqual({
+      config: 'root',
+      unrelated: 'local',
+    })
+  })
+
+  test('sibling local providers for the same token stay isolated', async () => {
+    const tenantToken = token<string>('Tenant')
+    const leftRef = provide(({ inject }) => inject(tenantToken), {
+      providers: [provideFor(tenantToken, () => 'left')],
+    })
+    const rightRef = provide(({ inject }) => inject(tenantToken), {
+      providers: [provideFor(tenantToken, () => 'right')],
+    })
+
+    await bootstrapApp(({ inject }) => {
+      expect(inject(leftRef)).toBe('left')
+      expect(inject(rightRef)).toBe('right')
+      expect(() => inject(tenantToken)).toThrow('No provider for token: Tenant')
     })
   })
 
@@ -169,6 +290,38 @@ describe('IoC Container', () => {
     expect(result.local).toBe('local config')
   })
 
+  test('local overrides do not change an already bound parent consumer ref', async () => {
+    const configRef = provide(() => 'root config')
+    const serviceRef = provide(({ inject }) => inject(configRef))
+    const localServiceRef = provide(({ inject }) => inject(serviceRef), {
+      providers: [provideFor(configRef, () => 'local config')],
+    })
+
+    const result = await bootstrapApp(({ inject }) => ({
+      rootFirst: inject(serviceRef),
+      localAfterRoot: inject(localServiceRef),
+    }))
+
+    expect(result.rootFirst).toBe('root config')
+    expect(result.localAfterRoot).toBe('root config')
+  })
+
+  test('consumer refs can be explicitly rebound in local providers', async () => {
+    const configRef = provide(() => 'root config')
+    const serviceRef = provide(({ inject }) => inject(configRef))
+    const localServiceRef = provide(({ inject }) => inject(serviceRef), {
+      providers: [provideFor(configRef, () => 'local config'), provideFor(serviceRef, ({ inject }) => inject(configRef))],
+    })
+
+    const result = await bootstrapApp(({ inject }) => ({
+      rootFirst: inject(serviceRef),
+      localAfterRoot: inject(localServiceRef),
+    }))
+
+    expect(result.rootFirst).toBe('root config')
+    expect(result.localAfterRoot).toBe('local config')
+  })
+
   test('root providers can install tokens and bundles', async () => {
     const envToken = token<string>('Env')
     const apiToken = token<string>('ApiBaseUrl')
@@ -185,6 +338,38 @@ describe('IoC Container', () => {
     expect(result).toBe('https://test.example.com')
   })
 
+  test('root providers can install refs explicitly', async () => {
+    let counter = 0
+    const serviceRef = provide(() => ({ id: ++counter }))
+
+    const result = await bootstrapApp(
+      ({ inject }) => ({
+        first: inject(serviceRef),
+        second: inject(serviceRef),
+      }),
+      {
+        providers: [serviceRef],
+      },
+    )
+
+    expect(result.first).toBe(result.second)
+    expect(counter).toBe(1)
+  })
+
+  test('later providers override earlier providers in the same installation scope', async () => {
+    const labelToken = token<string>('Label')
+
+    const result = await bootstrapApp(({ inject }) => inject(labelToken), {
+      providers: [
+        provideFor(labelToken, () => 'first'),
+        bundleProviders([provideFor(labelToken, () => 'from bundle')]),
+        provideFor(labelToken, () => 'last'),
+      ],
+    })
+
+    expect(result).toBe('last')
+  })
+
   test('bundles can be nested and flattened', async () => {
     const aToken = token<string>('A')
     const bToken = token<string>('B')
@@ -199,6 +384,20 @@ describe('IoC Container', () => {
     })
 
     expect(result).toBe('hello world')
+  })
+
+  test('bundles snapshot nested provider arrays when created', async () => {
+    const labelToken = token<string>('Label')
+    const nestedProviders: ProviderInput[] = [provideFor(labelToken, () => 'initial')]
+    const bundle = bundleProviders(nestedProviders)
+
+    nestedProviders[0] = provideFor(labelToken, () => 'mutated')
+
+    const result = await bootstrapApp(({ inject }) => inject(labelToken), {
+      providers: [bundle],
+    })
+
+    expect(result).toBe('initial')
   })
 
   test('deferred inject stays available for lazy lookup after factory returns', async () => {
@@ -250,10 +449,11 @@ describe('IoC Container', () => {
   })
 
   test('circular dependency error includes the dependency path', async () => {
-    const aRef = provide(function ServiceA({ inject }) {
+    let bRef!: Ref<unknown>
+    const aRef: Ref<unknown> = provide(function ServiceA({ inject }): unknown {
       return inject(bRef)
     })
-    const bRef = provide(function ServiceB({ inject }) {
+    bRef = provide(function ServiceB({ inject }): unknown {
       return inject(aRef)
     })
 
@@ -263,8 +463,9 @@ describe('IoC Container', () => {
   })
 
   test('anonymous circular dependency also uses <anonymous> in the cycle path', async () => {
-    const aRef = provide(({ inject }) => inject(bRef))
-    const bRef = provide(({ inject }) => inject(aRef))
+    let bRef!: Ref<unknown>
+    const aRef: Ref<unknown> = provide(({ inject }): unknown => inject(bRef))
+    bRef = provide(({ inject }): unknown => inject(aRef))
 
     await expect(bootstrapApp(({ inject }) => inject(aRef))).rejects.toThrow(
       'Circular dependency detected: <anonymous> -> <anonymous> -> <anonymous>',
@@ -282,6 +483,47 @@ describe('IoC Container', () => {
     expect(top.left.base).toBe(top.right.base)
     expect(top.left.side).toBe('left')
     expect(top.right.side).toBe('right')
+  })
+
+  test('falsy and undefined values are cached', async () => {
+    let undefinedAttempts = 0
+    let falsyAttempts = 0
+    const undefinedRef = provide(() => {
+      undefinedAttempts++
+      return undefined
+    })
+    const falsyRef = provide(() => {
+      falsyAttempts++
+      return 0
+    })
+
+    await bootstrapApp(({ inject }) => {
+      expect(inject(undefinedRef)).toBeUndefined()
+      expect(inject(undefinedRef)).toBeUndefined()
+      expect(inject(falsyRef)).toBe(0)
+      expect(inject(falsyRef)).toBe(0)
+    })
+
+    expect(undefinedAttempts).toBe(1)
+    expect(falsyAttempts).toBe(1)
+  })
+
+  test('sync provider failures are not cached', async () => {
+    let attempts = 0
+    const flakyRef = provide(() => {
+      attempts++
+      if (attempts === 1) {
+        throw new Error('Temporary sync failure')
+      }
+      return 'recovered'
+    })
+
+    await bootstrapApp(({ inject }) => {
+      expect(() => inject(flakyRef)).toThrow('Temporary sync failure')
+      expect(inject(flakyRef)).toBe('recovered')
+    })
+
+    expect(attempts).toBe(2)
   })
 })
 
@@ -322,6 +564,31 @@ describe('IoC Container - Async Support', () => {
     expect(attempts).toBe(2)
   })
 
+  test('concurrent async provider rejection is shared and then retried', async () => {
+    let attempts = 0
+    const flakyRef = provide(async () => {
+      attempts++
+      await new Promise(resolve => setTimeout(resolve, 5))
+      if (attempts === 1) {
+        throw new Error('Shared temporary failure')
+      }
+      return { ok: true, attempts }
+    })
+
+    await bootstrapApp(async ({ inject }) => {
+      const first = inject(flakyRef)
+      const second = inject(flakyRef)
+
+      expect(first).toBe(second)
+      await expect(Promise.all([first, second])).rejects.toThrow('Shared temporary failure')
+
+      const recovered = await inject(flakyRef)
+      expect(recovered).toEqual({ ok: true, attempts: 2 })
+    })
+
+    expect(attempts).toBe(2)
+  })
+
   test('async local providers stay scoped to their subtree', async () => {
     const tenantToken = token<string>('Tenant')
     let counter = 0
@@ -351,7 +618,7 @@ describe('IoC Container - Async Support', () => {
   })
 
   test('async provideFor bindings can be awaited by user code', async () => {
-    const settingsToken = token<{ ready: boolean }>('Settings')
+    const settingsToken = token<Promise<{ ready: boolean }>>('Settings')
     const serviceRef = provide(async ({ inject }) => {
       const settings = await inject(settingsToken)
       return {
@@ -375,6 +642,70 @@ describe('IoC Container - Async Support', () => {
     )
 
     expect(result).toBe(true)
+  })
+
+  test('sync factories can reuse an already pending async dependency', async () => {
+    const asyncRef = provide(async () => {
+      await new Promise(resolve => setTimeout(resolve, 5))
+      return 'async value'
+    })
+    const syncRef = provide(({ inject }) => inject(asyncRef))
+
+    await bootstrapApp(async ({ inject }) => {
+      const pending = inject(asyncRef)
+
+      expect(await inject(syncRef)).toBe('async value')
+      expect(await pending).toBe('async value')
+    })
+  })
+
+  test('concurrent async circular dependencies reject instead of hanging', async () => {
+    const wait = () => new Promise(resolve => setTimeout(resolve, 0))
+    let bRef!: Ref<Promise<unknown>>
+    const aRef: Ref<Promise<unknown>> = provide(async function AsyncServiceA({ inject }): Promise<unknown> {
+      await wait()
+      return await inject(bRef)
+    })
+    bRef = provide(async function AsyncServiceB({ inject }): Promise<unknown> {
+      await wait()
+      return await inject(aRef)
+    })
+
+    const result = bootstrapApp(async ({ inject }) => {
+      await Promise.all([inject(aRef), inject(bRef)])
+    })
+    const timeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Timed out waiting for circular dependency detection')), 50)
+    })
+
+    await expect(Promise.race([result, timeout])).rejects.toThrow('Circular dependency detected')
+  })
+
+  test('concurrent async circular dependencies include longer pending paths', async () => {
+    const wait = () => new Promise(resolve => setTimeout(resolve, 0))
+    let bRef!: Ref<Promise<unknown>>
+    let cRef!: Ref<Promise<unknown>>
+    const aRef: Ref<Promise<unknown>> = provide(async function AsyncServiceA({ inject }): Promise<unknown> {
+      await wait()
+      return await inject(bRef)
+    })
+    bRef = provide(async function AsyncServiceB({ inject }): Promise<unknown> {
+      await wait()
+      return await inject(cRef)
+    })
+    cRef = provide(async function AsyncServiceC({ inject }): Promise<unknown> {
+      await wait()
+      return await inject(aRef)
+    })
+
+    const result = bootstrapApp(async ({ inject }) => {
+      await Promise.all([inject(aRef), inject(bRef), inject(cRef)])
+    })
+    const timeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Timed out waiting for circular dependency detection')), 50)
+    })
+
+    await expect(Promise.race([result, timeout])).rejects.toThrow('Circular dependency detected')
   })
 })
 
