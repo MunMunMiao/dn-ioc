@@ -43,8 +43,6 @@ export interface BootstrapAppOptions {
   providers?: readonly ProviderInput[]
 }
 
-type InternalKind = 'token' | 'ref' | 'binding' | 'bundle'
-
 interface InternalToken<_T> {
   kind: 'token'
   description?: string
@@ -83,7 +81,7 @@ type ResolvedInstance<T> = {
 type PendingInstance<T> = {
   dependencies: Set<PendingInstance<unknown>>
   key: InternalKey<T>
-  promise: Promise<unknown>
+  promise: Promise<T>
   settled: boolean
   state: 'pending'
 }
@@ -97,9 +95,10 @@ interface ScopeNode {
   attachedChildScopes: Map<symbol, ScopeNode>
 }
 
-const keyMetadata = new WeakMap<object, InternalKey<unknown>>()
-const providerDefMetadata = new WeakMap<object, InternalProviderDef<unknown>>()
-const providerBundleMetadata = new WeakMap<object, InternalProviderBundle>()
+// One table is all that's needed: every runtime handle (token/ref/binding/bundle) is keyed by its frozen
+// public object and carries a `kind` discriminator. Collapsing the three previous WeakMaps into one cuts
+// lookups from three to one on every hot path (flatten / inject-key / isProvideRef).
+const handleMetadata = new WeakMap<object, InternalRuntimeValue>()
 
 export function token<T>(description?: string): Token<T> {
   return createTokenInternal(description)
@@ -118,14 +117,14 @@ export function bundleProviders(...inputs: ProviderInput[]): ProviderBundle {
 }
 
 export function isProvideRef(value: unknown): value is Ref<unknown> {
-  return getInternalKind(value) === 'ref'
+  return lookup(value)?.kind === 'ref'
 }
 
 export async function bootstrapApp<TResult>(fn: BootstrapAppFn<TResult>, options?: BootstrapAppOptions): Promise<TResult> {
   const rootScope = createScope()
   installProviders(rootScope, options?.providers ?? [])
 
-  return await fn({
+  return fn({
     inject: key => resolve(key, rootScope, []),
   })
 }
@@ -145,7 +144,7 @@ function createHandle<T extends object>(): T {
 
 function createTokenInternal<T>(description?: string): Token<T> {
   const handle = createHandle<Token<T>>()
-  keyMetadata.set(handle, {
+  handleMetadata.set(handle, {
     kind: 'token',
     description,
     id: Symbol(description),
@@ -155,11 +154,12 @@ function createTokenInternal<T>(description?: string): Token<T> {
 
 function createRefInternal<T>(factory: Factory<T>, providers?: readonly ProviderInput[]): Ref<T> {
   const handle = createHandle<Ref<T>>()
-  keyMetadata.set(handle, {
+  const description = factory.name || undefined
+  handleMetadata.set(handle, {
     kind: 'ref',
-    description: factory.name || undefined,
+    description,
     factory,
-    id: Symbol(factory.name || 'ref'),
+    id: Symbol(description),
     providers: snapshotProviderInputs(providers),
   })
   return handle
@@ -167,15 +167,15 @@ function createRefInternal<T>(factory: Factory<T>, providers?: readonly Provider
 
 function createProviderDefInternal<T>(key: InternalKey<T>, factory: Factory<T>, providers?: readonly ProviderInput[]): ProviderDef<T> {
   const handle = createHandle<ProviderDef<T>>()
-  providerDefMetadata.set(handle, createProviderDefMetadata(key, factory, providers))
+  handleMetadata.set(handle, createProviderDefMetadata(key, factory, snapshotProviderInputs(providers)))
   return handle
 }
 
 function createProviderBundleInternal(items: readonly ProviderInput[]): ProviderBundle {
   const handle = createHandle<ProviderBundle>()
-  providerBundleMetadata.set(handle, {
+  handleMetadata.set(handle, {
     kind: 'bundle',
-    items: snapshotProviderInputs(items) ?? Object.freeze([]),
+    items: Object.freeze(items.map(snapshotProviderInput)),
   })
   return handle
 }
@@ -183,73 +183,41 @@ function createProviderBundleInternal(items: readonly ProviderInput[]): Provider
 function createProviderDefMetadata<T>(
   key: InternalKey<T>,
   factory: Factory<T>,
-  providers?: readonly ProviderInput[],
+  providers: readonly ProviderInput[] | undefined,
 ): InternalProviderDef<T> {
-  return {
-    kind: 'binding',
-    factory,
-    key,
-    providers: snapshotProviderInputs(providers),
-  }
+  return { kind: 'binding', factory, key, providers }
 }
 
 function snapshotProviderInputs(inputs?: readonly ProviderInput[]): readonly ProviderInput[] | undefined {
   if (!inputs) {
     return undefined
   }
-
   return Object.freeze(inputs.map(snapshotProviderInput))
 }
 
 function snapshotProviderInput(input: ProviderInput): ProviderInput {
   if (Array.isArray(input)) {
-    return Object.freeze(input.map(snapshotProviderInput)) as readonly ProviderInput[]
+    return Object.freeze(input.map(snapshotProviderInput))
   }
-
   return input
 }
 
-function getRuntimeObject(value: unknown): object | undefined {
+function lookup(value: unknown): InternalRuntimeValue | undefined {
   if ((typeof value !== 'object' && typeof value !== 'function') || value === null) {
     return undefined
   }
-
-  return value
-}
-
-function getKeyMetadata(value: unknown): InternalKey<unknown> | undefined {
-  const objectValue = getRuntimeObject(value)
-  return objectValue ? keyMetadata.get(objectValue) : undefined
-}
-
-function getProviderDefMetadata(value: unknown): InternalProviderDef<unknown> | undefined {
-  const objectValue = getRuntimeObject(value)
-  return objectValue ? providerDefMetadata.get(objectValue) : undefined
-}
-
-function getProviderBundleMetadata(value: unknown): InternalProviderBundle | undefined {
-  const objectValue = getRuntimeObject(value)
-  return objectValue ? providerBundleMetadata.get(objectValue) : undefined
-}
-
-function getInternalMetadata(value: unknown): InternalRuntimeValue | undefined {
-  return getKeyMetadata(value) ?? getProviderDefMetadata(value) ?? getProviderBundleMetadata(value)
-}
-
-function getInternalKind(value: unknown): InternalKind | undefined {
-  return getInternalMetadata(value)?.kind
+  return handleMetadata.get(value)
 }
 
 function asInternalKey<T>(key: InjectKey<T>): InternalKey<T> {
-  const metadata = getKeyMetadata(key)
-  if (metadata) {
-    return metadata as InternalKey<T>
+  const meta = lookup(key)
+  if (meta && (meta.kind === 'token' || meta.kind === 'ref')) {
+    return meta as InternalKey<T>
   }
-
   throw new Error('Invalid inject key received')
 }
 
-function isPromiseLike<T>(value: unknown): value is Promise<T> {
+function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   return (
     (typeof value === 'object' || typeof value === 'function') && value !== null && typeof (value as { then?: unknown }).then === 'function'
   )
@@ -259,12 +227,7 @@ function getKeyName(key: InternalKey<unknown>): string {
   return key.description || '<anonymous>'
 }
 
-function formatCircularDependency(stack: InternalKey<unknown>[], key: InternalKey<unknown>): string {
-  const startIndex = stack.indexOf(key)
-  return formatCircularDependencyPath([...stack.slice(startIndex >= 0 ? startIndex : 0), key])
-}
-
-function formatCircularDependencyPath(path: InternalKey<unknown>[]): string {
+function formatCircularDependency(path: InternalKey<unknown>[]): string {
   return `Circular dependency detected: ${path.map(getKeyName).join(' -> ')}`
 }
 
@@ -277,21 +240,13 @@ function flattenProviders(inputs: readonly ProviderInput[]): InternalProvider[] 
       continue
     }
 
-    const bundle = getProviderBundleMetadata(input)
-    if (bundle) {
-      flattened.push(...flattenProviders(bundle.items))
+    const meta = lookup(input)
+    if (meta?.kind === 'bundle') {
+      flattened.push(...flattenProviders(meta.items))
       continue
     }
-
-    const key = getKeyMetadata(input)
-    if (key?.kind === 'ref') {
-      flattened.push(key)
-      continue
-    }
-
-    const binding = getProviderDefMetadata(input)
-    if (binding) {
-      flattened.push(binding)
+    if (meta?.kind === 'ref' || meta?.kind === 'binding') {
+      flattened.push(meta)
       continue
     }
 
@@ -323,25 +278,31 @@ function findBindingScope(start: ScopeNode, key: InternalKey<unknown>): ScopeNod
   return undefined
 }
 
-function ensureRefBindingInScope(ref: InternalRef<unknown>, scope: ScopeNode): ScopeNode {
-  if (!scope.bindings.has(ref.id)) {
-    scope.bindings.set(ref.id, createProviderDefMetadata(ref, ref.factory, ref.providers))
+function lazilyInstallRefBinding<T>(ref: InternalRef<T>, scope: ScopeNode): InternalProviderDef<T> {
+  let binding = scope.bindings.get(ref.id) as InternalProviderDef<T> | undefined
+  if (!binding) {
+    binding = createProviderDefMetadata(ref, ref.factory, ref.providers)
+    scope.bindings.set(ref.id, binding)
   }
-
-  return scope
+  return binding
 }
 
-function findOrCreateBindingScope(key: InternalKey<unknown>, activeScope: ScopeNode): ScopeNode {
-  const existingScope = findBindingScope(activeScope, key)
-  if (existingScope) {
-    return existingScope
+// Walk up from the active scope; if no binding is found, refs self-install at the active scope,
+// tokens raise — that asymmetry is the whole point of having two kinds of keys.
+function locateOrInstallBindingScope<T>(
+  key: InternalKey<T>,
+  activeScope: ScopeNode,
+): { scope: ScopeNode; binding: InternalProviderDef<T> } {
+  const existing = findBindingScope(activeScope, key)
+  if (existing) {
+    return { scope: existing, binding: existing.bindings.get(key.id) as InternalProviderDef<T> }
   }
 
   if (key.kind === 'token') {
     throw new Error(`No provider for token: ${getKeyName(key)}`)
   }
 
-  return ensureRefBindingInScope(key as InternalRef<unknown>, activeScope)
+  return { scope: activeScope, binding: lazilyInstallRefBinding(key, activeScope) }
 }
 
 function ensureAttachedScope(ownerScope: ScopeNode, binding: InternalProviderDef<unknown>): ScopeNode {
@@ -376,14 +337,16 @@ function createInject(
   }
 }
 
-function getCurrentPending(scope: ScopeNode, stack: InternalKey<unknown>[]): PendingInstance<unknown> | undefined {
+// Only the top-of-stack pending record is the "currently resolving" frame; it lives in `activeScope`
+// because that's the scope passed into `createInject` when its factory started running.
+function getCurrentPending(activeScope: ScopeNode, stack: InternalKey<unknown>[]): PendingInstance<unknown> | undefined {
   const currentKey = stack[stack.length - 1]
   if (!currentKey) {
     return undefined
   }
 
-  const currentRecord = scope.instances.get(currentKey.id)
-  if (currentRecord?.state !== 'pending' || currentRecord.settled || currentRecord.key !== currentKey) {
+  const currentRecord = activeScope.instances.get(currentKey.id)
+  if (currentRecord?.state !== 'pending' || currentRecord.settled) {
     return undefined
   }
 
@@ -413,75 +376,75 @@ function registerPendingDependency(dependent: PendingInstance<unknown> | undefin
 
   const cyclePath = findPendingDependencyPath(dependency, dependent)
   if (cyclePath) {
-    throw new Error(formatCircularDependencyPath([dependent.key, ...cyclePath]))
+    throw new Error(formatCircularDependency([dependent.key, ...cyclePath]))
   }
 
   dependent.dependencies.add(dependency)
 }
 
-function resolveCachedOrCreate<T>(
+function reuseCached<T>(cached: InstanceRecord<T>, activeScope: ScopeNode, stack: InternalKey<unknown>[]): T {
+  if (cached.state === 'resolved') {
+    return cached.value
+  }
+  registerPendingDependency(getCurrentPending(activeScope, stack), cached)
+  return cached.promise as T
+}
+
+function attachPending<T>(key: InternalKey<T>, raw: PromiseLike<T>, resolutionScope: ScopeNode, deactivate: () => void): Promise<T> {
+  // The factory's promise + the pending record reference each other; the record is filled in
+  // synchronously below, before any microtask can fire either callback. No placeholder Promise needed.
+  let pendingRecord!: PendingInstance<T>
+  const settle = () => {
+    pendingRecord.settled = true
+    pendingRecord.dependencies.clear()
+    deactivate()
+  }
+  const promise = Promise.resolve(raw).then(
+    resolved => {
+      settle()
+      return resolved
+    },
+    error => {
+      if (resolutionScope.instances.get(key.id) === pendingRecord) {
+        resolutionScope.instances.delete(key.id)
+      }
+      settle()
+      throw error
+    },
+  )
+
+  pendingRecord = {
+    dependencies: new Set(),
+    key,
+    promise,
+    settled: false,
+    state: 'pending',
+  }
+  resolutionScope.instances.set(key.id, pendingRecord)
+  return promise
+}
+
+function invokeFactory<T>(
   key: InternalKey<T>,
   binding: InternalProviderDef<T>,
   resolutionScope: ScopeNode,
-  activeScope: ScopeNode,
   stack: InternalKey<unknown>[],
 ): T {
-  const cached = resolutionScope.instances.get(key.id) as InstanceRecord<T> | undefined
-  if (cached) {
-    if (cached.state === 'resolved') {
-      return cached.value
-    }
-
-    registerPendingDependency(getCurrentPending(activeScope, stack), cached)
-    return cached.promise as T
-  }
-
   const nextStack = [...stack, key]
   const { deactivate, inject } = createInject(resolutionScope, nextStack)
 
   try {
-    const value = binding.factory({ inject }) as T
+    const value = binding.factory({ inject })
 
-    if (isPromiseLike(value)) {
-      const pendingRecord: PendingInstance<T> = {
-        dependencies: new Set(),
-        key,
-        promise: Promise.resolve(undefined),
-        settled: false,
-        state: 'pending',
-      }
-      const pending = Promise.resolve(value).then(
-        resolved => {
-          pendingRecord.settled = true
-          pendingRecord.dependencies.clear()
-          deactivate()
-          return resolved
-        },
-        error => {
-          if (resolutionScope.instances.get(key.id) === pendingRecord) {
-            resolutionScope.instances.delete(key.id)
-          }
-          pendingRecord.settled = true
-          pendingRecord.dependencies.clear()
-          deactivate()
-          throw error
-        },
-      )
-
-      pendingRecord.promise = pending
-      resolutionScope.instances.set(key.id, pendingRecord)
-      return pending as T
+    if (isPromiseLike<T>(value)) {
+      return attachPending(key, value, resolutionScope, deactivate) as T
     }
 
-    resolutionScope.instances.set(key.id, {
-      state: 'resolved',
-      value,
-    })
+    resolutionScope.instances.set(key.id, { state: 'resolved', value })
     deactivate()
     return value
   } catch (error) {
     deactivate()
-    resolutionScope.instances.delete(key.id)
     throw error
   }
 }
@@ -489,15 +452,19 @@ function resolveCachedOrCreate<T>(
 function resolve<T>(key: InjectKey<T>, activeScope: ScopeNode, stack: InternalKey<unknown>[]): T {
   const internalKey = asInternalKey(key)
 
-  if (stack.includes(internalKey)) {
-    throw new Error(formatCircularDependency(stack, internalKey))
+  const cycleStart = stack.indexOf(internalKey)
+  if (cycleStart >= 0) {
+    throw new Error(formatCircularDependency([...stack.slice(cycleStart), internalKey]))
   }
 
   // Tokens must be installed explicitly. Refs are self-providing and bind
   // their default factory into the current active installation scope.
-  const bindingScope = findOrCreateBindingScope(internalKey, activeScope)
-  const binding = bindingScope.bindings.get(internalKey.id) as InternalProviderDef<T>
+  const { scope: bindingScope, binding } = locateOrInstallBindingScope(internalKey, activeScope)
   const resolutionScope = ensureAttachedScope(bindingScope, binding)
 
-  return resolveCachedOrCreate(internalKey, binding, resolutionScope, activeScope, stack)
+  const cached = resolutionScope.instances.get(internalKey.id) as InstanceRecord<T> | undefined
+  if (cached) {
+    return reuseCached(cached, activeScope, stack)
+  }
+  return invokeFactory(internalKey, binding, resolutionScope, stack)
 }
