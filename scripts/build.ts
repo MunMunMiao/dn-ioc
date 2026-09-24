@@ -52,6 +52,8 @@ async function generatePackageJson() {
   packageJson.jsdelivr = './index.min.js'
   delete packageJson.scripts
   delete packageJson.devDependencies
+  // `engines` describes this repo's toolchain (Bun), not a constraint on consumers.
+  delete packageJson.engines
 
   await write(join(distPath, 'package.json'), JSON.stringify(packageJson, null, 2))
 }

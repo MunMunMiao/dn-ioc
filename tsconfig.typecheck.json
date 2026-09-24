@@ -4,7 +4,8 @@
     "declaration": false,
     "emitDeclarationOnly": false,
     "noEmit": true,
-    "rootDir": "."
+    "rootDir": ".",
+    "types": ["bun"]
   },
   "include": ["src/**/*.ts", "type-tests/**/*.ts"],
   "exclude": []

@@ -22,7 +22,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: bun run lint
+      # lint:check, not lint: `lint` applies fixes and would pass on unformatted code.
+      - run: bun run lint:check
 
   type-check:
     runs-on: ubuntu-latest

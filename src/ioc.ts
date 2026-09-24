@@ -31,16 +31,38 @@ export type ProviderOptions = {
 
 export type InjectFn = <T>(key: InjectKey<T>) => T
 
+export type OnDisposeFn = (fn: () => void | Promise<void>) => void
+
 export interface Context {
   inject: InjectFn
+  /**
+   * Registers a cleanup hook, run newest-first when the app stops.
+   *
+   * A hook must resolve to nothing: return `void`, or a `Promise<void>` that `stop()` awaits
+   * before it resolves. Returning anything else is a type error, so a cleanup call that has a
+   * return value is discarded explicitly rather than by accident:
+   *
+   * ```ts
+   * onDispose(() => { server.close() })          // braces discard the returned Server
+   * onDispose(async () => { await pool.end() })  // awaited by stop()
+   * ```
+   *
+   * Callable only while this factory is running, and only before `stop()`.
+   */
+  onDispose: OnDisposeFn
 }
 
 export type Factory<T> = (ctx: Context) => T
 
-export type BootstrapAppFn<TResult> = (ctx: Context) => TResult | Promise<TResult>
+export type BootstrapAppFn = (ctx: Context) => void | Promise<void>
 
 export interface BootstrapAppOptions {
   providers?: readonly ProviderInput[]
+}
+
+export interface App extends AsyncDisposable {
+  start(): Promise<void>
+  stop(): Promise<void>
 }
 
 interface InternalToken<_T> {
@@ -88,11 +110,17 @@ type PendingInstance<T> = {
 
 type InstanceRecord<T> = PendingInstance<T> | ResolvedInstance<T>
 
+type DisposeRegistry = {
+  disposed: boolean
+  hooks: Array<() => void | Promise<void>>
+}
+
 interface ScopeNode {
   parent?: ScopeNode
   bindings: Map<symbol, InternalProviderDef<unknown>>
   instances: Map<symbol, InstanceRecord<unknown>>
   attachedChildScopes: Map<symbol, ScopeNode>
+  disposeRegistry: DisposeRegistry
 }
 
 // One table is all that's needed: every runtime handle (token/ref/binding/bundle) is keyed by its frozen
@@ -120,12 +148,98 @@ export function isProvideRef(value: unknown): value is Ref<unknown> {
   return lookup(value)?.kind === 'ref'
 }
 
-export async function bootstrapApp<TResult>(fn: BootstrapAppFn<TResult>, options?: BootstrapAppOptions): Promise<TResult> {
+// Node 18 has no `Symbol.asyncDispose`; TypeScript's `await using` downlevel emit looks the key up
+// through `Symbol.for`, so match that fallback instead of leaving the protocol silently unimplemented.
+const asyncDispose: typeof Symbol.asyncDispose = Symbol.asyncDispose ?? (Symbol.for('Symbol.asyncDispose') as typeof Symbol.asyncDispose)
+
+export function bootstrapApp(fn: BootstrapAppFn, options?: BootstrapAppOptions): App {
   const rootScope = createScope()
   installProviders(rootScope, options?.providers ?? [])
 
-  return fn({
-    inject: key => resolve(key, rootScope, []),
+  let startPromise: Promise<void> | undefined
+  let stopPromise: Promise<void> | undefined
+
+  const stop = (): Promise<void> => {
+    stopPromise ??= runDispose(rootScope.disposeRegistry)
+    return stopPromise
+  }
+
+  const runStart = async (): Promise<void> => {
+    const { deactivate, inject, onDispose } = createInject(rootScope, [])
+    try {
+      const value = fn({ inject, onDispose })
+
+      // A synchronous factory closes its registration window the moment it returns. Falling through
+      // to `await` would defer `deactivate` by a microtask and leave `onDispose` briefly open.
+      if (!isPromiseLike<void>(value)) {
+        deactivate()
+        return
+      }
+
+      try {
+        await value
+        return
+      } finally {
+        deactivate()
+      }
+    } catch (error) {
+      deactivate()
+      // A half-started graph already holds resources; roll it back before surfacing the failure.
+      const errors: unknown[] = [error]
+      try {
+        await stop()
+      } catch (cleanupError) {
+        errors.push(cleanupError)
+      }
+      throw combineErrors(errors, 'App startup and stop failed')
+    }
+  }
+
+  const start = (): Promise<void> => {
+    // Checked ahead of the idempotence cache: a stopped app must reject rather than replay the
+    // cached completion of a run whose resources the cleanup hooks have already released.
+    if (rootScope.disposeRegistry.disposed) {
+      return Promise.reject(new Error('Cannot start an app that has been stopped'))
+    }
+    startPromise ??= runStart()
+    return startPromise
+  }
+
+  return { start, stop, [asyncDispose]: stop }
+}
+
+function createDisposeRegistry(): DisposeRegistry {
+  return {
+    disposed: false,
+    hooks: [],
+  }
+}
+
+function combineErrors(errors: unknown[], message: string): unknown {
+  if (errors.length === 1) {
+    return errors[0]
+  }
+  return new AggregateError(errors, message)
+}
+
+function runDispose(registry: DisposeRegistry): Promise<void> {
+  // Flipped synchronously so `inject()` is closed the moment `stop()` is called, not a microtask later.
+  registry.disposed = true
+  const hooks = registry.hooks.splice(0).reverse()
+  return Promise.resolve().then(async () => {
+    const errors: unknown[] = []
+
+    for (const hook of hooks) {
+      try {
+        await hook()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+
+    if (errors.length > 0) {
+      throw combineErrors(errors, 'App stop failed')
+    }
   })
 }
 
@@ -133,6 +247,7 @@ function createScope(parent?: ScopeNode): ScopeNode {
   return {
     attachedChildScopes: new Map(),
     bindings: new Map(),
+    disposeRegistry: parent?.disposeRegistry ?? createDisposeRegistry(),
     instances: new Map(),
     parent,
   }
@@ -326,6 +441,7 @@ function createInject(
 ): {
   deactivate: () => void
   inject: InjectFn
+  onDispose: OnDisposeFn
 } {
   let active = true
 
@@ -334,6 +450,15 @@ function createInject(
       active = false
     },
     inject: <T>(key: InjectKey<T>): T => resolve(key, scope, active ? stack : []),
+    onDispose: fn => {
+      if (!active) {
+        throw new Error('onDispose can only be called while the factory is running')
+      }
+      if (scope.disposeRegistry.disposed) {
+        throw new Error('Cannot register cleanup after the app has stopped')
+      }
+      scope.disposeRegistry.hooks.push(fn)
+    },
   }
 }
 
@@ -431,10 +556,10 @@ function invokeFactory<T>(
   stack: InternalKey<unknown>[],
 ): T {
   const nextStack = [...stack, key]
-  const { deactivate, inject } = createInject(resolutionScope, nextStack)
+  const { deactivate, inject, onDispose } = createInject(resolutionScope, nextStack)
 
   try {
-    const value = binding.factory({ inject })
+    const value = binding.factory({ inject, onDispose })
 
     if (isPromiseLike<T>(value)) {
       return attachPending(key, value, resolutionScope, deactivate) as T
@@ -450,6 +575,9 @@ function invokeFactory<T>(
 }
 
 function resolve<T>(key: InjectKey<T>, activeScope: ScopeNode, stack: InternalKey<unknown>[]): T {
+  if (activeScope.disposeRegistry.disposed) {
+    throw new Error('Cannot inject after the app has stopped')
+  }
   const internalKey = asInternalKey(key)
 
   const cycleStart = stack.indexOf(internalKey)

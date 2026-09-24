@@ -1,10 +1,12 @@
 export type {
+  App,
   BootstrapAppFn,
   BootstrapAppOptions,
   Context,
   Factory,
   InjectFn,
   InjectKey,
+  OnDisposeFn,
   ProviderBundle,
   ProviderDef,
   ProviderInput,

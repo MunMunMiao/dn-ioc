@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  type App,
+  type BootstrapAppOptions,
   bootstrapApp,
   bundleProviders,
   type Context,
@@ -12,18 +14,31 @@ import {
   token,
 } from './index'
 
+// The root factory returns nothing, so these helpers capture what a test wants to assert on.
+function startApp<T>(fn: (ctx: Context) => T | Promise<T>, options?: BootstrapAppOptions): { app: App; done: Promise<T> } {
+  let captured!: T
+  const app = bootstrapApp(async ctx => {
+    captured = await fn(ctx)
+  }, options)
+  return { app, done: app.start().then(() => captured) }
+}
+
+async function runApp<T>(fn: (ctx: Context) => T | Promise<T>, options?: BootstrapAppOptions): Promise<T> {
+  return await startApp(fn, options).done
+}
+
 describe('IoC Container', () => {
   test('basic provide and inject with bootstrapApp', async () => {
     const ref = provide(() => 'test value')
 
-    const result = await bootstrapApp(({ inject }) => inject(ref))
+    const result = await runApp(({ inject }) => inject(ref))
 
     expect(result).toBe('test value')
   })
 
   test('bootstrapApp returns sync and async results', async () => {
-    const syncValue = await bootstrapApp(() => 'sync')
-    const asyncValue = await bootstrapApp(async () => 'async')
+    const syncValue = await runApp(() => 'sync')
+    const asyncValue = await runApp(async () => 'async')
 
     expect(syncValue).toBe('sync')
     expect(asyncValue).toBe('async')
@@ -36,7 +51,7 @@ describe('IoC Container', () => {
       return ctx.inject(ref)
     }
 
-    const result = await bootstrapApp(ctx => helper(ctx))
+    const result = await runApp(ctx => helper(ctx))
 
     expect(result).toBe('value')
   })
@@ -45,13 +60,13 @@ describe('IoC Container', () => {
     let counter = 0
     const ref = provide(() => ({ id: ++counter }))
 
-    const firstApp = await bootstrapApp(({ inject }) => {
+    const firstApp = await runApp(({ inject }) => {
       const a = inject(ref)
       const b = inject(ref)
       return { a, b }
     })
 
-    const secondApp = await bootstrapApp(({ inject }) => inject(ref))
+    const secondApp = await runApp(({ inject }) => inject(ref))
 
     expect(firstApp.a).toBe(firstApp.b)
     expect(firstApp.a).not.toBe(secondApp)
@@ -70,7 +85,7 @@ describe('IoC Container', () => {
       providers: [provideFor(token('RightScopeMarker'), () => true)],
     })
 
-    const result = await bootstrapApp(({ inject }) => ({
+    const result = await runApp(({ inject }) => ({
       leftA: inject(leftRef),
       leftB: inject(leftRef),
       right: inject(rightRef),
@@ -111,7 +126,7 @@ describe('IoC Container', () => {
       Object.defineProperty(ref, 'factory', { value: () => 'tampered value' })
     }).toThrow()
 
-    const result = await bootstrapApp(({ inject }) => inject(ref))
+    const result = await runApp(({ inject }) => inject(ref))
 
     expect(result).toBe('safe value')
   })
@@ -129,12 +144,12 @@ describe('IoC Container', () => {
       id: Symbol('forged-provider'),
     }) as unknown as ProviderInput
 
-    await expect(bootstrapApp(({ inject }) => inject(forgedRef))).rejects.toThrow('Invalid inject key received')
-    await expect(
-      bootstrapApp(() => 'ok', {
+    await expect(runApp(({ inject }) => inject(forgedRef))).rejects.toThrow('Invalid inject key received')
+    expect(() =>
+      bootstrapApp(() => undefined, {
         providers: [forgedProvider],
       }),
-    ).rejects.toThrow('Invalid provider input received')
+    ).toThrow('Invalid provider input received')
   })
 
   test('provider inputs are snapshotted when handles are created', async () => {
@@ -146,7 +161,7 @@ describe('IoC Container', () => {
 
     nestedProviders[0] = provideFor(labelToken, () => 'mutated')
 
-    const result = await bootstrapApp(({ inject }) => inject(scopedRef))
+    const result = await runApp(({ inject }) => inject(scopedRef))
 
     expect(result).toBe('initial')
   })
@@ -155,7 +170,7 @@ describe('IoC Container', () => {
     const firstToken = token<string>('SharedName')
     const secondToken = token<string>('SharedName')
 
-    await bootstrapApp(
+    await runApp(
       ({ inject }) => {
         expect(inject(firstToken)).toBe('first')
         expect(() => inject(secondToken)).toThrow('No provider for token: SharedName')
@@ -185,7 +200,7 @@ describe('IoC Container', () => {
       },
     )
 
-    const result = await bootstrapApp(({ inject }) => inject(rootLocalRef))
+    const result = await runApp(({ inject }) => inject(rootLocalRef))
 
     expect(result.fromSelf).toBe(result.fromMiddle.fromMiddle)
     expect(result.fromSelf).toBe(result.fromMiddle.fromLeaf)
@@ -198,7 +213,7 @@ describe('IoC Container', () => {
       providers: [provideFor(serviceToken, () => 'local value')],
     })
 
-    await bootstrapApp(({ inject }) => {
+    await runApp(({ inject }) => {
       expect(() => inject(serviceToken)).toThrow('No provider for token: LocalOnly')
       expect(inject(scopedRef)).toBe('local value')
       expect(() => inject(serviceToken)).toThrow('No provider for token: LocalOnly')
@@ -218,7 +233,7 @@ describe('IoC Container', () => {
       },
     )
 
-    const result = await bootstrapApp(({ inject }) => inject(scopedRef), {
+    const result = await runApp(({ inject }) => inject(scopedRef), {
       providers: [provideFor(configToken, () => 'root')],
     })
 
@@ -237,7 +252,7 @@ describe('IoC Container', () => {
       providers: [provideFor(tenantToken, () => 'right')],
     })
 
-    await bootstrapApp(({ inject }) => {
+    await runApp(({ inject }) => {
       expect(inject(leftRef)).toBe('left')
       expect(inject(rightRef)).toBe('right')
       expect(() => inject(tenantToken)).toThrow('No provider for token: Tenant')
@@ -267,7 +282,7 @@ describe('IoC Container', () => {
       },
     )
 
-    const result = await bootstrapApp(({ inject }) => inject(parentRef))
+    const result = await runApp(({ inject }) => inject(parentRef))
 
     expect(result.self.owner).toBe('parent')
     expect(result.child.self.owner).toBe('child')
@@ -281,13 +296,25 @@ describe('IoC Container', () => {
       providers: [provideFor(configRef, () => 'local config')],
     })
 
-    const result = await bootstrapApp(({ inject }) => ({
+    const result = await runApp(({ inject }) => ({
       root: inject(configRef),
       local: inject(serviceRef),
     }))
 
     expect(result.root).toBe('root config')
     expect(result.local).toBe('local config')
+  })
+
+  test('provideFor can own a private provider subtree', async () => {
+    const localToken = token<string>('LocalToken')
+    const serviceRef = provide(({ inject }) => inject(localToken))
+    const localBinding = provideFor(serviceRef, ({ inject }) => inject(localToken), { providers: [provideFor(localToken, () => 'local')] })
+
+    const result = await runApp(({ inject }) => inject(serviceRef), {
+      providers: [provideFor(localToken, () => 'root'), localBinding],
+    })
+
+    expect(result).toBe('local')
   })
 
   test('local overrides do not change an already bound parent consumer ref', async () => {
@@ -297,7 +324,7 @@ describe('IoC Container', () => {
       providers: [provideFor(configRef, () => 'local config')],
     })
 
-    const result = await bootstrapApp(({ inject }) => ({
+    const result = await runApp(({ inject }) => ({
       rootFirst: inject(serviceRef),
       localAfterRoot: inject(localServiceRef),
     }))
@@ -313,7 +340,7 @@ describe('IoC Container', () => {
       providers: [provideFor(configRef, () => 'local config'), provideFor(serviceRef, ({ inject }) => inject(configRef))],
     })
 
-    const result = await bootstrapApp(({ inject }) => ({
+    const result = await runApp(({ inject }) => ({
       rootFirst: inject(serviceRef),
       localAfterRoot: inject(localServiceRef),
     }))
@@ -331,7 +358,7 @@ describe('IoC Container', () => {
       provideFor(apiToken, ({ inject }) => `https://${inject(envToken)}.example.com`),
     )
 
-    const result = await bootstrapApp(({ inject }) => inject(apiToken), {
+    const result = await runApp(({ inject }) => inject(apiToken), {
       providers: [featureBundle],
     })
 
@@ -342,7 +369,7 @@ describe('IoC Container', () => {
     let counter = 0
     const serviceRef = provide(() => ({ id: ++counter }))
 
-    const result = await bootstrapApp(
+    const result = await runApp(
       ({ inject }) => ({
         first: inject(serviceRef),
         second: inject(serviceRef),
@@ -359,7 +386,7 @@ describe('IoC Container', () => {
   test('later providers override earlier providers in the same installation scope', async () => {
     const labelToken = token<string>('Label')
 
-    const result = await bootstrapApp(({ inject }) => inject(labelToken), {
+    const result = await runApp(({ inject }) => inject(labelToken), {
       providers: [
         provideFor(labelToken, () => 'first'),
         bundleProviders([provideFor(labelToken, () => 'from bundle')]),
@@ -379,7 +406,7 @@ describe('IoC Container', () => {
       bundleProviders(provideFor(bToken, ({ inject }) => `${inject(aToken)} world`)),
     )
 
-    const result = await bootstrapApp(({ inject }) => inject(bToken), {
+    const result = await runApp(({ inject }) => inject(bToken), {
       providers: [nestedBundle],
     })
 
@@ -393,7 +420,7 @@ describe('IoC Container', () => {
 
     nestedProviders[0] = provideFor(labelToken, () => 'mutated')
 
-    const result = await bootstrapApp(({ inject }) => inject(labelToken), {
+    const result = await runApp(({ inject }) => inject(labelToken), {
       providers: [bundle],
     })
 
@@ -411,7 +438,7 @@ describe('IoC Container', () => {
       },
     )
 
-    const result = await bootstrapApp(({ inject }) => inject(serviceRef).readConfig())
+    const result = await runApp(({ inject }) => inject(serviceRef).readConfig())
 
     expect(result).toBe('local-config')
   })
@@ -431,7 +458,7 @@ describe('IoC Container', () => {
       }
     })
 
-    const result = await bootstrapApp(({ inject }) => inject(formatterRef).format())
+    const result = await runApp(({ inject }) => inject(formatterRef).format())
 
     expect(result).toBe('hello world')
   })
@@ -439,13 +466,13 @@ describe('IoC Container', () => {
   test('missing token throws a clear error', async () => {
     const missingToken = token<string>('MissingToken')
 
-    await expect(bootstrapApp(({ inject }) => inject(missingToken))).rejects.toThrow('No provider for token: MissingToken')
+    await expect(runApp(({ inject }) => inject(missingToken))).rejects.toThrow('No provider for token: MissingToken')
   })
 
   test('missing anonymous token falls back to <anonymous> in error messages', async () => {
     const missingToken = token<string>()
 
-    await expect(bootstrapApp(({ inject }) => inject(missingToken))).rejects.toThrow('No provider for token: <anonymous>')
+    await expect(runApp(({ inject }) => inject(missingToken))).rejects.toThrow('No provider for token: <anonymous>')
   })
 
   test('circular dependency error includes the dependency path', async () => {
@@ -457,9 +484,7 @@ describe('IoC Container', () => {
       return inject(aRef)
     })
 
-    await expect(bootstrapApp(({ inject }) => inject(aRef))).rejects.toThrow(
-      'Circular dependency detected: ServiceA -> ServiceB -> ServiceA',
-    )
+    await expect(runApp(({ inject }) => inject(aRef))).rejects.toThrow('Circular dependency detected: ServiceA -> ServiceB -> ServiceA')
   })
 
   test('anonymous circular dependency also uses <anonymous> in the cycle path', async () => {
@@ -467,7 +492,7 @@ describe('IoC Container', () => {
     const aRef: Ref<unknown> = provide(({ inject }): unknown => inject(bRef))
     bRef = provide(({ inject }): unknown => inject(aRef))
 
-    await expect(bootstrapApp(({ inject }) => inject(aRef))).rejects.toThrow(
+    await expect(runApp(({ inject }) => inject(aRef))).rejects.toThrow(
       'Circular dependency detected: <anonymous> -> <anonymous> -> <anonymous>',
     )
   })
@@ -478,7 +503,7 @@ describe('IoC Container', () => {
     const rightRef = provide(({ inject }) => ({ base: inject(baseRef), side: 'right' }))
     const topRef = provide(({ inject }) => ({ left: inject(leftRef), right: inject(rightRef) }))
 
-    const top = await bootstrapApp(({ inject }) => inject(topRef))
+    const top = await runApp(({ inject }) => inject(topRef))
 
     expect(top.left.base).toBe(top.right.base)
     expect(top.left.side).toBe('left')
@@ -497,7 +522,7 @@ describe('IoC Container', () => {
       return 0
     })
 
-    await bootstrapApp(({ inject }) => {
+    await runApp(({ inject }) => {
       expect(inject(undefinedRef)).toBeUndefined()
       expect(inject(undefinedRef)).toBeUndefined()
       expect(inject(falsyRef)).toBe(0)
@@ -518,7 +543,7 @@ describe('IoC Container', () => {
       return 'recovered'
     })
 
-    await bootstrapApp(({ inject }) => {
+    await runApp(({ inject }) => {
       expect(() => inject(flakyRef)).toThrow('Temporary sync failure')
       expect(inject(flakyRef)).toBe('recovered')
     })
@@ -536,7 +561,7 @@ describe('IoC Container - Async Support', () => {
       return { id: counter }
     })
 
-    const result = await bootstrapApp(async ({ inject }) => {
+    const result = await runApp(async ({ inject }) => {
       const [a, b] = await Promise.all([inject(asyncRef), inject(asyncRef)])
       return { a, b }
     })
@@ -555,7 +580,7 @@ describe('IoC Container - Async Support', () => {
       return { ok: true }
     })
 
-    await bootstrapApp(async ({ inject }) => {
+    await runApp(async ({ inject }) => {
       await expect(inject(flakyRef)).rejects.toThrow('Temporary failure')
       const value = await inject(flakyRef)
       expect(value.ok).toBe(true)
@@ -575,7 +600,7 @@ describe('IoC Container - Async Support', () => {
       return { ok: true, attempts }
     })
 
-    await bootstrapApp(async ({ inject }) => {
+    await runApp(async ({ inject }) => {
       const first = inject(flakyRef)
       const second = inject(flakyRef)
 
@@ -610,7 +635,7 @@ describe('IoC Container - Async Support', () => {
       },
     )
 
-    const result = await bootstrapApp(async ({ inject }) => inject(tenantAppRef))
+    const result = await runApp(async ({ inject }) => inject(tenantAppRef))
 
     expect(result.a).toBe(result.b)
     expect(result.a.tenant).toBe('tenant-a')
@@ -626,7 +651,7 @@ describe('IoC Container - Async Support', () => {
       }
     })
 
-    const result = await bootstrapApp(
+    const result = await runApp(
       async ({ inject }) => {
         const service = await inject(serviceRef)
         return service.ready
@@ -651,7 +676,7 @@ describe('IoC Container - Async Support', () => {
     })
     const syncRef = provide(({ inject }) => inject(asyncRef))
 
-    await bootstrapApp(async ({ inject }) => {
+    await runApp(async ({ inject }) => {
       const pending = inject(asyncRef)
 
       expect(await inject(syncRef)).toBe('async value')
@@ -671,14 +696,18 @@ describe('IoC Container - Async Support', () => {
       return await inject(aRef)
     })
 
-    const result = bootstrapApp(async ({ inject }) => {
-      await Promise.all([inject(aRef), inject(bRef)])
-    })
     const timeout = new Promise((_, reject) => {
       setTimeout(() => reject(new Error('Timed out waiting for circular dependency detection')), 50)
     })
 
-    await expect(Promise.race([result, timeout])).rejects.toThrow('Circular dependency detected')
+    await expect(
+      Promise.race([
+        runApp(async ({ inject }) => {
+          await Promise.all([inject(aRef), inject(bRef)])
+        }),
+        timeout,
+      ]),
+    ).rejects.toThrow('Circular dependency detected')
   })
 
   test('concurrent async circular dependencies include longer pending paths', async () => {
@@ -698,14 +727,18 @@ describe('IoC Container - Async Support', () => {
       return await inject(aRef)
     })
 
-    const result = bootstrapApp(async ({ inject }) => {
-      await Promise.all([inject(aRef), inject(bRef), inject(cRef)])
-    })
     const timeout = new Promise((_, reject) => {
       setTimeout(() => reject(new Error('Timed out waiting for circular dependency detection')), 50)
     })
 
-    await expect(Promise.race([result, timeout])).rejects.toThrow('Circular dependency detected')
+    await expect(
+      Promise.race([
+        runApp(async ({ inject }) => {
+          await Promise.all([inject(aRef), inject(bRef), inject(cRef)])
+        }),
+        timeout,
+      ]),
+    ).rejects.toThrow('Circular dependency detected')
   })
 })
 
@@ -731,7 +764,7 @@ describe('IoC Container - Installation Functions', () => {
     const telemetry = provideOpenTelemetry({ runtimeKind: 'http' })
     const serverRef = provide(({ inject }) => inject(telemetry.openTelemetryToken))
 
-    const result = await bootstrapApp(
+    const result = await runApp(
       ({ inject }) => {
         const a = inject(serverRef)
         const b = inject(serverRef)
@@ -781,7 +814,7 @@ describe('IoC Container - Installation Functions', () => {
       },
     )
 
-    const result = await bootstrapApp(({ inject }) => inject(parentRef))
+    const result = await runApp(({ inject }) => inject(parentRef))
 
     expect(result.self.runtimeKind).toBe('http')
     expect(result.child.self.runtimeKind).toBe('worker')
@@ -798,7 +831,7 @@ describe('IoC Container - Type-friendly shapes', () => {
 
     const userRepositoryToken = token<UserRepository>('UserRepository')
 
-    const result = await bootstrapApp(({ inject }) => inject(userRepositoryToken).findById(1), {
+    const result = await runApp(({ inject }) => inject(userRepositoryToken).findById(1), {
       providers: [
         provideFor(userRepositoryToken, () => ({
           findById: id => `user:${id}`,
@@ -815,20 +848,448 @@ describe('IoC Container - Type-friendly shapes', () => {
       getUserUrl: (id: number) => `${inject(configRef).baseUrl}/users/${id}`,
     }))
 
-    const result = await bootstrapApp(({ inject }) => inject(userServiceRef).getUserUrl(7))
+    const result = await runApp(({ inject }) => inject(userServiceRef).getUserUrl(7))
 
     expect(result).toBe('https://api.example.com/users/7')
   })
 
   test('invalid provider input throws a clear error', async () => {
-    await expect(
-      bootstrapApp(() => 'ok', {
+    expect(() =>
+      bootstrapApp(() => undefined, {
         providers: [123 as unknown as never],
       }),
-    ).rejects.toThrow('Invalid provider input received')
+    ).toThrow('Invalid provider input received')
+  })
+
+  test('invalid nested provider input rejects app when the subtree is resolved', async () => {
+    const ref = provide(() => 'value', {
+      providers: [123 as unknown as never],
+    })
+    const app = bootstrapApp(({ inject }) => {
+      inject(ref)
+    })
+
+    await expect(app.start()).rejects.toThrow('Invalid provider input received')
   })
 
   test('invalid inject key throws a clear error', async () => {
-    await expect(bootstrapApp(({ inject }) => inject(123 as unknown as Token<number>))).rejects.toThrow('Invalid inject key received')
+    await expect(runApp(({ inject }) => inject(123 as unknown as Token<number>))).rejects.toThrow('Invalid inject key received')
+  })
+})
+
+describe('App lifecycle', () => {
+  test('bootstrapApp returns a handle without starting the factory', async () => {
+    let started = false
+    const app = bootstrapApp(() => {
+      started = true
+    })
+
+    expect(typeof app.start).toBe('function')
+    expect(typeof app.stop).toBe('function')
+    expect(typeof app[Symbol.asyncDispose]).toBe('function')
+    expect(app).not.toBeInstanceOf(Promise)
+    expect(started).toBe(false)
+
+    await expect(app.start()).resolves.toBeUndefined()
+    expect(started).toBe(true)
+    await app.stop()
+  })
+
+  test('stop is callable before start settles', async () => {
+    let released!: () => void
+    const gate = new Promise<void>(resolve => {
+      released = resolve
+    })
+
+    let finished = false
+    const app = bootstrapApp(async () => {
+      await gate
+      finished = true
+    })
+
+    const done = app.start()
+    const stopping = app.stop()
+    released()
+    await done
+    expect(finished).toBe(true)
+    await stopping
+  })
+
+  test('start is idempotent and runs the factory once', async () => {
+    let calls = 0
+    const app = bootstrapApp(() => {
+      calls += 1
+    })
+
+    const first = app.start()
+    const second = app.start()
+
+    expect(second).toBe(first)
+    await first
+    await app.start()
+    expect(calls).toBe(1)
+    await app.stop()
+  })
+
+  test('starting a stopped app throws', async () => {
+    let started = false
+    const app = bootstrapApp(() => {
+      started = true
+    })
+
+    await app.stop()
+
+    await expect(app.start()).rejects.toThrow('Cannot start an app that has been stopped')
+    expect(started).toBe(false)
+  })
+
+  test('restarting after a successful run throws instead of replaying the stale result', async () => {
+    const app = bootstrapApp(({ onDispose }) => {
+      onDispose(() => undefined)
+    })
+
+    await app.start()
+    await app.stop()
+
+    await expect(app.start()).rejects.toThrow('Cannot start an app that has been stopped')
+  })
+
+  test('Symbol.asyncDispose is the same operation as stop', async () => {
+    const closed: string[] = []
+    const app = bootstrapApp(({ onDispose }) => {
+      onDispose(() => {
+        closed.push('pool')
+      })
+    })
+
+    await app.start()
+    const stopping = app.stop()
+    expect(app[Symbol.asyncDispose]()).toBe(stopping)
+    await stopping
+    expect(closed).toEqual(['pool'])
+  })
+
+  test('await using stops the app at the end of the scope', async () => {
+    let closed = false
+    const serverRef = provide(({ onDispose }) => {
+      onDispose(() => {
+        closed = true
+      })
+      return { listen: true }
+    })
+
+    {
+      await using app = bootstrapApp(({ inject }) => {
+        inject(serverRef)
+      })
+      await app.start()
+      expect(closed).toBe(false)
+    }
+
+    expect(closed).toBe(true)
+  })
+
+  test('startup failure is reported by start', async () => {
+    const failed = bootstrapApp(() => {
+      throw new Error('boot failed')
+    })
+    await expect(failed.start()).rejects.toThrow('boot failed')
+  })
+
+  test('startup failure combines factory and cleanup errors', async () => {
+    const resourceRef = provide(({ onDispose }) => {
+      onDispose(() => {
+        throw new Error('cleanup failed')
+      })
+      return 'resource'
+    })
+
+    const app = bootstrapApp(({ inject }) => {
+      inject(resourceRef)
+      throw new Error('boot failed')
+    })
+    const error = await app.start().catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(AggregateError)
+    expect((error as AggregateError).errors.map(item => (item as Error).message)).toEqual(['boot failed', 'cleanup failed'])
+  })
+
+  test('onDispose registered after stop throws instead of running late', async () => {
+    let releaseFactory!: () => void
+    const factoryGate = new Promise<void>(resolve => {
+      releaseFactory = resolve
+    })
+    let factoryStarted!: () => void
+    const started = new Promise<void>(resolve => {
+      factoryStarted = resolve
+    })
+    let registered = false
+
+    const app = bootstrapApp(async ({ onDispose }) => {
+      factoryStarted()
+      await factoryGate
+      onDispose(() => {
+        registered = true
+      })
+    })
+
+    const done = app.start()
+    await started
+    await app.stop()
+    releaseFactory()
+
+    await expect(done).rejects.toThrow('Cannot register cleanup after the app has stopped')
+    expect(registered).toBe(false)
+  })
+
+  test('onDispose hooks run in reverse registration order', async () => {
+    const order: string[] = []
+    const firstRef = provide(({ onDispose }) => {
+      onDispose(() => {
+        order.push('first')
+      })
+      return 'first'
+    })
+    const secondRef = provide(({ inject, onDispose }) => {
+      inject(firstRef)
+      onDispose(() => {
+        order.push('second')
+      })
+      return 'second'
+    })
+
+    const { app, done } = startApp(({ inject }) => inject(secondRef))
+    await done
+    await app.stop()
+
+    expect(order).toEqual(['second', 'first'])
+  })
+
+  test('second dispose is a no-op', async () => {
+    let calls = 0
+    const ref = provide(({ onDispose }) => {
+      onDispose(() => {
+        calls += 1
+      })
+      return 'resource'
+    })
+
+    const { app, done } = startApp(({ inject }) => inject(ref))
+    await done
+    await app.stop()
+    await app.stop()
+
+    expect(calls).toBe(1)
+  })
+
+  test('onDispose after the factory returns throws', async () => {
+    let lateDispose!: (fn: () => void) => void
+    const ref = provide(({ onDispose }) => {
+      lateDispose = onDispose
+      return 'resource'
+    })
+
+    await runApp(({ inject }) => inject(ref))
+
+    expect(() => lateDispose(() => undefined)).toThrow('onDispose can only be called while the factory is running')
+  })
+
+  test('root factory onDispose throws immediately after a sync return', async () => {
+    let lateDispose!: (fn: () => void) => void
+    let microtaskThrew = false
+    const app = bootstrapApp(({ onDispose }) => {
+      lateDispose = onDispose
+      queueMicrotask(() => {
+        try {
+          lateDispose(() => undefined)
+        } catch {
+          microtaskThrew = true
+        }
+      })
+    })
+
+    const done = app.start()
+    expect(() => lateDispose(() => undefined)).toThrow('onDispose can only be called while the factory is running')
+    await done
+    expect(microtaskThrew).toBe(true)
+    await app.stop()
+  })
+
+  test('bootstrapApp factory can register onDispose', async () => {
+    let closed = false
+    const { app, done } = startApp(({ onDispose }) => {
+      onDispose(() => {
+        closed = true
+      })
+      return 'server'
+    })
+
+    await done
+    expect(closed).toBe(false)
+    await app.stop()
+    expect(closed).toBe(true)
+  })
+
+  test('startup failure still runs registered onDispose hooks', async () => {
+    const order: string[] = []
+    const ref = provide(({ onDispose }) => {
+      onDispose(() => {
+        order.push('cleanup')
+      })
+      return 'resource'
+    })
+
+    const { done } = startApp(({ inject }) => {
+      inject(ref)
+      throw new Error('boot failed')
+    })
+    await expect(done).rejects.toThrow('boot failed')
+
+    expect(order).toEqual(['cleanup'])
+  })
+
+  test('later onDispose hooks still run when an earlier cleanup throws', async () => {
+    const order: string[] = []
+    const firstRef = provide(({ onDispose }) => {
+      onDispose(() => {
+        order.push('first')
+      })
+      return 'first'
+    })
+    const secondRef = provide(({ inject, onDispose }) => {
+      inject(firstRef)
+      onDispose(() => {
+        order.push('second')
+        throw new Error('second failed')
+      })
+      return 'second'
+    })
+
+    const { app, done } = startApp(({ inject }) => inject(secondRef))
+    await done
+    await expect(app.stop()).rejects.toThrow('second failed')
+    expect(order).toEqual(['second', 'first'])
+  })
+
+  test('multiple cleanup failures are collected', async () => {
+    const firstRef = provide(({ onDispose }) => {
+      onDispose(() => {
+        throw new Error('first failed')
+      })
+      return 'first'
+    })
+    const secondRef = provide(({ inject, onDispose }) => {
+      inject(firstRef)
+      onDispose(() => {
+        throw new Error('second failed')
+      })
+      return 'second'
+    })
+
+    const { app, done } = startApp(({ inject }) => inject(secondRef))
+    await done
+    const error = await app.stop().catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(AggregateError)
+    expect((error as AggregateError).errors.map(item => (item as Error).message)).toEqual(['second failed', 'first failed'])
+  })
+
+  test('stop does not wait for a factory that never settles', async () => {
+    const closed: string[] = []
+    const app = bootstrapApp(({ onDispose }) => {
+      onDispose(() => {
+        closed.push('pool')
+      })
+      return new Promise<void>(() => {
+        // intentionally never settles
+      })
+    })
+
+    void app.start()
+    await app.stop()
+    expect(closed).toEqual(['pool'])
+  })
+
+  test('onDispose throws after factory failure even while cleanup is pending', async () => {
+    let lateDispose!: (fn: () => void) => void
+    let cleanupStarted!: () => void
+    const started = new Promise<void>(resolve => {
+      cleanupStarted = resolve
+    })
+    let releaseCleanup!: () => void
+    const cleanupGate = new Promise<void>(resolve => {
+      releaseCleanup = resolve
+    })
+
+    const app = bootstrapApp(({ onDispose }) => {
+      lateDispose = onDispose
+      onDispose(async () => {
+        cleanupStarted()
+        await cleanupGate
+      })
+      throw new Error('boot failed')
+    })
+
+    const done = app.start()
+    await started
+    expect(() => lateDispose(() => undefined)).toThrow('onDispose can only be called while the factory is running')
+    releaseCleanup()
+    await expect(done).rejects.toThrow('boot failed')
+  })
+
+  test('concurrent stop calls share completion and errors', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const ref = provide(({ onDispose }) => {
+      onDispose(async () => {
+        await gate
+        throw new Error('cleanup failed')
+      })
+      return 'resource'
+    })
+    const app = bootstrapApp(({ inject }) => {
+      inject(ref)
+    })
+    await app.start()
+
+    const first = app.stop()
+    const second = app.stop()
+    expect(second).toBe(first)
+    let secondSettled = false
+    void second.catch(() => {
+      secondSettled = true
+    })
+    await Promise.resolve()
+    expect(secondSettled).toBe(false)
+    release()
+    await expect(first).rejects.toThrow('cleanup failed')
+    await expect(second).rejects.toThrow('cleanup failed')
+  })
+
+  test('a provider that finishes after stop cannot register cleanup', async () => {
+    let releaseProvider!: () => void
+    const providerGate = new Promise<void>(resolve => {
+      releaseProvider = resolve
+    })
+    let cleaned = false
+    const ref = provide(async ({ onDispose }) => {
+      await providerGate
+      onDispose(() => {
+        cleaned = true
+      })
+      return 'ready'
+    })
+
+    const app = bootstrapApp(async ({ inject }) => {
+      await inject(ref)
+    })
+    const done = app.start()
+    await app.stop()
+
+    releaseProvider()
+    await expect(done).rejects.toThrow('Cannot register cleanup after the app has stopped')
+    expect(cleaned).toBe(false)
   })
 })
