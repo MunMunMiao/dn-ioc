@@ -22,7 +22,7 @@
     "url": "https://github.com/MunMunMiao/dn-ioc/issues"
   },
   "scripts": {
-    "build": "bun run scripts/build.ts && tsc",
+    "build": "tsdown --config-loader native --config tsdown.config.ts",
     "test": "bun test",
     "test:coverage": "bun run scripts/check-coverage.ts",
     "lint": "biome check --write --error-on-warnings .",
@@ -34,6 +34,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
     "@types/bun": "^1.2.23",
+    "tsdown": "^0.23.0",
     "typescript": "^7.0.2"
   },
   "sideEffects": false,
