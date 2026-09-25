@@ -14,6 +14,15 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun run build
-      - run: cd dist && bun publish
+      # `bun publish` has no token environment variable - without credentials in an .npmrc it
+      # falls through to the interactive browser login, which in CI just blocks until the step
+      # times out. The file goes in HOME, never in dist/, so the token cannot be packed into the
+      # published tarball. `npm whoami` fails in seconds with a readable message when the token
+      # is expired or lacks write access, instead of leaving that to the five-minute hang.
+      - name: Publish to npm
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          npm whoami
+          cd dist && bun publish
         env:
-          NPM_CONFIG_TOKEN: ${{secrets.NPM_TOKEN}}
+          NPM_TOKEN: ${{secrets.NPM_TOKEN}}
