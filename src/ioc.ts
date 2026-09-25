@@ -478,13 +478,25 @@ function getCurrentPending(activeScope: ScopeNode, stack: InternalKey<unknown>[]
   return currentRecord
 }
 
-function findPendingDependencyPath(from: PendingInstance<unknown>, target: PendingInstance<unknown>): InternalKey<unknown>[] | undefined {
+function findPendingDependencyPath(
+  from: PendingInstance<unknown>,
+  target: PendingInstance<unknown>,
+  visited: Set<PendingInstance<unknown>> = new Set(),
+): InternalKey<unknown>[] | undefined {
   if (from === target) {
     return [from.key]
   }
 
+  // Already walked and found no route to `target`. Reachability does not depend on which branch
+  // led here, so a shared dependency is never re-expanded — without this the search is
+  // exponential in the number of pending nodes that fan in on each other.
+  if (visited.has(from)) {
+    return undefined
+  }
+  visited.add(from)
+
   for (const dependency of from.dependencies) {
-    const path = findPendingDependencyPath(dependency, target)
+    const path = findPendingDependencyPath(dependency, target, visited)
     if (!path) {
       continue
     }
