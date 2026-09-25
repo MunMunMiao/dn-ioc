@@ -1,5 +1,10 @@
 // Micro-benchmarks for the container's hot paths. Run: bun run scripts/bench.ts
 // Profile: bun --cpu-prof --cpu-prof-md scripts/bench.ts
+//
+// Every case shares one process, so earlier cases leave JIT and GC state behind that later ones
+// inherit. That is fine for spotting which paths are expensive, and wrong for A/B-ing a change
+// worth a few ns: one `inject` row here moved -33% while the same change measured +17% when its
+// depth was benchmarked alone. Confirm a small win in a process that runs only the case at stake.
 import { bootstrapApp, bundleProviders, type InjectFn, type ProviderInput, provide, provideFor, type Ref, token } from '../src/index'
 
 const results: Array<{ name: string; nsPerOp: number; ops: number }> = []
