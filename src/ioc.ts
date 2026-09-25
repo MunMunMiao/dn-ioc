@@ -110,6 +110,14 @@ type PendingInstance<T> = {
 
 type InstanceRecord<T> = PendingInstance<T> | ResolvedInstance<T>
 
+// The chain of keys currently being resolved, newest first. A factory that suspends keeps its own
+// frame alive across the `await`, so the chain has to be persistent: entering a key links a new
+// frame onto the parent rather than copying the path, which is what keeps nesting linear.
+type ResolutionFrame = {
+  key: InternalKey<unknown>
+  parent?: ResolutionFrame
+}
+
 type DisposeRegistry = {
   disposed: boolean
   hooks: Array<() => void | Promise<void>>
@@ -165,7 +173,7 @@ export function bootstrapApp(fn: BootstrapAppFn, options?: BootstrapAppOptions):
   }
 
   const runStart = async (): Promise<void> => {
-    const { deactivate, inject, onDispose } = createInject(rootScope, [])
+    const { deactivate, inject, onDispose } = createInject(rootScope, undefined)
     try {
       const value = fn({ inject, onDispose })
 
@@ -346,6 +354,32 @@ function formatCircularDependency(path: InternalKey<unknown>[]): string {
   return `Circular dependency detected: ${path.map(getKeyName).join(' -> ')}`
 }
 
+// Runs on every resolution, so it only compares pointers and allocates nothing.
+function isResolving(frame: ResolutionFrame | undefined, key: InternalKey<unknown>): boolean {
+  for (let current = frame; current; current = current.parent) {
+    if (current.key === key) {
+      return true
+    }
+  }
+  return false
+}
+
+// Only reached once `isResolving` has confirmed `key` is on the chain, so the walk always stops.
+function cyclePath(frame: ResolutionFrame, key: InternalKey<unknown>): InternalKey<unknown>[] {
+  const path: InternalKey<unknown>[] = []
+  let current: ResolutionFrame | undefined = frame
+
+  while (current && current.key !== key) {
+    path.push(current.key)
+    current = current.parent
+  }
+
+  path.push(key)
+  path.reverse()
+  path.push(key)
+  return path
+}
+
 function flattenProviders(inputs: readonly ProviderInput[]): InternalProvider[] {
   const flattened: InternalProvider[] = []
 
@@ -437,7 +471,7 @@ function ensureAttachedScope(ownerScope: ScopeNode, binding: InternalProviderDef
 
 function createInject(
   scope: ScopeNode,
-  stack: InternalKey<unknown>[],
+  frame: ResolutionFrame | undefined,
 ): {
   deactivate: () => void
   inject: InjectFn
@@ -449,7 +483,7 @@ function createInject(
     deactivate: () => {
       active = false
     },
-    inject: <T>(key: InjectKey<T>): T => resolve(key, scope, active ? stack : []),
+    inject: <T>(key: InjectKey<T>): T => resolve(key, scope, active ? frame : undefined),
     onDispose: fn => {
       if (!active) {
         throw new Error('onDispose can only be called while the factory is running')
@@ -462,15 +496,14 @@ function createInject(
   }
 }
 
-// Only the top-of-stack pending record is the "currently resolving" frame; it lives in `activeScope`
+// Only the innermost frame is the "currently resolving" one; its record lives in `activeScope`
 // because that's the scope passed into `createInject` when its factory started running.
-function getCurrentPending(activeScope: ScopeNode, stack: InternalKey<unknown>[]): PendingInstance<unknown> | undefined {
-  const currentKey = stack[stack.length - 1]
-  if (!currentKey) {
+function getCurrentPending(activeScope: ScopeNode, frame: ResolutionFrame | undefined): PendingInstance<unknown> | undefined {
+  if (!frame) {
     return undefined
   }
 
-  const currentRecord = activeScope.instances.get(currentKey.id)
+  const currentRecord = activeScope.instances.get(frame.key.id)
   if (currentRecord?.state !== 'pending' || currentRecord.settled) {
     return undefined
   }
@@ -519,11 +552,11 @@ function registerPendingDependency(dependent: PendingInstance<unknown> | undefin
   dependent.dependencies.add(dependency)
 }
 
-function reuseCached<T>(cached: InstanceRecord<T>, activeScope: ScopeNode, stack: InternalKey<unknown>[]): T {
+function reuseCached<T>(cached: InstanceRecord<T>, activeScope: ScopeNode, frame: ResolutionFrame | undefined): T {
   if (cached.state === 'resolved') {
     return cached.value
   }
-  registerPendingDependency(getCurrentPending(activeScope, stack), cached)
+  registerPendingDependency(getCurrentPending(activeScope, frame), cached)
   return cached.promise as T
 }
 
@@ -565,10 +598,9 @@ function invokeFactory<T>(
   key: InternalKey<T>,
   binding: InternalProviderDef<T>,
   resolutionScope: ScopeNode,
-  stack: InternalKey<unknown>[],
+  frame: ResolutionFrame | undefined,
 ): T {
-  const nextStack = [...stack, key]
-  const { deactivate, inject, onDispose } = createInject(resolutionScope, nextStack)
+  const { deactivate, inject, onDispose } = createInject(resolutionScope, { key, parent: frame })
 
   try {
     const value = binding.factory({ inject, onDispose })
@@ -586,15 +618,14 @@ function invokeFactory<T>(
   }
 }
 
-function resolve<T>(key: InjectKey<T>, activeScope: ScopeNode, stack: InternalKey<unknown>[]): T {
+function resolve<T>(key: InjectKey<T>, activeScope: ScopeNode, frame: ResolutionFrame | undefined): T {
   if (activeScope.disposeRegistry.disposed) {
     throw new Error('Cannot inject after the app has stopped')
   }
   const internalKey = asInternalKey(key)
 
-  const cycleStart = stack.indexOf(internalKey)
-  if (cycleStart >= 0) {
-    throw new Error(formatCircularDependency([...stack.slice(cycleStart), internalKey]))
+  if (frame && isResolving(frame, internalKey)) {
+    throw new Error(formatCircularDependency(cyclePath(frame, internalKey)))
   }
 
   // Tokens must be installed explicitly. Refs are self-providing and bind
@@ -604,7 +635,7 @@ function resolve<T>(key: InjectKey<T>, activeScope: ScopeNode, stack: InternalKe
 
   const cached = resolutionScope.instances.get(internalKey.id) as InstanceRecord<T> | undefined
   if (cached) {
-    return reuseCached(cached, activeScope, stack)
+    return reuseCached(cached, activeScope, frame)
   }
-  return invokeFactory(internalKey, binding, resolutionScope, stack)
+  return invokeFactory(internalKey, binding, resolutionScope, frame)
 }
