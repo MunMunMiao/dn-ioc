@@ -328,7 +328,7 @@ function snapshotProviderInput(input: ProviderInput): ProviderInput {
 }
 
 // `WeakMap.prototype.get` is specified to return undefined for any key that cannot be held
-// weakly, so a primitive needs no guard here - the cast only satisfies the parameter type.
+// weakly, so a primitive needs no guard here — the cast only satisfies the parameter type.
 function lookup(value: unknown): InternalRuntimeValue | undefined {
   return handleMetadata.get(value as object)
 }
@@ -429,20 +429,16 @@ function findBindingScope(start: ScopeNode, key: InternalKey<unknown>): ScopeNod
   return undefined
 }
 
-function lazilyInstallRefBinding<T>(ref: InternalRef<T>, scope: ScopeNode): InternalProviderDef<T> {
-  let binding = scope.bindings.get(ref.id) as InternalProviderDef<T> | undefined
-  if (!binding) {
-    binding = createProviderDefMetadata(ref, ref.factory, ref.providers)
-    scope.bindings.set(ref.id, binding)
+function lazilyInstallRefBinding<T>(ref: InternalRef<T>, scope: ScopeNode): void {
+  if (!scope.bindings.has(ref.id)) {
+    scope.bindings.set(ref.id, createProviderDefMetadata(ref, ref.factory, ref.providers))
   }
-  return binding
 }
 
 // Walk up from the active scope; if no binding is found, refs self-install at the active scope,
-// tokens raise — that asymmetry is the whole point of having two kinds of keys.
-// Returns only the owning scope: the caller reads the binding out of it, so the common path -
-// a key whose instance is already cached - does not allocate a pair just to carry both across
-// one call boundary.
+// tokens raise — that asymmetry is the whole point of having two kinds of keys. Only the owning
+// scope comes back and the caller reads the binding out of it, so the common path — a key whose
+// instance is already cached — does not allocate a pair to carry both across one call boundary.
 function locateOrInstallBindingScope<T>(key: InternalKey<T>, activeScope: ScopeNode): ScopeNode {
   const existing = findBindingScope(activeScope, key)
   if (existing) {
