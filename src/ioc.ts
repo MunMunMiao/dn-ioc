@@ -413,30 +413,45 @@ function installProviders(scope: ScopeNode, inputs: readonly ProviderInput[]): v
   }
 }
 
+function findBindingScope(start: ScopeNode, key: InternalKey<unknown>): ScopeNode | undefined {
+  let current: ScopeNode | undefined = start
+
+  while (current) {
+    if (current.bindings.has(key.id)) {
+      return current
+    }
+
+    current = current.parent
+  }
+
+  return undefined
+}
+
+function lazilyInstallRefBinding<T>(ref: InternalRef<T>, scope: ScopeNode): InternalProviderDef<T> {
+  let binding = scope.bindings.get(ref.id) as InternalProviderDef<T> | undefined
+  if (!binding) {
+    binding = createProviderDefMetadata(ref, ref.factory, ref.providers)
+    scope.bindings.set(ref.id, binding)
+  }
+  return binding
+}
+
 // Walk up from the active scope; if no binding is found, refs self-install at the active scope,
 // tokens raise — that asymmetry is the whole point of having two kinds of keys.
 function locateOrInstallBindingScope<T>(
   key: InternalKey<T>,
   activeScope: ScopeNode,
 ): { scope: ScopeNode; binding: InternalProviderDef<T> } {
-  // A binding is always an object, so one `get` per level answers both "is it here" and "which
-  // one" - the walk used to ask `has` and then have the caller `get` the same entry again.
-  for (let scope: ScopeNode | undefined = activeScope; scope; scope = scope.parent) {
-    const binding = scope.bindings.get(key.id) as InternalProviderDef<T> | undefined
-    if (binding) {
-      return { scope, binding }
-    }
+  const existing = findBindingScope(activeScope, key)
+  if (existing) {
+    return { scope: existing, binding: existing.bindings.get(key.id) as InternalProviderDef<T> }
   }
 
   if (key.kind === 'token') {
     throw new Error(`No provider for token: ${getKeyName(key)}`)
   }
 
-  // The walk above already proved nothing is bound here, so a lazy installer's "is it already
-  // installed" check could only ever miss: bind the ref's own factory and return it.
-  const binding = createProviderDefMetadata(key, key.factory, key.providers)
-  activeScope.bindings.set(key.id, binding)
-  return { scope: activeScope, binding }
+  return { scope: activeScope, binding: lazilyInstallRefBinding(key, activeScope) }
 }
 
 function ensureAttachedScope(ownerScope: ScopeNode, binding: InternalProviderDef<unknown>): ScopeNode {
