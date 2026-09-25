@@ -327,11 +327,10 @@ function snapshotProviderInput(input: ProviderInput): ProviderInput {
   return input
 }
 
+// `WeakMap.prototype.get` is specified to return undefined for any key that cannot be held
+// weakly, so a primitive needs no guard here - the cast only satisfies the parameter type.
 function lookup(value: unknown): InternalRuntimeValue | undefined {
-  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) {
-    return undefined
-  }
-  return handleMetadata.get(value)
+  return handleMetadata.get(value as object)
 }
 
 function asInternalKey<T>(key: InjectKey<T>): InternalKey<T> {
@@ -441,20 +440,21 @@ function lazilyInstallRefBinding<T>(ref: InternalRef<T>, scope: ScopeNode): Inte
 
 // Walk up from the active scope; if no binding is found, refs self-install at the active scope,
 // tokens raise — that asymmetry is the whole point of having two kinds of keys.
-function locateOrInstallBindingScope<T>(
-  key: InternalKey<T>,
-  activeScope: ScopeNode,
-): { scope: ScopeNode; binding: InternalProviderDef<T> } {
+// Returns only the owning scope: the caller reads the binding out of it, so the common path -
+// a key whose instance is already cached - does not allocate a pair just to carry both across
+// one call boundary.
+function locateOrInstallBindingScope<T>(key: InternalKey<T>, activeScope: ScopeNode): ScopeNode {
   const existing = findBindingScope(activeScope, key)
   if (existing) {
-    return { scope: existing, binding: existing.bindings.get(key.id) as InternalProviderDef<T> }
+    return existing
   }
 
   if (key.kind === 'token') {
     throw new Error(`No provider for token: ${getKeyName(key)}`)
   }
 
-  return { scope: activeScope, binding: lazilyInstallRefBinding(key, activeScope) }
+  lazilyInstallRefBinding(key, activeScope)
+  return activeScope
 }
 
 function ensureAttachedScope(ownerScope: ScopeNode, binding: InternalProviderDef<unknown>): ScopeNode {
@@ -633,7 +633,8 @@ function resolve<T>(key: InjectKey<T>, activeScope: ScopeNode, frame: Resolution
 
   // Tokens must be installed explicitly. Refs are self-providing and bind
   // their default factory into the current active installation scope.
-  const { scope: bindingScope, binding } = locateOrInstallBindingScope(internalKey, activeScope)
+  const bindingScope = locateOrInstallBindingScope(internalKey, activeScope)
+  const binding = bindingScope.bindings.get(internalKey.id) as InternalProviderDef<T>
   const resolutionScope = ensureAttachedScope(bindingScope, binding)
 
   const cached = resolutionScope.instances.get(internalKey.id) as InstanceRecord<T> | undefined
