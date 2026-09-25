@@ -30,11 +30,61 @@ Deno can skip the install and import directly:
 import { bootstrapApp } from 'npm:dn-ioc'
 ```
 
-A browser without a bundler can load it from an ESM CDN:
+### Browser via CDN
 
-```ts
-import { bootstrapApp } from 'https://esm.sh/dn-ioc'
+The package is ESM and has no dependencies, so a browser can import it straight from a CDN — no install step and no bundler:
+
+```html
+<!doctype html>
+<html lang="en">
+  <body>
+    <script type="module">
+      import { bootstrapApp, provide, provideFor, token } from 'https://cdn.jsdelivr.net/npm/dn-ioc@0.3.0'
+
+      const greetingToken = token('Greeting')
+
+      const greeterRef = provide(({ inject }) => {
+        const greeting = inject(greetingToken)
+        return { greet: name => `${greeting}, ${name}` }
+      })
+
+      const app = bootstrapApp(
+        ({ inject }) => {
+          document.body.textContent = inject(greeterRef).greet('world') // hello, world
+        },
+        { providers: [provideFor(greetingToken, () => 'hello')] },
+      )
+
+      await app.start()
+    </script>
+  </body>
+</html>
 ```
+
+Any of these entry points work:
+
+| CDN      | URL                                         | Serves                            |
+| -------- | ------------------------------------------- | --------------------------------- |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.0` | `index.min.js` — 4.8 kB, 1.9 kB gzipped |
+| unpkg    | `https://unpkg.com/dn-ioc@0.3.0`            | `index.min.js` — same file        |
+| esm.sh   | `https://esm.sh/dn-ioc@0.3.0`               | esm.sh's own transpiled build     |
+
+Pin the version. Drop the `@0.3.0` and the CDN serves whatever is newest, so a release you did not ask for can change a page you already shipped.
+
+An import map keeps the specifier bare, so the same source runs with or without a bundler:
+
+```html
+<script type="importmap">
+  { "imports": { "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc@0.3.0" } }
+</script>
+<script type="module">
+  import { bootstrapApp } from 'dn-ioc'
+</script>
+```
+
+If the graph holds resources — a socket, a poller — read [Wiring `stop()` to the runtime](#wiring-stop-to-the-runtime) before deciding where `app.stop()` goes: a page has no shutdown hook a browser will reliably wait on.
+
+### Module format
 
 Version 0.3.0 is ESM-only; use `import` in your application. TypeScript consumers should use `moduleResolution: "bundler"`. NodeNext and Node16 declaration resolution are not supported.
 
