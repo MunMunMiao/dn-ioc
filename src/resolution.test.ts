@@ -258,7 +258,25 @@ describe('binding installation', () => {
     expect(runs).toBe(1)
   })
 
-  test('the last provider for a key wins regardless of nesting shape', async () => {
+  // Each nesting shape has to take a turn as the last element: a nested group in the middle is
+  // followed by a sibling that puts the right provider back on the end, which hides a flattener
+  // that misplaces that group's contents.
+  test('a nested array installed last wins over everything before it', async () => {
+    const labelToken = token<string>('Label')
+
+    const result = await runApp(
+      ({ inject }) => inject(labelToken),
+      [
+        provideFor(labelToken, () => 'first'),
+        bundleProviders(provideFor(labelToken, () => 'second')),
+        [provideFor(labelToken, () => 'third')],
+      ],
+    )
+
+    expect(result).toBe('third')
+  })
+
+  test('a bundle installed last wins over everything before it', async () => {
     const labelToken = token<string>('Label')
 
     const result = await runApp(
