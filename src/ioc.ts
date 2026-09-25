@@ -298,7 +298,7 @@ function createProviderBundleInternal(items: readonly ProviderInput[]): Provider
   const handle = createHandle<ProviderBundle>()
   handleMetadata.set(handle, {
     kind: 'bundle',
-    items: Object.freeze(items.map(snapshotProviderInput)),
+    items: items.map(snapshotProviderInput),
   })
   return handle
 }
@@ -311,16 +311,18 @@ function createProviderDefMetadata<T>(
   return { kind: 'binding', factory, key, providers }
 }
 
+// `.map` is what makes the snapshot a snapshot; the copies live only in the private metadata
+// table, so no caller can reach them and there is nothing for a freeze to protect against.
 function snapshotProviderInputs(inputs?: readonly ProviderInput[]): readonly ProviderInput[] | undefined {
   if (!inputs) {
     return undefined
   }
-  return Object.freeze(inputs.map(snapshotProviderInput))
+  return inputs.map(snapshotProviderInput)
 }
 
 function snapshotProviderInput(input: ProviderInput): ProviderInput {
   if (Array.isArray(input)) {
-    return Object.freeze(input.map(snapshotProviderInput))
+    return input.map(snapshotProviderInput)
   }
   return input
 }
