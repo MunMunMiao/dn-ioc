@@ -380,18 +380,19 @@ function cyclePath(frame: ResolutionFrame, key: InternalKey<unknown>): InternalK
   return path
 }
 
-function flattenProviders(inputs: readonly ProviderInput[]): InternalProvider[] {
-  const flattened: InternalProvider[] = []
-
+// The accumulator is threaded through the recursion rather than spread into the parent: nesting
+// no longer allocates an array per level, and a wide group can no longer overflow the argument
+// limit of `push(...)` (V8 throws RangeError past ~130k providers in one array; JSC does not).
+function flattenProviders(inputs: readonly ProviderInput[], flattened: InternalProvider[] = []): InternalProvider[] {
   for (const input of inputs) {
     if (Array.isArray(input)) {
-      flattened.push(...flattenProviders(input))
+      flattenProviders(input, flattened)
       continue
     }
 
     const meta = lookup(input)
     if (meta?.kind === 'bundle') {
-      flattened.push(...flattenProviders(meta.items))
+      flattenProviders(meta.items, flattened)
       continue
     }
     if (meta?.kind === 'ref' || meta?.kind === 'binding') {
