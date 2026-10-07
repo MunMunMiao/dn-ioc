@@ -1,0 +1,1229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>dn-ioc — a TypeScript dependency-injection kernel</title>
+    <meta name="description" content="dn-ioc is a small TypeScript dependency-injection kernel. A provider is a factory. No decorators, reflection, runtime dependencies, or global container.">
+    <meta name="theme-color" content="#F3F6FB" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#071433" media="(prefers-color-scheme: dark)">
+    <link rel="alternate" type="text/plain" href="llms.txt" title="Plain-text reference for agents">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23F3F6FB'/%3E%3Cpath d='M6 16h20M10 12v8M22 12v8' stroke='%231D4ED8' stroke-width='1.5'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareSourceCode",
+        "name": "dn-ioc",
+        "description": "A small TypeScript dependency-injection kernel. A provider is a factory. No decorators, reflection, runtime dependencies, or global container.",
+        "programmingLanguage": "TypeScript",
+        "runtimePlatform": "ESM",
+        "license": "https://spdx.org/licenses/MIT.html",
+        "codeRepository": "https://github.com/MunMunMiao/dn-ioc"
+      }
+    </script>
+    <style>
+      :root {
+        --paper: #f3f6fb;
+        --ink: #152033;
+        --line: #1d4ed8;
+        --quiet: #4e5d78;
+        --sans: "IBM Plex Sans", "Segoe UI", sans-serif;
+        --mono: "IBM Plex Mono", ui-monospace, monospace;
+        color-scheme: light dark;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --paper: #071433;
+          --ink: #e7eefc;
+          --line: #9db7ff;
+          --quiet: #a9b7d4;
+        }
+      }
+
+      *,
+      *::before,
+      *::after { box-sizing: border-box; }
+
+      html { scroll-behavior: smooth; }
+
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+      }
+
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 1.0625rem;
+        line-height: 1.6;
+      }
+
+      a { color: inherit; }
+
+      :focus-visible {
+        outline: 2px solid var(--line);
+        outline-offset: 3px;
+      }
+
+      ::selection { background: color-mix(in srgb, var(--line) 28%, transparent); }
+
+      .skip {
+        position: absolute;
+        left: 0.75rem;
+        top: 0.75rem;
+        transform: translateY(-150%);
+        background: var(--paper);
+        color: var(--ink);
+        padding: 0.4rem 0.7rem;
+        z-index: 5;
+      }
+
+      .skip:focus { transform: none; }
+
+      .sheet {
+        width: min(72rem, calc(100% - 2.5rem));
+        margin: 0 auto;
+        min-width: 0;
+      }
+
+      .mast { padding: 1.6rem 0 1.3rem; min-width: 0; }
+
+      .mark {
+        margin: 0;
+        font-family: var(--sans);
+        font-weight: 600;
+        font-size: clamp(2.8rem, 7vw, 4.4rem);
+        letter-spacing: -0.04em;
+        line-height: 0.92;
+      }
+
+      .thesis {
+        max-width: 36rem;
+        margin: 0.55rem 0 0;
+        font-size: 1.15rem;
+        line-height: 1.45;
+      }
+
+      .mast-links {
+        margin: 0.7rem 0 0;
+        font-family: var(--mono);
+        font-size: 0.75rem;
+      }
+
+      .mast-links a,
+      .read-as a,
+      .block a {
+        text-decoration-color: var(--line);
+        text-underline-offset: 0.18em;
+      }
+
+      .mast-links span { color: var(--quiet); }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 11rem minmax(0, 1fr);
+        gap: 1.75rem;
+        padding: 1.35rem 0 4.5rem;
+        align-items: start;
+        min-width: 0;
+      }
+
+      .rail { position: sticky; top: 1.25rem; }
+
+      .rail-label {
+        margin: 0 0 0.45rem;
+        padding-left: 0.85rem;
+        font-family: var(--mono);
+        font-size: 0.64rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--line);
+      }
+
+      .rail-label.later { margin-top: 1.2rem; }
+
+      .pins {
+        position: relative;
+        list-style: none;
+        margin: 0;
+        padding: 0 0 0 0.85rem;
+      }
+
+      .pins::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0.55rem;
+        bottom: 0.55rem;
+        width: 1px;
+        background: var(--line);
+        transform-origin: top;
+      }
+
+      @media (prefers-reduced-motion: no-preference) {
+        .pins::before {
+          transform: scaleY(0);
+          animation: draw-spine 900ms ease forwards;
+        }
+      }
+
+      @keyframes draw-spine { to { transform: scaleY(1); } }
+
+      .pins a {
+        position: relative;
+        display: block;
+        padding: 0.36rem 0 0.36rem 0.55rem;
+        color: var(--line);
+        text-decoration: none;
+        font-family: var(--mono);
+        font-size: 0.75rem;
+      }
+
+      .pins a::before {
+        content: "";
+        position: absolute;
+        left: -0.85rem;
+        top: 50%;
+        width: 0.7rem;
+        height: 1px;
+        background: var(--line);
+      }
+
+      .pins a[aria-current="true"] {
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      .pins a[aria-current="true"]::before {
+        height: 2px;
+        margin-top: -1px;
+        background: var(--ink);
+      }
+
+      .sheet-links {
+        list-style: none;
+        margin: 0;
+        padding: 0 0 0 0.85rem;
+        font-family: var(--mono);
+        font-size: 0.75rem;
+      }
+
+      .sheet-links a {
+        display: block;
+        padding: 0.2rem 0;
+        color: var(--line);
+        text-decoration: none;
+      }
+
+      .sheet-links a:hover,
+      .sheet-links a:focus-visible {
+        color: var(--ink);
+        text-decoration: underline;
+        text-underline-offset: 0.18em;
+      }
+
+      .doc {
+        border: 1px solid var(--line);
+        padding: 1.35rem 1.45rem 2.2rem;
+        min-width: 0;
+      }
+
+      .read-as {
+        margin: 0;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        line-height: 1.5;
+        color: var(--line);
+      }
+
+      .read-as a { color: var(--ink); }
+
+      .block {
+        padding-top: 2.3rem;
+        scroll-margin-top: 1.25rem;
+      }
+
+      .block h2,
+      .block h3,
+      .block p,
+      .block ul,
+      .block dl,
+      .block figure,
+      .sample,
+      .table-wrap { margin: 0.85rem 0 0; }
+
+      .block h2 {
+        margin-top: 0;
+        font-size: clamp(1.45rem, 2.2vw, 1.8rem);
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        line-height: 1.2;
+      }
+
+      .block h3 {
+        margin-top: 1.5rem;
+        font-size: 1.15rem;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        line-height: 1.3;
+      }
+
+      .block p,
+      .block li { max-width: 68ch; }
+
+      td code { white-space: nowrap; }
+
+      .block code {
+        font-family: var(--mono);
+        font-size: 0.86em;
+      }
+
+      .block ul { padding-left: 1.15rem; }
+
+      .constraint {
+        border-left: 2px solid var(--line);
+        padding-left: 0.85rem;
+      }
+
+      .rules {
+        display: grid;
+        grid-template-columns: 9.2rem minmax(0, 1fr);
+        gap: 0.45rem 1rem;
+        max-width: 68ch;
+      }
+
+      .rules dt {
+        margin: 0;
+        font-family: var(--mono);
+        font-size: 0.75rem;
+        color: var(--line);
+      }
+
+      .rules dd { margin: 0; }
+
+      .sample { position: relative; }
+
+      .sample pre {
+        margin: 0;
+        padding: 0.9rem 4.6rem 0.95rem 0.95rem;
+        overflow-x: auto;
+        background: transparent;
+        border: 1px solid var(--line);
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        line-height: 1.55;
+      }
+
+      .sample code { font-size: inherit; }
+
+      .note { color: var(--quiet); }
+
+      .copy {
+        position: absolute;
+        top: 0.4rem;
+        right: 0.4rem;
+        border: 1px solid var(--line);
+        background: var(--paper);
+        color: var(--line);
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        padding: 0.22rem 0.45rem;
+        cursor: pointer;
+      }
+
+      .copy:hover { color: var(--ink); }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem 1rem;
+        margin: 0 0 0.7rem;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--line);
+      }
+
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .swatch {
+        width: 1.1rem;
+        height: 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .swatch.dead {
+        border-top-style: dashed;
+        border-top-color: var(--quiet);
+      }
+
+      .scope-pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+      }
+
+      .scope {
+        border: 1px solid var(--line);
+        padding: 0.7rem 0.75rem 0.8rem;
+        min-width: 0;
+      }
+
+      .scope-private {
+        margin-top: 0.55rem;
+        background: color-mix(in srgb, var(--line) 8%, var(--paper));
+      }
+
+      .scope-name,
+      .wire,
+      .scope-result {
+        margin: 0;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        line-height: 1.45;
+      }
+
+      .scope-name {
+        color: var(--line);
+        margin-bottom: 0.35rem;
+      }
+
+      .wire {
+        margin-top: 0.2rem;
+        padding-left: 0.5rem;
+        border-left: 1px solid var(--line);
+      }
+
+      .wire.dead {
+        border-left-style: dashed;
+        border-left-color: var(--quiet);
+      }
+
+      .scope-result { margin-top: 0.55rem; }
+
+      figcaption {
+        margin-top: 0.7rem;
+        max-width: 68ch;
+        color: var(--quiet);
+        font-size: 0.95rem;
+      }
+
+      .table-wrap { overflow-x: auto; }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.95rem;
+      }
+
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 0.45rem 0.7rem 0.45rem 0;
+        border-bottom: 1px solid color-mix(in srgb, var(--line) 45%, transparent);
+      }
+
+      th {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        font-weight: 400;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--line);
+      }
+
+      .block h2 code,
+      .block h3 code {
+        font-family: var(--mono);
+        font-size: 0.78em;
+        font-weight: 400;
+        color: var(--line);
+      }
+
+      @media (max-width: 860px) {
+        .sheet { width: min(72rem, calc(100% - 1.5rem)); }
+
+        .mark { font-size: clamp(2.4rem, 12vw, 3.2rem); }
+        .thesis { max-width: none; font-size: 1.05rem; }
+
+        .layout {
+          grid-template-columns: 1fr;
+          gap: 0;
+          padding-top: 0;
+        }
+
+        .rail {
+          position: sticky;
+          top: 0;
+          z-index: 4;
+          background: var(--paper);
+          padding: 0.55rem 0 0.45rem;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .rail-label { display: none; }
+
+        .pins {
+          display: flex;
+          justify-content: space-between;
+          gap: 0.15rem;
+          width: 100%;
+          padding: 0.65rem 0 0;
+        }
+
+        .pins::before {
+          top: 0;
+          bottom: auto;
+          left: 0.35rem;
+          right: 0.35rem;
+          width: auto;
+          height: 1px;
+          transform-origin: left;
+        }
+
+        .pins a {
+          flex: 1 1 0;
+          min-width: 0;
+          padding: 0.4rem 0 0;
+          text-align: center;
+          font-size: 0.62rem;
+        }
+
+        .pins a::before {
+          left: 50%;
+          top: -0.65rem;
+          width: 1px;
+          height: 0.4rem;
+        }
+
+        .paren { display: none; }
+
+        .sheet-links {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.15rem 0.85rem;
+          margin-top: 0.4rem;
+          padding-left: 0;
+        }
+
+        .doc { padding: 1rem 0.85rem 1.8rem; }
+        .block { scroll-margin-top: 6.2rem; }
+        .scope-pair,
+        .rules { grid-template-columns: 1fr; }
+      }
+
+      @media (prefers-reduced-motion: no-preference) and (max-width: 860px) {
+        .pins::before {
+          transform: scaleX(0);
+          animation-name: draw-spine-x;
+        }
+      }
+
+      @keyframes draw-spine-x { to { transform: scaleX(1); } }
+
+      @media (forced-colors: active) {
+        .copy,
+        .doc,
+        .scope,
+        .sample pre { border: 1px solid CanvasText; }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#doc">Skip to reference</a>
+    <header class="mast sheet">
+      <h1 class="mark">dn-ioc</h1>
+      <p class="thesis">A provider is a factory that creates a value. There is no container.</p>
+      <p class="mast-links">
+        <a href="https://www.npmjs.com/package/dn-ioc">npm</a>
+        <span aria-hidden="true"> · </span>
+        <a href="https://github.com/MunMunMiao/dn-ioc">GitHub</a>
+        <span aria-hidden="true"> · </span>
+        <a href="llms.txt">llms.txt</a>
+      </p>
+    </header>
+
+    <div class="layout sheet">
+      <nav class="rail" aria-label="Lifecycle">
+        <p class="rail-label">Lifecycle</p>
+        <ol class="pins">
+          <li><a href="#tokens" data-step-link="0">token<span class="paren">()</span></a></li>
+          <li><a href="#providers" data-step-link="1">provide<span class="paren">()</span></a></li>
+          <li><a href="#scopes" data-step-link="2">inject<span class="paren">()</span></a></li>
+          <li><a href="#start" data-step-link="3">start<span class="paren">()</span></a></li>
+          <li><a href="#cleanup" data-step-link="4">stop<span class="paren">()</span></a></li>
+        </ol>
+        <p class="rail-label later">Sheet</p>
+        <ul class="sheet-links">
+          <li><a href="#install">Install</a></li>
+          <li><a href="#async">Async</a></li>
+          <li><a href="#errors">Errors</a></li>
+          <li><a href="#api">Public API</a></li>
+        </ul>
+      </nav>
+
+      <main class="doc" id="doc">
+        <p class="read-as">Plain-text copy: <a href="llms.txt">llms.txt</a>.</p>
+
+        <section class="block" id="install">
+          <h2>Install</h2>
+          <p>Pick one package manager. The package is ESM and has no dependencies.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>npm install dn-ioc
+pnpm add dn-ioc
+yarn add dn-ioc
+bun add dn-ioc
+deno add npm:dn-ioc</code></pre>
+          </div>
+          <p>Deno can skip the install:</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>import { bootstrapApp } from 'npm:dn-ioc'</code></pre>
+          </div>
+          <h3>Browser, no bundler</h3>
+          <p>A page can import the package from a CDN.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>&lt;!doctype html&gt;
+&lt;html lang="en"&gt;
+  &lt;body&gt;
+    &lt;script type="module"&gt;
+      import { bootstrapApp, provide, provideFor, token } from 'https://cdn.jsdelivr.net/npm/dn-ioc'
+
+      const greetingToken = token('Greeting')
+
+      const greeterRef = provide(({ inject }) =&gt; {
+        const greeting = inject(greetingToken)
+        return { greet: name =&gt; `${greeting}, ${name}` }
+      })
+
+      const app = bootstrapApp(
+        ({ inject }) =&gt; {
+          document.body.textContent = inject(greeterRef).greet('world') <span class="note">// hello, world</span>
+        },
+        { providers: [provideFor(greetingToken, () =&gt; 'hello')] },
+      )
+
+      await app.start()
+    &lt;/script&gt;
+  &lt;/body&gt;
+&lt;/html&gt;</code></pre>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">CDN</th>
+                  <th scope="col">URL</th>
+                  <th scope="col">Serves</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>jsDelivr</td>
+                  <td><code>https://cdn.jsdelivr.net/npm/dn-ioc</code></td>
+                  <td><code>index.min.js</code></td>
+                </tr>
+                <tr>
+                  <td>unpkg</td>
+                  <td><code>https://unpkg.com/dn-ioc</code></td>
+                  <td><code>index.min.js</code> — same file</td>
+                </tr>
+                <tr>
+                  <td>esm.sh</td>
+                  <td><code>https://esm.sh/dn-ioc</code></td>
+                  <td>esm.sh's own transpiled build</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>An import map keeps the specifier bare, so the same source runs with or without a bundler:</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>&lt;script type="importmap"&gt;
+  { "imports": { "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc" } }
+&lt;/script&gt;
+&lt;script type="module"&gt;
+  import { bootstrapApp } from 'dn-ioc'
+&lt;/script&gt;</code></pre>
+          </div>
+          <p>The package is ESM-only. Use <code>import</code>. TypeScript consumers should set <code>moduleResolution: "bundler"</code>. NodeNext and Node16 declaration resolution are not supported.</p>
+          <p>The kernel uses no platform APIs — no <code>process</code>, no DOM, no timers — so it runs unchanged on Node.js, Bun, Deno, browsers, workers, and edge runtimes. Only shutdown differs. See <a href="#cleanup">stop()</a>.</p>
+        </section>
+
+        <section class="block" id="start" data-step="3">
+          <h2><code>start()</code> runs the root factory once</h2>
+          <p><code>bootstrapApp()</code> builds the graph and returns a handle. It runs nothing. <code>app.start()</code> runs the root factory and rejects if it fails. The root factory returns <code>void</code>: it wires the graph and does the work. It is not an expression that produces a value.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>import { bootstrapApp, provide } from 'dn-ioc'
+
+const configRef = provide(() =&gt; ({ greeting: 'hello' }))
+const greeterRef = provide(({ inject }) =&gt; {
+  const config = inject(configRef)
+  return { greet: (name: string) =&gt; `${config.greeting}, ${name}` }
+})
+
+const app = bootstrapApp(({ inject }) =&gt; {
+  console.log(inject(greeterRef).greet('world')) <span class="note">// hello, world</span>
+})
+
+await app.start()</code></pre>
+          </div>
+          <p>This graph holds no resources, so it never needs <code>stop()</code>.</p>
+          <p>For an async provider, await <code>inject()</code> inside the root factory so startup includes it:</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>import { bootstrapApp, provide } from 'dn-ioc'
+
+const settingsRef = provide(async () =&gt; ({ greeting: 'hello' }))
+const app = bootstrapApp(async ({ inject }) =&gt; {
+  const settings = await inject(settingsRef)
+  console.log(`${settings.greeting}, world`) <span class="note">// hello, world</span>
+})
+
+await app.start()</code></pre>
+          </div>
+          <p class="constraint">Register shutdown handling before <code>start()</code>. <code>bootstrapApp()</code> runs no provider, so the handle exists before any factory does. <code>start()</code> is idempotent: repeated calls return the same Promise and run the root factory once.</p>
+        </section>
+
+        <section class="block" id="tokens" data-step="0">
+          <h2><code>token()</code> makes a key with no default</h2>
+          <p>A <code>Token&lt;T&gt;</code> must be bound with <code>provideFor()</code> before anything injects it. The description is the name in the error. A ref with no description is reported as <code>&lt;anonymous&gt;</code>.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>import { bootstrapApp, provide, provideFor, token } from 'dn-ioc'
+
+const prefixToken = token&lt;string&gt;('Prefix')
+const formatterRef = provide(({ inject }) =&gt; {
+  const prefix = inject(prefixToken)
+  return { format: (value: string) =&gt; `${prefix}${value}` }
+})
+
+const app = bootstrapApp(
+  ({ inject }) =&gt; {
+    console.log(inject(formatterRef).format('demo')) <span class="note">// [app] demo</span>
+  },
+  { providers: [provideFor(prefixToken, () =&gt; '[app] '), formatterRef] },
+)
+
+await app.start()
+await app.stop()</code></pre>
+          </div>
+          <p>Leave the token unbound and <code>inject(prefixToken)</code> throws <code>No provider for token: Prefix</code>.</p>
+        </section>
+
+        <section class="block" id="providers" data-step="1">
+          <h2><code>provide()</code> makes a Ref that self-installs</h2>
+          <p>A <code>Ref&lt;T&gt;</code> has a default factory. The first <code>inject()</code> in a scope installs it there and caches the instance. It is not a global singleton. Install a shared ref at bootstrap — pass it in <code>providers</code>, as <code>formatterRef</code> is above — so sibling subtrees reuse the same instance.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>import { bootstrapApp, provide } from 'dn-ioc'
+
+let created = 0
+const configRef = provide(() =&gt; ({ id: ++created }))
+
+const app = bootstrapApp(({ inject }) =&gt; {
+  const first = inject(configRef)
+  const second = inject(configRef)
+  console.log(first === second, created) <span class="note">// true 1</span>
+})
+
+await app.start()</code></pre>
+          </div>
+          <p><code>provide()</code> and <code>provideFor()</code> both accept <code>{ providers }</code>. That array is a private subtree, visible to that provider and its descendants. The next section is the rule that subtree does not break.</p>
+        </section>
+
+        <section class="block" id="scopes" data-step="2">
+          <h2><code>inject()</code> searches this scope, then parents</h2>
+          <p>A solid trace is a binding resolved in that scope. A dashed trace is a binding that does not rewrite a consumer already installed above it.</p>
+          <figure>
+            <div class="legend">
+              <span><i class="swatch" aria-hidden="true"></i> resolved here</span>
+              <span><i class="swatch dead" aria-hidden="true"></i> does not rewrite a parent consumer</span>
+            </div>
+            <div class="scope-pair">
+              <div class="scope">
+                <p class="scope-name">app scope</p>
+                <p class="wire">labelToken → "app"</p>
+                <div class="scope scope-private">
+                  <p class="scope-name">private scope of localDemoRef</p>
+                  <p class="wire">labelToken → "local"</p>
+                  <p class="wire">rendererRef → "local"</p>
+                  <p class="wire">localDemoRef → "local"</p>
+                </div>
+                <p class="scope-result">reads local local</p>
+              </div>
+              <div class="scope">
+                <p class="scope-name">app scope</p>
+                <p class="wire">configRef → "root config"</p>
+                <p class="wire">serviceRef → "root config"</p>
+                <div class="scope scope-private">
+                  <p class="scope-name">private scope of localServiceRef</p>
+                  <p class="wire dead">configRef → "local config"</p>
+                  <p class="wire dead">serviceRef stays "root config"</p>
+                </div>
+                <p class="scope-result">reads root config</p>
+              </div>
+            </div>
+            <figcaption>A private binding is visible to that provider and its descendants. Sibling subtrees stay isolated. A consumer already installed in a parent scope keeps resolving there.</figcaption>
+          </figure>
+          <p>The left frame is a private subtree. The local binding is the one <code>rendererRef</code> actually injects:</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>import { bootstrapApp, provide, provideFor, token } from 'dn-ioc'
+
+const labelToken = token&lt;string&gt;('Label')
+const rendererRef = provide(({ inject }) =&gt; ({ label: inject(labelToken) }))
+const localDemoRef = provide(
+  ({ inject }) =&gt; ({
+    label: inject(labelToken),
+    renderer: inject(rendererRef),
+  }),
+  { providers: [provideFor(labelToken, () =&gt; 'local')] },
+)
+
+const app = bootstrapApp(
+  ({ inject }) =&gt; {
+    const demo = inject(localDemoRef)
+    console.log(demo.label, demo.renderer.label) <span class="note">// local local</span>
+  },
+  { providers: [provideFor(labelToken, () =&gt; 'app')] },
+)
+
+await app.start()
+await app.stop()</code></pre>
+          </div>
+          <p>The right frame is the trap. <code>serviceRef</code> is already installed in the app scope, so a child binding of <code>configRef</code> does not change it:</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>const configRef = provide(() =&gt; 'root config')
+const serviceRef = provide(({ inject }) =&gt; inject(configRef))
+const localServiceRef = provide(({ inject }) =&gt; inject(serviceRef), {
+  providers: [provideFor(configRef, () =&gt; 'local config')],
+})
+
+const app = bootstrapApp(({ inject }) =&gt; {
+  console.log(inject(serviceRef)) <span class="note">// root config</span>
+  console.log(inject(localServiceRef)) <span class="note">// root config</span>
+})</code></pre>
+          </div>
+          <p class="constraint">Rebind the consumer and its dependency together in the child scope when both need to change.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>const localServiceRef = provide(({ inject }) =&gt; inject(serviceRef), {
+  providers: [
+    provideFor(configRef, () =&gt; 'local config'),
+    provideFor(serviceRef, ({ inject }) =&gt; inject(configRef)),
+  ],
+})
+<span class="note">// inject(localServiceRef) === 'local config'</span>
+<span class="note">// inject(serviceRef) in the parent stays 'root config'</span></code></pre>
+          </div>
+          <h3>Installation</h3>
+          <dl class="rules">
+            <dt>Snapshotting</dt>
+            <dd>Provider arrays and bundles are copied when their owning ref, binding, or bundle is created. Later edits to those arrays do not change that definition.</dd>
+            <dt>Order</dt>
+            <dd>Provider inputs are flattened in source order, nested arrays and bundles included.</dd>
+            <dt>Last-write-wins</dt>
+            <dd>If the same key is installed twice in one scope, the later binding silently replaces the earlier one, including its nested providers.</dd>
+          </dl>
+          <p>A bundle is an ordinary provider input. Use it to ship a token and the factory that reads it as one value:</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>import { bootstrapApp, bundleProviders, provide, provideFor, token } from 'dn-ioc'
+
+const themeToken = token&lt;{ palette: string }&gt;('Theme')
+const optionsToken = token&lt;{ palette: string }&gt;('ThemeOptions')
+
+function provideDemoTheme(options: { palette: string }) {
+  return bundleProviders(
+    provideFor(optionsToken, () =&gt; options),
+    provideFor(themeToken, ({ inject }) =&gt; ({ palette: inject(optionsToken).palette })),
+  )
+}
+
+const previewRef = provide(({ inject }) =&gt; inject(themeToken))
+const app = bootstrapApp(
+  ({ inject }) =&gt; {
+    console.log(inject(previewRef).palette) <span class="note">// ocean</span>
+  },
+  { providers: [provideDemoTheme({ palette: 'ocean' })] },
+)
+
+await app.start()
+await app.stop()</code></pre>
+          </div>
+        </section>
+
+        <section class="block" id="cleanup" data-step="4">
+          <h2><code>stop()</code> closes injection, then runs cleanup newest-first</h2>
+          <p>A successful <code>start()</code> never stops the app. The caller decides when to call <code>stop()</code>. Not every app needs it.</p>
+          <ul>
+            <li>Call it for a long-running process holding sockets, timers, or file handles.</li>
+            <li>Call it in tests, one app per test, so timers and connections do not leak between cases.</li>
+            <li>Call it for a sub-app, widget, or route-scoped graph that unmounts while the page lives on.</li>
+          </ul>
+          <p>A short-lived script, or a page-wide graph that ends when the tab closes, does not need it. The runtime reclaims everything. The quick start above is in that category.</p>
+          <p><code>stop()</code> synchronously closes <code>inject()</code> across the whole app, then runs registered hooks newest-first. Later injection throws <code>Cannot inject after the app has stopped</code>, including cached instances and private subtrees. Capture a dependency before registering the hook:</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>import { bootstrapApp, provide } from 'dn-ioc'
+
+const storeRef = provide(() =&gt; ({ closed: false }))
+const serviceRef = provide(({ inject, onDispose }) =&gt; {
+  const store = inject(storeRef)
+  onDispose(async () =&gt; {
+    store.closed = true
+  })
+  return { read: () =&gt; inject(storeRef).closed }
+})
+
+let service!: { read: () =&gt; boolean }
+const app = bootstrapApp(({ inject }) =&gt; {
+  service = inject(serviceRef)
+})
+
+await app.start()
+service.read() <span class="note">// false — deferred injection is allowed while the app is running</span>
+await app.stop()
+service.read() <span class="note">// throws Cannot inject after the app has stopped</span></code></pre>
+          </div>
+          <h3>Hook rules</h3>
+          <ul>
+            <li>A hook may be sync or async. It must resolve to nothing: <code>void</code>, or a <code>Promise&lt;void&gt;</code> that <code>stop()</code> awaits. Returning anything else is a type error. Discard a return value with braces: <code>onDispose(() =&gt; { server.close() })</code>.</li>
+            <li><code>onDispose</code> is callable only while its own factory is running, and only before <code>stop()</code>. A sync factory closes that window when it returns or throws. An async factory closes it when its result settles.</li>
+            <li>Registering later throws <code>onDispose can only be called while the factory is running</code>, or <code>Cannot register cleanup after the app has stopped</code> if the app is already stopping.</li>
+            <li>Concurrent and repeated <code>stop()</code> calls return the same Promise and run each hook once. If a hook fails, the remaining hooks still run. One failure is rethrown unchanged. Several produce an <code>AggregateError</code>.</li>
+            <li>A hook must not await <code>app.stop()</code>. That is its own completion and would deadlock.</li>
+          </ul>
+          <p>If <code>start()</code> fails, it stops the app, then rejects. A lone failure is rethrown unchanged. A startup failure plus cleanup failures produce an <code>AggregateError</code>. A successful <code>start()</code> never stops the app, and neither do runtime failures afterwards.</p>
+          <p class="constraint"><code>stop()</code> does not wait for unfinished factories, cancel their I/O, or revoke objects you already hold. A detached factory that started before shutdown keeps running and reports through the Promise <code>inject()</code> returned. Request admission, task cancellation, and shutdown ordering stay with the application.</p>
+          <h3>Wire <code>stop()</code> to the runtime</h3>
+          <p>The kernel installs no listeners. Shutdown signals have no common subset across runtimes.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Runtime</th>
+                  <th scope="col">Trigger</th>
+                  <th scope="col">Async cleanup</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Node.js, Bun</td>
+                  <td><code>process.on('SIGINT' | 'SIGTERM', handler)</code></td>
+                  <td>Awaited, if the handler keeps the process alive</td>
+                </tr>
+                <tr>
+                  <td>Deno</td>
+                  <td><code>Deno.addSignalListener('SIGINT', handler)</code></td>
+                  <td>Awaited</td>
+                </tr>
+                <tr>
+                  <td>Browser page</td>
+                  <td><code>addEventListener('pagehide', handler)</code></td>
+                  <td>Not reliable</td>
+                </tr>
+                <tr>
+                  <td>Browser sub-app</td>
+                  <td>Your own unmount call</td>
+                  <td>Awaited</td>
+                </tr>
+                <tr>
+                  <td>Web Worker</td>
+                  <td>A message from the host before <code>worker.terminate()</code></td>
+                  <td>Only if the host waits before terminating</td>
+                </tr>
+                <tr>
+                  <td>Serverless, edge</td>
+                  <td>End of the request or invocation you scoped the app to</td>
+                  <td>Depends on the platform's keep-alive API</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>A server on Node or Bun. The listener is registered before <code>start()</code>, because <code>bootstrapApp()</code> runs no provider yet:</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>import { createServer } from 'node:http'
+import { bootstrapApp, provide } from 'dn-ioc'
+
+const serverRef = provide(({ onDispose }) =&gt; {
+  const server = createServer().listen(3000)
+  onDispose(() =&gt; new Promise&lt;void&gt;(resolve =&gt; server.close(() =&gt; resolve())))
+  return server
+})
+
+const app = bootstrapApp(({ inject }) =&gt; {
+  inject(serverRef)
+})
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () =&gt; void app.stop())
+}
+
+try {
+  await app.start()
+} catch (error) {
+  console.error(error)
+  await app.stop()
+}</code></pre>
+          </div>
+          <p>The same graph on Deno only changes the listener: <code>Deno.addSignalListener('SIGINT', () =&gt; void app.stop())</code>.</p>
+          <p>In a browser, scope the app to something you unmount yourself, so cleanup runs while the page is still alive. Call <code>stop()</code> from a React effect cleanup, Vue's <code>onScopeDispose</code>, a custom element's <code>disconnectedCallback</code>, or a router leave hook.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>import { bootstrapApp, provide } from 'dn-ioc'
+
+const socketRef = provide(({ onDispose }) =&gt; {
+  const socket = new WebSocket('wss://example.com')
+  onDispose(() =&gt; socket.close())
+  return socket
+})
+
+const app = bootstrapApp(({ inject }) =&gt; {
+  inject(socketRef)
+})
+await app.start()
+
+async function unmount() {
+  await app.stop()
+}</code></pre>
+          </div>
+          <p class="constraint"><code>pagehide</code> is the least-bad unload event, and the browser may still discard the page before an async hook resolves. <code>beforeunload</code> is worse: the back/forward cache can skip it. If a resource must be released on unload, keep that hook synchronous.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>const sessionRef = provide(({ onDispose }) =&gt; {
+  const id = crypto.randomUUID()
+  onDispose(() =&gt; {
+    navigator.sendBeacon('/session/end', id)
+  })
+  return id
+})
+
+const app = bootstrapApp(({ inject }) =&gt; {
+  inject(sessionRef)
+})
+await app.start()
+
+addEventListener('pagehide', () =&gt; void app.stop())</code></pre>
+          </div>
+          <h3><code>await using</code></h3>
+          <p><code>App</code> implements <code>AsyncDisposable</code>, so a scoped app can drop the explicit <code>stop()</code>. This needs TypeScript 5.2+, or a runtime that supports the syntax. When TypeScript downlevels it, the lookup falls back to <code>Symbol.for('Symbol.asyncDispose')</code>. <code>dn-ioc</code> implements both keys.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>{
+  await using app = bootstrapApp(({ inject }) =&gt; {
+    inject(serverRef)
+  })
+  await app.start()
+} <span class="note">// app.stop() runs when this scope exits, including on throw</span></code></pre>
+          </div>
+        </section>
+
+        <section class="block" id="async">
+          <h2>Async factories share one Promise</h2>
+          <p><code>inject()</code> returns a synchronous value as a value, and a shared Promise for an async provider. Repeated injection in the same resolution scope reuses that Promise. A rejected provider is removed from the cache, so a later injection can retry while the app is running.</p>
+          <p><code>start()</code> follows the root factory and the Promises it actually awaits or returns. Await what startup requires before returning. For work started without awaiting it, keep the Promise somewhere the caller can still see it. That Promise reports its own provider. It does not wait for unrelated providers, even after <code>stop()</code> has settled. If the factory never finishes, its Promise never reports an outcome, and <code>stop()</code> can still finish.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>import { bootstrapApp, provide } from 'dn-ioc'
+
+const backgroundRef = provide(async () =&gt; 'done')
+
+let background!: Promise&lt;string&gt;
+const app = bootstrapApp(({ inject }) =&gt; {
+  background = inject(backgroundRef)
+})
+
+await app.start()
+console.log(await background) <span class="note">// done</span>
+await app.stop()</code></pre>
+          </div>
+          <p>For an async token, put the Promise in the token type:</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>import { bootstrapApp, provideFor, token } from 'dn-ioc'
+
+const settingsToken = token&lt;Promise&lt;{ ready: boolean }&gt;&gt;('Settings')
+const app = bootstrapApp(
+  async ({ inject }) =&gt; {
+    const settings = await inject(settingsToken)
+    console.log(settings.ready) <span class="note">// true</span>
+  },
+  { providers: [provideFor(settingsToken, async () =&gt; ({ ready: true }))] },
+)
+
+await app.start()
+await app.stop()</code></pre>
+          </div>
+        </section>
+
+        <section class="block" id="errors">
+          <h2>Errors are exact strings</h2>
+          <p>Match these messages. Do not paraphrase them. Nested provider inputs are validated when their subtree is first resolved. Invalid nested input throws from that <code>inject()</code> call; if the root does not handle it, <code>start()</code> rejects.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Situation</th>
+                  <th scope="col">Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Unbound <code>Token</code></td>
+                  <td><code>No provider for token: Name</code></td>
+                </tr>
+                <tr>
+                  <td>Construction-time or concurrent async cycle</td>
+                  <td><code>Circular dependency detected: A -&gt; B -&gt; A</code></td>
+                </tr>
+                <tr>
+                  <td>Invalid inject key</td>
+                  <td><code>Invalid inject key received</code></td>
+                </tr>
+                <tr>
+                  <td>Invalid root provider input</td>
+                  <td><code>Invalid provider input received</code>, thrown by <code>bootstrapApp()</code> before an <code>App</code> exists</td>
+                </tr>
+                <tr>
+                  <td><code>inject</code> after <code>stop()</code></td>
+                  <td><code>Cannot inject after the app has stopped</code>, before cache lookup or key validation</td>
+                </tr>
+                <tr>
+                  <td><code>onDispose</code> after factory completion</td>
+                  <td><code>onDispose can only be called while the factory is running</code></td>
+                </tr>
+                <tr>
+                  <td><code>onDispose</code> after <code>stop()</code></td>
+                  <td><code>Cannot register cleanup after the app has stopped</code></td>
+                </tr>
+                <tr>
+                  <td><code>start()</code> on a stopped app</td>
+                  <td><code>Cannot start an app that has been stopped</code></td>
+                </tr>
+                <tr>
+                  <td>Synchronous provider failure</td>
+                  <td><code>inject()</code> throws; the caller may catch it</td>
+                </tr>
+                <tr>
+                  <td>Async provider failure</td>
+                  <td>Its <code>inject()</code> Promise rejects; the caller may catch it</td>
+                </tr>
+                <tr>
+                  <td>Root factory failure</td>
+                  <td><code>start()</code> rejects after registered cleanup runs</td>
+                </tr>
+                <tr>
+                  <td>Root factory returns a value</td>
+                  <td>Type error: the root factory must return <code>void</code></td>
+                </tr>
+                <tr>
+                  <td>Cleanup failure</td>
+                  <td>Rejects <code>stop()</code>, and <code>start()</code> too when it triggered the stop</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="block" id="api">
+          <h2>Public API</h2>
+          <p>Signatures below omit the opaque brands on handles. Create handles with the exported functions. <code>isProvideRef</code> is true only for a <code>Ref</code> from <code>provide()</code>, not for a token, a binding, a bundle, or a copy.</p>
+          <p>Handles returned by <code>token</code>, <code>provide</code>, <code>provideFor</code>, and <code>bundleProviders</code> are frozen opaque objects. A copied object is rejected. This is an in-process kernel for trusted application code, not a JavaScript sandbox.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code>interface Token&lt;T&gt; {}
+interface Ref&lt;T&gt; extends Token&lt;T&gt; {}
+interface ProviderDef&lt;T&gt; {}
+interface ProviderBundle {}
+
+type RefType&lt;T&gt; = T extends Ref&lt;infer U&gt; ? U : never
+type InjectKey&lt;T&gt; = Token&lt;T&gt; | Ref&lt;T&gt;
+type ProviderInput = Ref&lt;unknown&gt; | ProviderDef&lt;unknown&gt; | ProviderBundle | readonly ProviderInput[]
+type ProviderOptions = { providers?: readonly ProviderInput[] }
+type InjectFn = &lt;T&gt;(key: InjectKey&lt;T&gt;) =&gt; T
+type OnDisposeFn = (fn: () =&gt; void | Promise&lt;void&gt;) =&gt; void
+
+interface Context {
+  inject: InjectFn
+  onDispose: OnDisposeFn
+}
+
+type Factory&lt;T&gt; = (ctx: Context) =&gt; T
+type BootstrapAppFn = (ctx: Context) =&gt; void | Promise&lt;void&gt;
+interface BootstrapAppOptions { providers?: readonly ProviderInput[] }
+
+interface App extends AsyncDisposable {
+  start(): Promise&lt;void&gt;                 <span class="note">// idempotent; rejects once the app is stopped</span>
+  stop(): Promise&lt;void&gt;                  <span class="note">// idempotent</span>
+  [Symbol.asyncDispose](): Promise&lt;void&gt; <span class="note">// same operation as stop()</span>
+}
+
+function token&lt;T&gt;(description?: string): Token&lt;T&gt;
+function provide&lt;T&gt;(factory: Factory&lt;T&gt;, options?: ProviderOptions): Ref&lt;T&gt;
+function provideFor&lt;T&gt;(key: InjectKey&lt;T&gt;, factory: Factory&lt;T&gt;, options?: ProviderOptions): ProviderDef&lt;T&gt;
+function bundleProviders(...inputs: ProviderInput[]): ProviderBundle
+function isProvideRef(value: unknown): value is Ref&lt;unknown&gt;
+function bootstrapApp(fn: BootstrapAppFn, options?: BootstrapAppOptions): App</code></pre>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const sections = [...document.querySelectorAll('main section')]
+      const links = [...document.querySelectorAll('[data-step-link]')]
+
+      function spy() {
+        const line = 140
+        let current = null
+        for (const section of sections) {
+          if (section.getBoundingClientRect().top <= line) {
+            current = section
+          }
+        }
+        const step = current?.dataset.step ?? ''
+        for (const link of links) {
+          if (step !== '' && link.dataset.stepLink === step) {
+            link.setAttribute('aria-current', 'true')
+          } else {
+            link.removeAttribute('aria-current')
+          }
+        }
+      }
+
+      document.addEventListener('scroll', spy, { passive: true })
+      spy()
+
+      for (const button of document.querySelectorAll('.copy')) {
+        button.addEventListener('click', async () => {
+          const code = button.parentElement.querySelector('code')
+          try {
+            await navigator.clipboard.writeText(code.innerText)
+            button.textContent = 'Copied'
+          } catch {
+            button.textContent = 'Copy failed'
+          }
+          setTimeout(() => {
+            button.textContent = 'Copy'
+          }, 1200)
+        })
+      }
+    </script>
+  </body>
+</html>
