@@ -2,9 +2,9 @@
 
 > A small TypeScript dependency-injection kernel. A provider is a factory that creates a value. No decorators, reflection, runtime dependencies, or global container.
 
-Version 0.3.0. ESM only. TypeScript consumers need `moduleResolution: "bundler"`. NodeNext and Node16 declaration resolution are not supported. The kernel uses no platform APIs (`process`, DOM, timers), so the same graph runs on Node.js, Bun, Deno, browsers, workers, and edge runtimes. Shutdown signals have no common subset across runtimes; the caller owns them.
+Version 0.3.1. ESM only. TypeScript consumers need `moduleResolution: "bundler"`. NodeNext and Node16 declaration resolution are not supported. The kernel uses no platform APIs (`process`, DOM, timers), so the same graph runs on Node.js, Bun, Deno, browsers, workers, and edge runtimes. Shutdown signals have no common subset across runtimes; the caller owns them.
 
-Install: `npm install dn-ioc` (also pnpm, yarn, bun, `deno add npm:dn-ioc`). Deno may import `npm:dn-ioc` directly. Browser CDN, pin the version: `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.0` serves `index.min.js` (4.8 kB, 1.9 kB gzipped). unpkg serves the same file. esm.sh serves its own build. Dropping the version pin serves whatever is newest.
+Install: `npm install dn-ioc` (also pnpm, yarn, bun, `deno add npm:dn-ioc`). Deno may import `npm:dn-ioc` directly. Browser CDN, pin the version: `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1` serves `index.min.js` (4.8 kB, 1.9 kB gzipped). unpkg serves the same file. esm.sh serves its own build. Dropping the version pin serves whatever is newest.
 
 Human reference: [index.html](index.html). Repository: https://github.com/MunMunMiao/dn-ioc
 
