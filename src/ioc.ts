@@ -116,7 +116,14 @@ type InstanceRecord<T> = PendingInstance<T> | ResolvedInstance<T>
 type ResolutionFrame = {
   key: InternalKey<unknown>
   parent?: ResolutionFrame
+  // Pending deps injected before this frame's record is published. Flushed by attachPending.
+  earlyDeps?: PendingInstance<unknown>[]
 }
+
+// Closed over by one inject, and dropped when that factory returns. A helper that already returned
+// hands its inject back, so the key still running above it is only visible on this tip. Popped
+// before the factory yields: two apps cannot interleave except across an await.
+let syncTip: ResolutionFrame | undefined
 
 type DisposeRegistry = {
   disposed: boolean
@@ -555,7 +562,16 @@ function reuseCached<T>(cached: InstanceRecord<T>, activeScope: ScopeNode, frame
   if (cached.state === 'resolved') {
     return cached.value
   }
-  registerPendingDependency(getCurrentPending(activeScope, frame), cached)
+  const caller = getCurrentPending(activeScope, frame) ?? getCurrentPending(activeScope, syncTip)
+  if (caller) {
+    registerPendingDependency(caller, cached)
+  } else if (syncTip) {
+    // The caller's record is published only after its factory returns. Keep the edge on the tip
+    // until then, or the back-edge that closes the cycle is thrown away.
+    const early = syncTip.earlyDeps ?? []
+    syncTip.earlyDeps = early
+    early.push(cached)
+  }
   return cached.promise as T
 }
 
@@ -590,6 +606,15 @@ function attachPending<T>(key: InternalKey<T>, raw: PromiseLike<T>, resolutionSc
     state: 'pending',
   }
   resolutionScope.instances.set(key.id, pendingRecord)
+  // The new record is not reachable yet, so flushing these edges cannot throw a cycle. The caller
+  // edge is added after invokeFactory returns, and that is where such a cycle is reported.
+  if (syncTip?.key === key && syncTip.earlyDeps) {
+    const early = syncTip.earlyDeps
+    syncTip.earlyDeps = undefined
+    for (const dependency of early) {
+      registerPendingDependency(pendingRecord, dependency)
+    }
+  }
   return promise
 }
 
@@ -599,6 +624,8 @@ function invokeFactory<T>(
   resolutionScope: ScopeNode,
   frame: ResolutionFrame | undefined,
 ): T {
+  const entered: ResolutionFrame = { key, parent: syncTip }
+  syncTip = entered
   const { deactivate, inject, onDispose } = createInject(resolutionScope, { key, parent: frame })
 
   try {
@@ -614,6 +641,8 @@ function invokeFactory<T>(
   } catch (error) {
     deactivate()
     throw error
+  } finally {
+    syncTip = entered.parent
   }
 }
 
@@ -623,8 +652,9 @@ function resolve<T>(key: InjectKey<T>, activeScope: ScopeNode, frame: Resolution
   }
   const internalKey = asInternalKey(key)
 
-  if (frame && isResolving(frame, internalKey)) {
-    throw new Error(formatCircularDependency(cyclePath(frame, internalKey)))
+  const cycleFrame = frame && isResolving(frame, internalKey) ? frame : isResolving(syncTip, internalKey) ? syncTip : undefined
+  if (cycleFrame) {
+    throw new Error(formatCircularDependency(cyclePath(cycleFrame, internalKey)))
   }
 
   // Tokens must be installed explicitly. Refs are self-providing and bind
@@ -637,5 +667,13 @@ function resolve<T>(key: InjectKey<T>, activeScope: ScopeNode, frame: Resolution
   if (cached) {
     return reuseCached(cached, activeScope, frame)
   }
-  return invokeFactory(internalKey, binding, resolutionScope, frame)
+  // The first start does not go through reuseCached, so the caller's edge would otherwise be missing
+  // and a cycle that closes through this new node never gets searched.
+  const caller = getCurrentPending(activeScope, frame)
+  const value = invokeFactory(internalKey, binding, resolutionScope, frame)
+  const created = resolutionScope.instances.get(internalKey.id)
+  if (caller && created?.state === 'pending') {
+    registerPendingDependency(caller, created)
+  }
+  return value
 }

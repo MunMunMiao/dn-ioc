@@ -26,8 +26,9 @@ async function writeDistPackageJson(): Promise<void> {
   packageJson.jsdelivr = './index.min.js'
   delete packageJson.scripts
   delete packageJson.devDependencies
-  // `engines` describes this repo's toolchain (Bun), not a constraint on consumers.
+  // Toolchain pins for this repo, not constraints on consumers.
   delete packageJson.engines
+  delete packageJson.packageManager
 
   await writeFile(new URL('./dist/package.json', import.meta.url), `${JSON.stringify(packageJson, undefined, 2)}\n`)
 }

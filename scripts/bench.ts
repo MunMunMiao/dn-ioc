@@ -74,8 +74,8 @@ function makeBundleTree(depth: number, width: number): ProviderInput {
 
 // Async layers where every node injects all of the previous layer before awaiting, so each
 // inject lands on a *pending* record and goes through the cycle check.
-function makeAsyncLayers(layers: number, width: number): Ref<number> {
-  let prev: Ref<number>[] = [provide(async () => 1)]
+function makeAsyncLayers(layers: number, width: number): Ref<Promise<number>> {
+  let prev: Ref<Promise<number>>[] = [provide(async () => 1)]
   for (let l = 0; l < layers; l++) {
     const deps = prev
     prev = Array.from({ length: width }, () =>

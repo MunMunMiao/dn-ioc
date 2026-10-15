@@ -3,11 +3,9 @@
     "target": "ESNext",
     "module": "ESNext",
     "lib": ["ESNext"],
-    "types": [],
-    "declaration": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
+    "types": ["bun"],
     "strict": true,
+    "noEmit": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
     "strictFunctionTypes": true,
@@ -18,9 +16,7 @@
     "moduleResolution": "bundler",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "emitDeclarationOnly": true
+    "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": ["src/**/*.ts", "type-tests/**/*.ts", "scripts/**/*.ts", "tsdown.config.ts"]
 }

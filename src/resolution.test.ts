@@ -224,6 +224,79 @@ describe('pending dependency graph', () => {
     await expect(Promise.race([runApp(({ inject }) => inject(outerRef)), timeout])).rejects.toThrow('Circular dependency detected')
   })
 
+  // The cycle check walks the frame closed over by the inject that was called. A helper that
+  // already returned hands back its own inject, whose frame is gone, so the key still under
+  // construction is invisible and the call recurses until the stack overflows.
+  test("a cycle through another factory's inject is reported instead of overflowing the stack", async () => {
+    let service!: Ref<unknown>
+    const helper = provide(function Helper({ inject }) {
+      return { finish: (key: Ref<unknown>) => inject(key) }
+    })
+    service = provide(function Service({ inject }) {
+      return inject(helper).finish(service)
+    })
+
+    await expect(runApp(({ inject }) => inject(service))).rejects.toThrow('Circular dependency detected: Service -> Service')
+  })
+
+  // B injects A while B's factory is still running, before attachPending has published B.
+  // The back-edge is dropped, so A's later inject of B never finds the cycle and both promises wait.
+  test('an async cycle is reported when the back-edge is injected before the caller is pending', async () => {
+    let bRef!: Ref<Promise<unknown>>
+    const aRef: Ref<Promise<unknown>> = provide(async function A({ inject }): Promise<unknown> {
+      await Promise.resolve()
+      return inject(bRef)
+    })
+    bRef = provide(function B({ inject }): Promise<unknown> {
+      return inject(aRef)
+    })
+
+    const timeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Timed out waiting for circular dependency detection')), 100)
+    })
+
+    await expect(
+      Promise.race([
+        runApp(async ({ inject }) => {
+          await Promise.all([inject(aRef), inject(bRef)])
+        }),
+        timeout,
+      ]),
+    ).rejects.toThrow('Circular dependency detected: A -> B -> A')
+  })
+
+  // Root starts A and C only. A later starts B, so the A→B edge is never stored: the first
+  // resolution goes through invokeFactory, which does not record a pending dependency.
+  test('an async cycle is reported when a yielded factory starts the missing node', async () => {
+    let bRef!: Ref<Promise<unknown>>
+    let cRef!: Ref<Promise<unknown>>
+    const aRef: Ref<Promise<unknown>> = provide(async function A({ inject }): Promise<unknown> {
+      await Promise.resolve()
+      return inject(bRef)
+    })
+    bRef = provide(async function B({ inject }): Promise<unknown> {
+      await Promise.resolve()
+      return inject(cRef)
+    })
+    cRef = provide(async function C({ inject }): Promise<unknown> {
+      await Promise.resolve()
+      return inject(aRef)
+    })
+
+    const timeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Timed out waiting for circular dependency detection')), 100)
+    })
+
+    await expect(
+      Promise.race([
+        runApp(async ({ inject }) => {
+          await Promise.all([inject(aRef), inject(cRef)])
+        }),
+        timeout,
+      ]),
+    ).rejects.toThrow('Circular dependency detected')
+  })
+
   test('a cycle is still reported when the pending graph shares most of its edges', async () => {
     const size = 12
     const { settled } = await resolveAll(size, (index, offset) => (index + offset) % size)
