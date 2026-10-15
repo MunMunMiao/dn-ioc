@@ -47,10 +47,11 @@ This graph holds no resources, so it does not need `stop()`. Scopes, cleanup, as
 
 ## Development
 
+Bun 1.4.3. `bun test --coverage` exits 0 below 100%, so `bun run test` is the test run and the coverage gate together. `bun check` fails on type errors, so that is `bun run type-check`.
+
 ```bash
 bun install
-bun test
-bun run test:coverage
+bun run test
 bun run type-check
 bun run lint
 bun run build

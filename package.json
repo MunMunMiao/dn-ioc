@@ -23,13 +23,11 @@
   },
   "scripts": {
     "build": "tsdown --config-loader native --config tsdown.config.ts",
-    "test": "bun test",
-    "test:coverage": "bun run scripts/check-coverage.ts",
+    "test": "bun run scripts/check-coverage.ts",
     "lint": "biome check --write --error-on-warnings .",
     "lint:check": "biome check --error-on-warnings .",
     "lint:fix": "biome check --write --unsafe --error-on-warnings .",
-    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.typecheck.json",
-    "type-check:watch": "tsc --noEmit -p tsconfig.typecheck.json --watch"
+    "type-check": "bun check"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
@@ -38,7 +36,8 @@
     "typescript": "^7.0.2"
   },
   "sideEffects": false,
+  "packageManager": "bun@1.4.3",
   "engines": {
-    "bun": ">=1.0.0"
+    "bun": "1.4.3"
   }
 }
