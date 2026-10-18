@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>dn-ioc — a TypeScript dependency-injection kernel</title>
     <meta name="description" content="dn-ioc is a small TypeScript dependency-injection kernel. A provider is a factory. No decorators, reflection, runtime dependencies, or global container.">
-    <meta name="theme-color" content="#F3F6FB" media="(prefers-color-scheme: light)">
-    <meta name="theme-color" content="#071433" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#F0F2F4" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#2A2D30" media="(prefers-color-scheme: dark)">
     <link rel="alternate" type="text/plain" href="llms.txt" title="Plain-text reference for agents">
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23F3F6FB'/%3E%3Cpath d='M6 16h20M10 12v8M22 12v8' stroke='%231D4ED8' stroke-width='1.5'/%3E%3C/svg%3E">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23F0F2F4'/%3E%3Cpath d='M6 16h20M10 12v8M22 12v8' stroke='%237A5428' stroke-width='1.5'/%3E%3C/svg%3E">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400&display=swap">
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -26,21 +26,30 @@
     </script>
     <style>
       :root {
-        --paper: #f3f6fb;
-        --ink: #152033;
-        --line: #1d4ed8;
-        --quiet: #4e5d78;
-        --sans: "IBM Plex Sans", "Segoe UI", sans-serif;
-        --mono: "IBM Plex Mono", ui-monospace, monospace;
+        --paper: #f0f2f4;
+        --ink: #2c2824;
+        --quiet: #524c46;
+        --rule: #888a8c;
+        --wire: #7a5428;
+        --well: #2a2d30;
+        --code: #e7e1d8;
+        --code-note: #c4beb4;
+        --code-edge: #76787a;
+        --sans: "Atkinson Hyperlegible", "Segoe UI", sans-serif;
+        --mono: "JetBrains Mono", ui-monospace, monospace;
         color-scheme: light dark;
       }
 
       @media (prefers-color-scheme: dark) {
         :root {
-          --paper: #071433;
-          --ink: #e7eefc;
-          --line: #9db7ff;
-          --quiet: #a9b7d4;
+          --paper: #2a2d30;
+          --ink: #e7e1d8;
+          --quiet: #c4beb4;
+          --rule: #76787a;
+          --wire: #c4a36a;
+          --well: #52565a;
+          --code: #fff8f0;
+          --code-note: #d9d0c4;
         }
       }
 
@@ -59,18 +68,18 @@
         background: var(--paper);
         color: var(--ink);
         font-family: var(--sans);
-        font-size: 1.0625rem;
-        line-height: 1.6;
+        font-size: 1.125rem;
+        line-height: 1.7;
       }
 
       a { color: inherit; }
 
       :focus-visible {
-        outline: 2px solid var(--line);
+        outline: 2px solid var(--ink);
         outline-offset: 3px;
       }
 
-      ::selection { background: color-mix(in srgb, var(--line) 28%, transparent); }
+      ::selection { background: color-mix(in srgb, var(--wire) 30%, transparent); }
 
       .skip {
         position: absolute;
@@ -96,29 +105,28 @@
       .mark {
         margin: 0;
         font-family: var(--sans);
-        font-weight: 600;
+        font-weight: 400;
         font-size: clamp(2.8rem, 7vw, 4.4rem);
-        letter-spacing: -0.04em;
+        letter-spacing: -0.02em;
         line-height: 0.92;
       }
 
       .thesis {
         max-width: 36rem;
         margin: 0.55rem 0 0;
-        font-size: 1.15rem;
-        line-height: 1.45;
+        font-size: 1.2rem;
+        line-height: 1.5;
       }
 
       .mast-links {
         margin: 0.7rem 0 0;
-        font-family: var(--mono);
-        font-size: 0.75rem;
+        font-family: var(--sans);
+        font-size: 0.9375rem;
       }
 
       .mast-links a,
       .read-as a,
       .block a {
-        text-decoration-color: var(--line);
         text-underline-offset: 0.18em;
       }
 
@@ -137,108 +145,64 @@
 
       .rail-label {
         margin: 0 0 0.45rem;
-        padding-left: 0.85rem;
-        font-family: var(--mono);
-        font-size: 0.64rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--line);
+        padding-left: 0.7rem;
+        font-family: var(--sans);
+        font-size: 0.8125rem;
+        color: var(--quiet);
       }
 
-      .rail-label.later { margin-top: 1.2rem; }
-
-      .pins {
-        position: relative;
+      .toc {
         list-style: none;
         margin: 0;
-        padding: 0 0 0 0.85rem;
+        padding: 0;
+        font-family: var(--sans);
+        font-size: 0.875rem;
       }
 
-      .pins::before {
+      .toc a {
+        position: relative;
+        display: block;
+        padding: 0.28rem 0 0.28rem 0.7rem;
+        color: var(--quiet);
+        text-decoration: none;
+      }
+
+      .toc a:hover,
+      .toc a:focus-visible { color: var(--ink); }
+
+      .toc a:focus-visible {
+        outline: 1px solid var(--ink);
+        outline-offset: 2px;
+      }
+
+      .toc a[aria-current="true"] {
+        color: var(--ink);
+        font-weight: 700;
+      }
+
+      .toc a[aria-current="true"]::before {
         content: "";
         position: absolute;
         left: 0;
-        top: 0.55rem;
-        bottom: 0.55rem;
-        width: 1px;
-        background: var(--line);
-        transform-origin: top;
-      }
-
-      @media (prefers-reduced-motion: no-preference) {
-        .pins::before {
-          transform: scaleY(0);
-          animation: draw-spine 900ms ease forwards;
-        }
-      }
-
-      @keyframes draw-spine { to { transform: scaleY(1); } }
-
-      .pins a {
-        position: relative;
-        display: block;
-        padding: 0.36rem 0 0.36rem 0.55rem;
-        color: var(--line);
-        text-decoration: none;
-        font-family: var(--mono);
-        font-size: 0.75rem;
-      }
-
-      .pins a::before {
-        content: "";
-        position: absolute;
-        left: -0.85rem;
         top: 50%;
-        width: 0.7rem;
-        height: 1px;
-        background: var(--line);
-      }
-
-      .pins a[aria-current="true"] {
-        color: var(--ink);
-        font-weight: 600;
-      }
-
-      .pins a[aria-current="true"]::before {
-        height: 2px;
-        margin-top: -1px;
-        background: var(--ink);
-      }
-
-      .sheet-links {
-        list-style: none;
-        margin: 0;
-        padding: 0 0 0 0.85rem;
-        font-family: var(--mono);
-        font-size: 0.75rem;
-      }
-
-      .sheet-links a {
-        display: block;
-        padding: 0.2rem 0;
-        color: var(--line);
-        text-decoration: none;
-      }
-
-      .sheet-links a:hover,
-      .sheet-links a:focus-visible {
-        color: var(--ink);
-        text-decoration: underline;
-        text-underline-offset: 0.18em;
+        width: 2px;
+        height: 0.7rem;
+        margin-top: -0.35rem;
+        background: var(--wire);
       }
 
       .doc {
-        border: 1px solid var(--line);
+        border: 1px solid var(--rule);
         padding: 1.35rem 1.45rem 2.2rem;
         min-width: 0;
       }
 
       .read-as {
         margin: 0;
-        font-family: var(--mono);
-        font-size: 0.72rem;
+        font-family: var(--sans);
+        font-size: 0.875rem;
         line-height: 1.5;
-        color: var(--line);
+        color: var(--quiet);
       }
 
       .read-as a { color: var(--ink); }
@@ -253,40 +217,37 @@
       .block p,
       .block ul,
       .block dl,
-      .block figure,
       .sample,
       .table-wrap { margin: 0.85rem 0 0; }
 
       .block h2 {
         margin-top: 0;
         font-size: clamp(1.45rem, 2.2vw, 1.8rem);
-        font-weight: 600;
-        letter-spacing: -0.03em;
-        line-height: 1.2;
+        font-weight: 700;
+        line-height: 1.25;
       }
 
       .block h3 {
         margin-top: 1.5rem;
         font-size: 1.15rem;
-        font-weight: 600;
-        letter-spacing: -0.02em;
-        line-height: 1.3;
+        font-weight: 700;
+        line-height: 1.35;
       }
 
       .block p,
       .block li { max-width: 68ch; }
 
-      td code { white-space: nowrap; }
-
       .block code {
         font-family: var(--mono);
-        font-size: 0.86em;
+        font-size: 0.9em;
+        font-variant-ligatures: none;
+        font-feature-settings: "calt" 0, "liga" 0;
       }
 
       .block ul { padding-left: 1.15rem; }
 
       .constraint {
-        border-left: 2px solid var(--line);
+        border-left: 2px solid var(--rule);
         padding-left: 0.85rem;
       }
 
@@ -299,121 +260,88 @@
 
       .rules dt {
         margin: 0;
-        font-family: var(--mono);
-        font-size: 0.75rem;
-        color: var(--line);
+        font-family: var(--sans);
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: var(--ink);
       }
 
       .rules dd { margin: 0; }
 
-      .sample { position: relative; }
+      .sample {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        background: var(--well);
+        border: 1px solid var(--code-edge);
+      }
 
       .sample pre {
+        grid-column: 1;
+        grid-row: 1;
         margin: 0;
-        padding: 0.9rem 4.6rem 0.95rem 0.95rem;
+        min-width: 0;
+        padding: 0.9rem 0.75rem 0.95rem 0.95rem;
         overflow-x: auto;
         background: transparent;
-        border: 1px solid var(--line);
+        color: var(--code);
+        border: 0;
         font-family: var(--mono);
-        font-size: 0.78rem;
-        line-height: 1.55;
+        font-size: 0.875rem;
+        line-height: 1.65;
       }
 
       .sample code { font-size: inherit; }
 
-      .note { color: var(--quiet); }
+      .note { color: var(--code-note); }
 
       .copy {
-        position: absolute;
-        top: 0.4rem;
-        right: 0.4rem;
-        border: 1px solid var(--line);
+        grid-column: 2;
+        grid-row: 1;
+        margin: 0.4rem 0.4rem 0 0;
+        border: 1px solid var(--rule);
         background: var(--paper);
-        color: var(--line);
-        font-family: var(--mono);
-        font-size: 0.68rem;
+        color: var(--quiet);
+        font-family: var(--sans);
+        font-size: 0.75rem;
         padding: 0.22rem 0.45rem;
+        white-space: nowrap;
         cursor: pointer;
       }
 
       .copy:hover { color: var(--ink); }
 
-      .legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.35rem 1rem;
-        margin: 0 0 0.7rem;
-        font-family: var(--mono);
-        font-size: 0.72rem;
-        color: var(--line);
-      }
+      .inject-case { margin-top: 1.5rem; scroll-margin-top: 1.25rem; }
+      .inject-case h4 { margin: 0; font-size: 1rem; line-height: 1.35; }
 
-      .legend span {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-      }
-
-      .swatch {
-        width: 1.1rem;
-        height: 0;
-        border-top: 1px solid var(--line);
-      }
-
-      .swatch.dead {
-        border-top-style: dashed;
-        border-top-color: var(--quiet);
-      }
-
-      .scope-pair {
+      .inject-example {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 0.75rem;
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+        gap: 1.5rem;
+        margin-top: 0.85rem;
+        align-items: start;
       }
 
-      .scope {
-        border: 1px solid var(--line);
-        padding: 0.7rem 0.75rem 0.8rem;
-        min-width: 0;
+      .inject-example > .sample { margin: 0; }
+      .inject-example .inject-result { margin: 0; font-size: 1rem; }
+      .inject-result samp { color: var(--wire); font: 1rem var(--mono); }
+      .inject-example .inject-reason { margin-top: 0.6rem; font-size: 1rem; }
+
+      .inject-changed {
+        display: block;
+        margin-inline: -0.95rem -0.75rem;
+        padding-inline: calc(0.95rem - 3px) 0.75rem;
+        border-left: 3px solid #c4a36a;
+        background: color-mix(in srgb, #c4a36a 16%, transparent);
       }
 
-      .scope-private {
-        margin-top: 0.55rem;
-        background: color-mix(in srgb, var(--line) 8%, var(--paper));
-      }
+      .inject-case details { margin-top: 0.65rem; }
+      .inject-case summary { width: fit-content; padding-block: 0.4rem; color: var(--quiet); font-size: 0.875rem; cursor: pointer; }
+      .inject-case summary:hover { color: var(--ink); }
+      #scopes-installation { scroll-margin-top: 1.25rem; }
 
-      .scope-name,
-      .wire,
-      .scope-result {
-        margin: 0;
-        font-family: var(--mono);
-        font-size: 0.72rem;
-        line-height: 1.45;
-      }
-
-      .scope-name {
-        color: var(--line);
-        margin-bottom: 0.35rem;
-      }
-
-      .wire {
-        margin-top: 0.2rem;
-        padding-left: 0.5rem;
-        border-left: 1px solid var(--line);
-      }
-
-      .wire.dead {
-        border-left-style: dashed;
-        border-left-color: var(--quiet);
-      }
-
-      .scope-result { margin-top: 0.55rem; }
-
-      figcaption {
-        margin-top: 0.7rem;
-        max-width: 68ch;
-        color: var(--quiet);
-        font-size: 0.95rem;
+      @media (max-width: 1100px) {
+        .inject-example { grid-template-columns: 1fr; gap: 0.85rem; }
       }
 
       .table-wrap { overflow-x: auto; }
@@ -421,7 +349,7 @@
       table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 0.95rem;
+        font-size: 1rem;
       }
 
       th,
@@ -429,16 +357,14 @@
         text-align: left;
         vertical-align: top;
         padding: 0.45rem 0.7rem 0.45rem 0;
-        border-bottom: 1px solid color-mix(in srgb, var(--line) 45%, transparent);
+        border-bottom: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
       }
 
       th {
-        font-family: var(--mono);
-        font-size: 0.68rem;
-        font-weight: 400;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: var(--line);
+        font-family: var(--sans);
+        font-size: 0.8125rem;
+        font-weight: 700;
+        color: var(--quiet);
       }
 
       .block h2 code,
@@ -446,14 +372,13 @@
         font-family: var(--mono);
         font-size: 0.78em;
         font-weight: 400;
-        color: var(--line);
       }
 
       @media (max-width: 860px) {
         .sheet { width: min(72rem, calc(100% - 1.5rem)); }
 
         .mark { font-size: clamp(2.4rem, 12vw, 3.2rem); }
-        .thesis { max-width: none; font-size: 1.05rem; }
+        .thesis { max-width: none; font-size: 1.1rem; }
 
         .layout {
           grid-template-columns: 1fr;
@@ -467,74 +392,112 @@
           z-index: 4;
           background: var(--paper);
           padding: 0.55rem 0 0.45rem;
-          border-bottom: 1px solid var(--line);
+          border-bottom: 1px solid var(--rule);
         }
 
         .rail-label { display: none; }
 
-        .pins {
-          display: flex;
-          justify-content: space-between;
-          gap: 0.15rem;
-          width: 100%;
-          padding: 0.65rem 0 0;
-        }
-
-        .pins::before {
-          top: 0;
-          bottom: auto;
-          left: 0.35rem;
-          right: 0.35rem;
-          width: auto;
-          height: 1px;
-          transform-origin: left;
-        }
-
-        .pins a {
-          flex: 1 1 0;
-          min-width: 0;
-          padding: 0.4rem 0 0;
-          text-align: center;
-          font-size: 0.62rem;
-        }
-
-        .pins a::before {
-          left: 50%;
-          top: -0.65rem;
-          width: 1px;
-          height: 0.4rem;
-        }
-
-        .paren { display: none; }
-
-        .sheet-links {
+        .toc {
           display: flex;
           flex-wrap: wrap;
           gap: 0.15rem 0.85rem;
-          margin-top: 0.4rem;
-          padding-left: 0;
         }
+
+        .toc a { padding: 0.1rem 0; }
+
+        .toc a[aria-current="true"]::before { content: none; }
 
         .doc { padding: 1rem 0.85rem 1.8rem; }
-        .block { scroll-margin-top: 6.2rem; }
-        .scope-pair,
+        .block { scroll-margin-top: 5.5rem; }
+        .sample { grid-template-columns: minmax(0, 1fr); }
+        .sample pre {
+          grid-row: 2;
+          white-space: pre-wrap;
+          overflow-wrap: anywhere;
+        }
+        .copy { grid-column: 1; grid-row: 1; justify-self: end; }
+
+        #install .table-wrap,
+        #cleanup .table-wrap { overflow-x: visible; }
+
+        #install .table-wrap table,
+        #install .table-wrap tbody,
+        #install .table-wrap tr,
+        #cleanup .table-wrap table,
+        #cleanup .table-wrap tbody,
+        #cleanup .table-wrap tr { display: block; width: 100%; }
+
+        #install .table-wrap thead,
+        #cleanup .table-wrap thead { display: none; }
+
+        #install .table-wrap tr,
+        #cleanup .table-wrap tr {
+          padding: 0.65rem 0;
+          border-bottom: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+        }
+
+        #install .table-wrap td,
+        #cleanup .table-wrap td {
+          display: block;
+          border: 0;
+          padding: 0.15rem 0 0;
+          overflow-wrap: anywhere;
+        }
+
+        #install .table-wrap td::before,
+        #cleanup .table-wrap td::before {
+          display: block;
+          font-family: var(--sans);
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: var(--quiet);
+        }
+
+        #install .table-wrap td:nth-child(1)::before { content: "CDN"; }
+        #install .table-wrap td:nth-child(2)::before { content: "URL"; }
+        #install .table-wrap td:nth-child(3)::before { content: "Serves"; }
+        #cleanup .table-wrap td:nth-child(1)::before { content: "Runtime"; }
+        #cleanup .table-wrap td:nth-child(2)::before { content: "Trigger"; }
+        #cleanup .table-wrap td:nth-child(3)::before { content: "Async cleanup"; }
+
         .rules { grid-template-columns: 1fr; }
+        .inject-case,
+        #scopes-installation { scroll-margin-top: 6.5rem; }
       }
 
-      @media (prefers-reduced-motion: no-preference) and (max-width: 860px) {
-        .pins::before {
-          transform: scaleX(0);
-          animation-name: draw-spine-x;
+      @media (prefers-contrast: more) {
+        :root {
+          --ink: #000;
+          --quiet: #1c1f1c;
+          --rule: #1c1f1c;
+          --wire: #1c1f1c;
+          --well: #c8c8c8;
+          --code: #000;
+          --code-note: #1c1f1c;
+          --code-edge: #1c1f1c;
         }
       }
 
-      @keyframes draw-spine-x { to { transform: scaleX(1); } }
+      @media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+        :root {
+          --paper: #000;
+          --ink: #fff;
+          --quiet: #fff;
+          --rule: #fff;
+          --wire: #fff;
+          --well: #fff;
+          --code: #000;
+          --code-note: #1a1a1a;
+          --code-edge: #000;
+        }
+      }
 
       @media (forced-colors: active) {
         .copy,
         .doc,
-        .scope,
-        .sample pre { border: 1px solid CanvasText; }
+        .sample { border: 1px solid CanvasText; }
+
+        .inject-changed { border-left-color: CanvasText; }
       }
     </style>
   </head>
@@ -553,18 +516,15 @@
     </header>
 
     <div class="layout sheet">
-      <nav class="rail" aria-label="Lifecycle">
-        <p class="rail-label">Lifecycle</p>
-        <ol class="pins">
-          <li><a href="#tokens" data-step-link="0">token<span class="paren">()</span></a></li>
-          <li><a href="#providers" data-step-link="1">provide<span class="paren">()</span></a></li>
-          <li><a href="#scopes" data-step-link="2">inject<span class="paren">()</span></a></li>
-          <li><a href="#start" data-step-link="3">start<span class="paren">()</span></a></li>
-          <li><a href="#cleanup" data-step-link="4">stop<span class="paren">()</span></a></li>
-        </ol>
-        <p class="rail-label later">Sheet</p>
-        <ul class="sheet-links">
+      <nav class="rail" aria-label="On this page">
+        <p class="rail-label">On this page</p>
+        <ul class="toc">
           <li><a href="#install">Install</a></li>
+          <li><a href="#start">start<span class="paren">()</span></a></li>
+          <li><a href="#tokens">token<span class="paren">()</span></a></li>
+          <li><a href="#providers">provide<span class="paren">()</span></a></li>
+          <li><a href="#scopes">inject<span class="paren">()</span></a></li>
+          <li><a href="#cleanup">stop<span class="paren">()</span></a></li>
           <li><a href="#async">Async</a></li>
           <li><a href="#errors">Errors</a></li>
           <li><a href="#api">Public API</a></li>
@@ -661,7 +621,7 @@ deno add npm:dn-ioc</code></pre>
           <p>The kernel uses no platform APIs — no <code>process</code>, no DOM, no timers — so it runs unchanged on Node.js, Bun, Deno, browsers, workers, and edge runtimes. Only shutdown differs. See <a href="#cleanup">stop()</a>.</p>
         </section>
 
-        <section class="block" id="start" data-step="3">
+        <section class="block" id="start">
           <h2><code>start()</code> runs the root factory once</h2>
           <p><code>bootstrapApp()</code> builds the graph and returns a handle. It runs nothing. <code>app.start()</code> runs the root factory and rejects if it fails. The root factory returns <code>void</code>: it wires the graph and does the work. It is not an expression that produces a value.</p>
           <div class="sample">
@@ -697,7 +657,7 @@ await app.start()</code></pre>
           <p class="constraint">Register shutdown handling before <code>start()</code>. <code>bootstrapApp()</code> runs no provider, so the handle exists before any factory does. <code>start()</code> is idempotent: repeated calls return the same Promise and run the root factory once.</p>
         </section>
 
-        <section class="block" id="tokens" data-step="0">
+        <section class="block" id="tokens">
           <h2><code>token()</code> makes a key with no default</h2>
           <p>A <code>Token&lt;T&gt;</code> must be bound with <code>provideFor()</code> before anything injects it. The description is the name in the error. A ref with no description is reported as <code>&lt;anonymous&gt;</code>.</p>
           <div class="sample">
@@ -723,7 +683,7 @@ await app.stop()</code></pre>
           <p>Leave the token unbound and <code>inject(prefixToken)</code> throws <code>No provider for token: Prefix</code>.</p>
         </section>
 
-        <section class="block" id="providers" data-step="1">
+        <section class="block" id="providers">
           <h2><code>provide()</code> makes a Ref that self-installs</h2>
           <p>A <code>Ref&lt;T&gt;</code> has a default factory. The first <code>inject()</code> in a scope installs it there and caches the instance. It is not a global singleton. Install a shared ref at bootstrap — pass it in <code>providers</code>, as <code>formatterRef</code> is above — so sibling subtrees reuse the same instance.</p>
           <div class="sample">
@@ -741,96 +701,8 @@ const app = bootstrapApp(({ inject }) =&gt; {
 
 await app.start()</code></pre>
           </div>
-          <p><code>provide()</code> and <code>provideFor()</code> both accept <code>{ providers }</code>. That array is a private subtree, visible to that provider and its descendants. The next section is the rule that subtree does not break.</p>
-        </section>
-
-        <section class="block" id="scopes" data-step="2">
-          <h2><code>inject()</code> searches this scope, then parents</h2>
-          <p>A solid trace is a binding resolved in that scope. A dashed trace is a binding that does not rewrite a consumer already installed above it.</p>
-          <figure>
-            <div class="legend">
-              <span><i class="swatch" aria-hidden="true"></i> resolved here</span>
-              <span><i class="swatch dead" aria-hidden="true"></i> does not rewrite a parent consumer</span>
-            </div>
-            <div class="scope-pair">
-              <div class="scope">
-                <p class="scope-name">app scope</p>
-                <p class="wire">labelToken → "app"</p>
-                <div class="scope scope-private">
-                  <p class="scope-name">private scope of localDemoRef</p>
-                  <p class="wire">labelToken → "local"</p>
-                  <p class="wire">rendererRef → "local"</p>
-                  <p class="wire">localDemoRef → "local"</p>
-                </div>
-                <p class="scope-result">reads local local</p>
-              </div>
-              <div class="scope">
-                <p class="scope-name">app scope</p>
-                <p class="wire">configRef → "root config"</p>
-                <p class="wire">serviceRef → "root config"</p>
-                <div class="scope scope-private">
-                  <p class="scope-name">private scope of localServiceRef</p>
-                  <p class="wire dead">configRef → "local config"</p>
-                  <p class="wire dead">serviceRef stays "root config"</p>
-                </div>
-                <p class="scope-result">reads root config</p>
-              </div>
-            </div>
-            <figcaption>A private binding is visible to that provider and its descendants. Sibling subtrees stay isolated. A consumer already installed in a parent scope keeps resolving there.</figcaption>
-          </figure>
-          <p>The left frame is a private subtree. The local binding is the one <code>rendererRef</code> actually injects:</p>
-          <div class="sample">
-            <button type="button" class="copy">Copy</button>
-            <pre><code>import { bootstrapApp, provide, provideFor, token } from 'dn-ioc'
-
-const labelToken = token&lt;string&gt;('Label')
-const rendererRef = provide(({ inject }) =&gt; ({ label: inject(labelToken) }))
-const localDemoRef = provide(
-  ({ inject }) =&gt; ({
-    label: inject(labelToken),
-    renderer: inject(rendererRef),
-  }),
-  { providers: [provideFor(labelToken, () =&gt; 'local')] },
-)
-
-const app = bootstrapApp(
-  ({ inject }) =&gt; {
-    const demo = inject(localDemoRef)
-    console.log(demo.label, demo.renderer.label) <span class="note">// local local</span>
-  },
-  { providers: [provideFor(labelToken, () =&gt; 'app')] },
-)
-
-await app.start()
-await app.stop()</code></pre>
-          </div>
-          <p>The right frame is the trap. <code>serviceRef</code> is already installed in the app scope, so a child binding of <code>configRef</code> does not change it:</p>
-          <div class="sample">
-            <button type="button" class="copy">Copy</button>
-            <pre><code>const configRef = provide(() =&gt; 'root config')
-const serviceRef = provide(({ inject }) =&gt; inject(configRef))
-const localServiceRef = provide(({ inject }) =&gt; inject(serviceRef), {
-  providers: [provideFor(configRef, () =&gt; 'local config')],
-})
-
-const app = bootstrapApp(({ inject }) =&gt; {
-  console.log(inject(serviceRef)) <span class="note">// root config</span>
-  console.log(inject(localServiceRef)) <span class="note">// root config</span>
-})</code></pre>
-          </div>
-          <p class="constraint">Rebind the consumer and its dependency together in the child scope when both need to change.</p>
-          <div class="sample">
-            <button type="button" class="copy">Copy</button>
-            <pre><code>const localServiceRef = provide(({ inject }) =&gt; inject(serviceRef), {
-  providers: [
-    provideFor(configRef, () =&gt; 'local config'),
-    provideFor(serviceRef, ({ inject }) =&gt; inject(configRef)),
-  ],
-})
-<span class="note">// inject(localServiceRef) === 'local config'</span>
-<span class="note">// inject(serviceRef) in the parent stays 'root config'</span></code></pre>
-          </div>
-          <h3>Installation</h3>
+          <h3 id="scopes-installation">Provider configuration</h3>
+          <p><code>provide()</code> and <code>provideFor()</code> both accept <code>{ providers }</code>. That array is a private subtree, visible to that provider and its descendants. See <a href="#scopes">injection scopes</a> for how lookups cross its boundary.</p>
           <dl class="rules">
             <dt>Snapshotting</dt>
             <dd>Provider arrays and bundles are copied when their owning ref, binding, or bundle is created. Later edits to those arrays do not change that definition.</dd>
@@ -867,7 +739,224 @@ await app.stop()</code></pre>
           </div>
         </section>
 
-        <section class="block" id="cleanup" data-step="4">
+        <section class="block" id="scopes">
+          <h2><code>inject()</code> searches this scope, then parents</h2>
+          <p><code>inject(key)</code> looks for a binding in the current scope, then walks up through parents. The first binding found wins.</p>
+          <p>A provider resolves its dependencies in the scope that owns its binding, including its <a href="#scopes-installation">private providers</a> if it has any. It does not adopt the caller’s local overrides. A local binding affects its own subtree, not its parent or siblings.</p>
+          <h3>Compare scope configurations</h3>
+          <p>Each example starts a fresh app with the same definitions below. The app provides <code>'app'</code>; the preview asks for a renderer, which asks for a label.</p>
+          <div class="sample"><pre><code>const labelToken = token&lt;string&gt;('Label')
+
+const rendererRef = provide(({ inject }) =&gt; ({
+  label: inject(labelToken),
+}))</code></pre></div>
+
+          <article class="inject-case" id="inject-fallback" aria-labelledby="inject-fallback-title">
+            <h4 id="inject-fallback-title">1. No local label: use the parent</h4>
+            <div class="inject-example">
+              <div class="sample">
+                <pre><code>const previewRef = provide(
+  ({ inject }) =&gt; inject(rendererRef),
+  { providers: [rendererRef] },
+)
+
+<span class="note">// App providers</span>
+[provideFor(labelToken, () =&gt; 'app')]</code></pre>
+              </div>
+              <div>
+                <p class="inject-result">Preview reads <samp>"app"</samp></p>
+                <p class="inject-reason">The preview’s renderer has no local label binding, so it finds the app’s <code>'app'</code> binding.</p>
+              </div>
+            </div>
+            <details>
+              <summary>Full runnable example</summary>
+              <div class="sample">
+                <button type="button" class="copy" aria-label="Copy look-up example">Copy</button>
+                <pre><code data-example="fallback">import { bootstrapApp, provide, provideFor, token } from 'dn-ioc'
+
+const labelToken = token&lt;string&gt;('Label')
+const rendererRef = provide(({ inject }) =&gt; ({
+  label: inject(labelToken),
+}))
+const previewRef = provide(
+  ({ inject }) =&gt; inject(rendererRef),
+  { providers: [rendererRef] },
+)
+
+const app = bootstrapApp(
+  ({ inject }) =&gt; {
+    console.log(inject(previewRef).label)  // app
+    console.log(inject(rendererRef).label) // app
+  },
+  { providers: [provideFor(labelToken, () =&gt; 'app')] },
+)
+
+await app.start()
+await app.stop()</code></pre>
+              </div>
+            </details>
+          </article>
+
+          <article class="inject-case" id="inject-local" aria-labelledby="inject-local-title">
+            <h4 id="inject-local-title">2. Add a local label</h4>
+            <div class="inject-example">
+              <div class="sample">
+                <pre><code><span class="note">// Preview providers</span>
+[
+  rendererRef,
+<span class="inject-changed">  provideFor(labelToken, () =&gt; 'local'),</span>]</code></pre>
+              </div>
+              <div>
+                <p class="inject-result">Preview reads <samp>"local"</samp></p>
+                <p class="inject-reason">Adding <code>labelToken</code> beside the preview’s renderer makes the local binding win; the app still reads <code>'app'</code>.</p>
+              </div>
+            </div>
+            <details>
+              <summary>Full runnable example</summary>
+              <div class="sample">
+                <button type="button" class="copy" aria-label="Copy local-override example">Copy</button>
+                <pre><code data-example="local">import { bootstrapApp, provide, provideFor, token } from 'dn-ioc'
+
+const labelToken = token&lt;string&gt;('Label')
+const rendererRef = provide(({ inject }) =&gt; ({
+  label: inject(labelToken),
+}))
+const previewRef = provide(
+  ({ inject }) =&gt; inject(rendererRef),
+  {
+    providers: [
+      rendererRef,
+      provideFor(labelToken, () =&gt; 'local'),
+    ],
+  },
+)
+
+const app = bootstrapApp(
+  ({ inject }) =&gt; {
+    console.log(inject(previewRef).label)  // local
+    console.log(inject(rendererRef).label) // app
+  },
+  { providers: [provideFor(labelToken, () =&gt; 'app')] },
+)
+
+await app.start()
+await app.stop()</code></pre>
+              </div>
+            </details>
+          </article>
+
+          <article class="inject-case" id="inject-parent" aria-labelledby="inject-parent-title">
+            <h4 id="inject-parent-title">3. Move the renderer to the app</h4>
+            <div class="inject-example">
+              <div class="sample">
+                <pre><code><span class="note">// Preview providers</span>
+[provideFor(labelToken, () =&gt; 'local')]
+
+<span class="note">// App providers</span>
+[
+  provideFor(labelToken, () =&gt; 'app'),
+<span class="inject-changed">  rendererRef,</span>]</code></pre>
+              </div>
+              <div>
+                <p class="inject-result">Preview reads <samp>"app"</samp></p>
+                <p class="inject-reason">The preview finds the app’s renderer, whose dependencies resolve in the app scope even when the preview is the first to request it.</p>
+              </div>
+            </div>
+            <details>
+              <summary>Full runnable example</summary>
+              <div class="sample">
+                <button type="button" class="copy" aria-label="Copy parent-scope example">Copy</button>
+                <pre><code data-example="parent">import { bootstrapApp, provide, provideFor, token } from 'dn-ioc'
+
+const labelToken = token&lt;string&gt;('Label')
+const rendererRef = provide(({ inject }) =&gt; ({
+  label: inject(labelToken),
+}))
+const previewRef = provide(
+  ({ inject }) =&gt; inject(rendererRef),
+  { providers: [provideFor(labelToken, () =&gt; 'local')] },
+)
+
+const app = bootstrapApp(
+  ({ inject }) =&gt; {
+    console.log(inject(previewRef).label)  // app
+    console.log(inject(rendererRef).label) // app
+  },
+  {
+    providers: [
+      provideFor(labelToken, () =&gt; 'app'),
+      rendererRef,
+    ],
+  },
+)
+
+await app.start()
+await app.stop()</code></pre>
+              </div>
+            </details>
+          </article>
+
+          <article class="inject-case" id="inject-rebind" aria-labelledby="inject-rebind-title">
+            <h4 id="inject-rebind-title">4. Rebind the renderer inside the preview</h4>
+            <div class="inject-example">
+              <div class="sample">
+                <pre><code><span class="note">// Preview providers</span>
+[
+  provideFor(labelToken, () =&gt; 'local'),
+<span class="inject-changed">  provideFor(rendererRef, ({ inject }) =&gt; ({
+    label: inject(labelToken),
+  })),</span>]
+
+<span class="note">// App providers stay unchanged</span></code></pre>
+              </div>
+              <div>
+                <p class="inject-result">Preview reads <samp>"local"</samp></p>
+                <p class="inject-reason">Rebinding the renderer beside its label gives the preview a local instance while the app’s renderer stays unchanged.</p>
+              </div>
+            </div>
+            <details>
+              <summary>Full runnable example</summary>
+              <div class="sample">
+                <button type="button" class="copy" aria-label="Copy local-rebinding example">Copy</button>
+                <pre><code data-example="rebind">import { bootstrapApp, provide, provideFor, token } from 'dn-ioc'
+
+const labelToken = token&lt;string&gt;('Label')
+const rendererRef = provide(({ inject }) =&gt; ({
+  label: inject(labelToken),
+}))
+const previewRef = provide(
+  ({ inject }) =&gt; inject(rendererRef),
+  {
+    providers: [
+      provideFor(labelToken, () =&gt; 'local'),
+      provideFor(rendererRef, ({ inject }) =&gt; ({
+        label: inject(labelToken),
+      })),
+    ],
+  },
+)
+
+const app = bootstrapApp(
+  ({ inject }) =&gt; {
+    console.log(inject(previewRef).label)  // local
+    console.log(inject(rendererRef).label) // app
+  },
+  {
+    providers: [
+      provideFor(labelToken, () =&gt; 'app'),
+      rendererRef,
+    ],
+  },
+)
+
+await app.start()
+await app.stop()</code></pre>
+              </div>
+            </details>
+          </article>
+        </section>
+
+        <section class="block" id="cleanup">
           <h2><code>stop()</code> closes injection, then runs cleanup newest-first</h2>
           <p>A successful <code>start()</code> never stops the app. The caller decides when to call <code>stop()</code>. Not every app needs it.</p>
           <ul>
@@ -1037,7 +1126,23 @@ addEventListener('pagehide', () =&gt; void app.stop())</code></pre>
         <section class="block" id="async">
           <h2>Async factories share one Promise</h2>
           <p><code>inject()</code> returns a synchronous value as a value, and a shared Promise for an async provider. Repeated injection in the same resolution scope reuses that Promise. A rejected provider is removed from the cache, so a later injection can retry while the app is running.</p>
-          <p><code>start()</code> follows the root factory and the Promises it actually awaits or returns. Await what startup requires before returning. For work started without awaiting it, keep the Promise somewhere the caller can still see it. That Promise reports its own provider. It does not wait for unrelated providers, even after <code>stop()</code> has settled. If the factory never finishes, its Promise never reports an outcome, and <code>stop()</code> can still finish.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code data-example="async-shared">import { bootstrapApp, provide } from 'dn-ioc'
+
+const settingsRef = provide(async () =&gt; ({ status: 'ready' }))
+const app = bootstrapApp(async ({ inject }) =&gt; {
+  const first = inject(settingsRef)
+  const second = inject(settingsRef)
+  console.log(first === second) // true
+  console.log((await first).status) // ready
+})
+
+await app.start()
+await app.stop()</code></pre>
+          </div>
+          <h3>Background work</h3>
+          <p><code>start()</code> follows the root factory and the Promises it actually awaits or returns. Await startup dependencies inside it; keep the Promise for detached work so its result or failure remains observable. Each injection Promise tracks only its own provider, not unrelated work. See <a href="#cleanup">shutdown limits</a> for what <code>stop()</code> does not wait for or cancel.</p>
           <div class="sample">
             <button type="button" class="copy">Copy</button>
             <pre><code>import { bootstrapApp, provide } from 'dn-ioc'
@@ -1053,6 +1158,7 @@ await app.start()
 console.log(await background) <span class="note">// done</span>
 await app.stop()</code></pre>
           </div>
+          <h3>Async tokens</h3>
           <p>For an async token, put the Promise in the token type:</p>
           <div class="sample">
             <button type="button" class="copy">Copy</button>
@@ -1073,8 +1179,9 @@ await app.stop()</code></pre>
         </section>
 
         <section class="block" id="errors">
-          <h2>Errors are exact strings</h2>
-          <p>Match these messages. Do not paraphrase them. Nested provider inputs are validated when their subtree is first resolved. Invalid nested input throws from that <code>inject()</code> call; if the root does not handle it, <code>start()</code> rejects.</p>
+          <h2>Errors and failure propagation</h2>
+          <h3>Error messages</h3>
+          <p>Match these messages. Do not paraphrase them.</p>
           <div class="table-wrap">
             <table>
               <thead>
@@ -1116,6 +1223,20 @@ await app.stop()</code></pre>
                   <td><code>start()</code> on a stopped app</td>
                   <td><code>Cannot start an app that has been stopped</code></td>
                 </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>Failure propagation</h3>
+          <p>Nested provider inputs are validated when their subtree is first resolved. Invalid nested input throws from that <code>inject()</code> call; if the root does not handle it, <code>start()</code> rejects.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Situation</th>
+                  <th scope="col">Result</th>
+                </tr>
+              </thead>
+              <tbody>
                 <tr>
                   <td>Synchronous provider failure</td>
                   <td><code>inject()</code> throws; the caller may catch it</td>
@@ -1187,19 +1308,28 @@ function bootstrapApp(fn: BootstrapAppFn, options?: BootstrapAppOptions): App</c
 
     <script>
       const sections = [...document.querySelectorAll('main section')]
-      const links = [...document.querySelectorAll('[data-step-link]')]
+      const links = [...document.querySelectorAll('.toc a')]
+
+      function scanLine() {
+        const rail = document.querySelector('.rail')
+        if (window.matchMedia('(max-width: 860px)').matches && rail) {
+          const margin = sections[0] ? Number.parseFloat(getComputedStyle(sections[0]).scrollMarginTop) || 0 : 0
+          return Math.max(rail.getBoundingClientRect().bottom + 1, margin + 4)
+        }
+        return 140
+      }
 
       function spy() {
-        const line = 140
-        let current = null
+        const line = scanLine()
+        let id = ''
         for (const section of sections) {
-          if (section.getBoundingClientRect().top <= line) {
-            current = section
+          if (section.getBoundingClientRect().top > line) {
+            continue
           }
+          id = section.id
         }
-        const step = current?.dataset.step ?? ''
         for (const link of links) {
-          if (step !== '' && link.dataset.stepLink === step) {
+          if (id !== '' && link.getAttribute('href') === `#${id}`) {
             link.setAttribute('aria-current', 'true')
           } else {
             link.removeAttribute('aria-current')
