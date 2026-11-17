@@ -72,6 +72,50 @@ Call `stop()` when something outlives the graph: a long-running process holding 
 
 The kernel installs no listeners. Wire `stop()` yourself: `SIGINT` / `SIGTERM` on Node and Bun, `Deno.addSignalListener` on Deno, your framework's unmount on a browser sub-app. `pagehide` is the least-bad page unload event and still may not run an async hook. Keep unload hooks synchronous.
 
+## Layered apps
+
+Import direction decides between a ref and a token. A `Ref` carries its factory, so importing it imports the implementation. A `Token` carries only a type, so the implementation can live in any module that imports the token.
+
+- Ref when the code that injects it may import the implementation. MVC: each layer imports the one below, so repositories, services, and controllers are refs. List connection-holding refs in the bootstrap `providers` so the whole app shares one instance.
+- Token when the implementation lives in an outer layer that imports the inner one. DDD: the domain declares the interface and its token, infrastructure imports the domain and binds an adapter to the token, a bundle collects the adapters, and each entry installs the bundle once. The domain imports no other layer.
+- Do not export a DDD adapter as a ref for the domain or application to import. That import points outward: infrastructure already imports the domain's types, so the two modules form a cycle.
+- A new DDD adapter is two edits in infrastructure: its `provideFor()` and one line in the bundle. Entries do not change.
+- Inject what an entry uses inside its root factory, so a missing binding rejects `start()`. A token first injected from a request handler fails on that request instead.
+- The kernel never sees imports. Enforce layer direction with a lint rule.
+
+```ts
+// domain/order.ts — imports no other layer
+export interface OrderRepository {
+  find(id: string): Promise<Order | undefined>
+  save(order: Order): Promise<void>
+}
+export const orderRepositoryToken = token<OrderRepository>('OrderRepository')
+
+// application/order-service.ts — imports domain
+export const orderServiceRef = provide(function OrderService({ inject }) {
+  const orders = inject(orderRepositoryToken)
+  return { submit: async (id: string) => { /* orders.find, orders.save */ } }
+})
+
+// infra/order-repository.ts — imports domain
+export const orderRepositoryProvider = provideFor(orderRepositoryToken, ({ inject }) => ({ /* find, save */ }))
+
+// infra/providers.ts
+export const infraProviders = bundleProviders(orderRepositoryProvider)
+
+// main.ts — the only module that imports both sides
+const app = bootstrapApp(async ({ inject }) => {
+  await inject(orderServiceRef).submit('o-1')
+}, { providers: [infraProviders] })
+```
+
+Testing:
+
+- `provideFor()` replaces a ref or a token the same way.
+- Unit tests install only fakes. A forgotten token fake rejects `start()` with `No provider for token: Name`. A forgotten ref fake is not an error: the ref builds its real implementation.
+- Integration tests list the real bundle first and overrides after it: `[infraProviders, provideFor(orderRepositoryToken, fake)]`. The bundle silently replaces an override listed before it.
+- Name a token after its interface. A ref's name in errors is its factory's function name: `provide(function OrderService(ctx) { ... })`. An inline arrow reports `<anonymous>`. A minifier that renames functions changes the name.
+
 ## Errors
 
 Exact messages:

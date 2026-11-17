@@ -418,26 +418,33 @@
         .copy { grid-column: 1; grid-row: 1; justify-self: end; }
 
         #install .table-wrap,
-        #cleanup .table-wrap { overflow-x: visible; }
+        #cleanup .table-wrap,
+        #layers .table-wrap { overflow-x: visible; }
 
         #install .table-wrap table,
         #install .table-wrap tbody,
         #install .table-wrap tr,
         #cleanup .table-wrap table,
         #cleanup .table-wrap tbody,
-        #cleanup .table-wrap tr { display: block; width: 100%; }
+        #cleanup .table-wrap tr,
+        #layers .table-wrap table,
+        #layers .table-wrap tbody,
+        #layers .table-wrap tr { display: block; width: 100%; }
 
         #install .table-wrap thead,
-        #cleanup .table-wrap thead { display: none; }
+        #cleanup .table-wrap thead,
+        #layers .table-wrap thead { display: none; }
 
         #install .table-wrap tr,
-        #cleanup .table-wrap tr {
+        #cleanup .table-wrap tr,
+        #layers .table-wrap tr {
           padding: 0.65rem 0;
           border-bottom: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
         }
 
         #install .table-wrap td,
-        #cleanup .table-wrap td {
+        #cleanup .table-wrap td,
+        #layers .table-wrap td {
           display: block;
           border: 0;
           padding: 0.15rem 0 0;
@@ -445,7 +452,8 @@
         }
 
         #install .table-wrap td::before,
-        #cleanup .table-wrap td::before {
+        #cleanup .table-wrap td::before,
+        #layers .table-wrap td::before {
           display: block;
           font-family: var(--sans);
           font-size: 0.75rem;
@@ -459,6 +467,9 @@
         #cleanup .table-wrap td:nth-child(1)::before { content: "Runtime"; }
         #cleanup .table-wrap td:nth-child(2)::before { content: "Trigger"; }
         #cleanup .table-wrap td:nth-child(3)::before { content: "Async cleanup"; }
+        #layers .table-wrap td:nth-child(1)::before { content: "File"; }
+        #layers .table-wrap td:nth-child(2)::before { content: "Exports"; }
+        #layers .table-wrap td:nth-child(3)::before { content: "Imports"; }
 
         .rules { grid-template-columns: 1fr; }
         .inject-case,
@@ -526,6 +537,7 @@
           <li><a href="#scopes">inject<span class="paren">()</span></a></li>
           <li><a href="#cleanup">stop<span class="paren">()</span></a></li>
           <li><a href="#async">Async</a></li>
+          <li><a href="#layers">Layers</a></li>
           <li><a href="#errors">Errors</a></li>
           <li><a href="#api">Public API</a></li>
         </ul>
@@ -1176,6 +1188,304 @@ const app = bootstrapApp(
 await app.start()
 await app.stop()</code></pre>
           </div>
+        </section>
+
+        <section class="block" id="layers">
+          <h2>Import direction decides between a ref and a token</h2>
+          <p>A ref carries its factory: importing the ref imports the implementation. A token carries only a type: the implementation can live in any module that imports the token. In a layered app, look at which way the imports point.</p>
+          <dl class="rules">
+            <dt>Ref</dt>
+            <dd>The code that injects it may import the implementation. Each MVC layer imports the one below it, so repositories, services, and controllers are all refs.</dd>
+            <dt>Token</dt>
+            <dd>The implementation lives in an outer layer that imports the inner one. A DDD domain declares its repository interface, and infrastructure implements it as an adapter. The domain declares the token; infrastructure binds the adapter to it. The same goes for any port the inner layer defines: mail, payments, a clock.</dd>
+          </dl>
+
+          <h3 id="layers-mvc">MVC: each layer imports the one below</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">File</th>
+                  <th scope="col">Exports</th>
+                  <th scope="col">Imports</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>models/user.ts</code></td>
+                  <td><code>User</code></td>
+                  <td>nothing</td>
+                </tr>
+                <tr>
+                  <td><code>repositories/user-repository.ts</code></td>
+                  <td><code>userRepositoryRef</code></td>
+                  <td>models</td>
+                </tr>
+                <tr>
+                  <td><code>services/user-service.ts</code></td>
+                  <td><code>userServiceRef</code></td>
+                  <td>repositories</td>
+                </tr>
+                <tr>
+                  <td><code>controllers/user-controller.ts</code></td>
+                  <td><code>userControllerRef</code></td>
+                  <td>services</td>
+                </tr>
+                <tr>
+                  <td><code>main.ts</code></td>
+                  <td>nothing</td>
+                  <td>controllers, repositories</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code data-example="mvc-layers">// models/user.ts
+export interface User {
+  email: string
+  name: string
+}
+
+// repositories/user-repository.ts
+import { provide } from 'dn-ioc'
+import type { User } from '../models/user'
+
+export const userRepositoryRef = provide(function UserRepository() {
+  const table = new Map&lt;string, User&gt;() // Stands in for a database client.
+  return {
+    find: async (email: string) =&gt; table.get(email),
+    create: async (user: User) =&gt; {
+      table.set(user.email, user)
+      return user
+    },
+  }
+})
+
+// services/user-service.ts
+import { provide } from 'dn-ioc'
+import { userRepositoryRef } from '../repositories/user-repository'
+
+export const userServiceRef = provide(function UserService({ inject }) {
+  const users = inject(userRepositoryRef)
+  return {
+    async register(email: string, name: string) {
+      if (!email.includes('@')) throw new Error('Invalid email')
+      if (await users.find(email)) throw new Error('Email taken')
+      return users.create({ email, name })
+    },
+  }
+})
+
+// controllers/user-controller.ts
+import { provide } from 'dn-ioc'
+import { userServiceRef } from '../services/user-service'
+
+export const userControllerRef = provide(function UserController({ inject }) {
+  const users = inject(userServiceRef)
+  return {
+    async post(body: { email: string; name: string }) {
+      return { status: 201, body: await users.register(body.email, body.name) }
+    },
+  }
+})</code></pre>
+          </div>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code data-example="mvc-main">// main.ts
+import { bootstrapApp } from 'dn-ioc'
+import { userControllerRef } from './controllers/user-controller'
+import { userRepositoryRef } from './repositories/user-repository'
+
+const app = bootstrapApp(
+  async ({ inject }) =&gt; {
+    const controller = inject(userControllerRef)
+    const response = await controller.post({ email: 'ada@example.com', name: 'Ada' })
+    console.log(response.status) <span class="note">// 201</span>
+  },
+  { providers: [userRepositoryRef] },
+)
+
+await app.start()
+await app.stop()</code></pre>
+          </div>
+          <p>Nothing needs registering: each ref installs itself where it is first injected. <code>main.ts</code> lists the repository anyway, so the app holds one instance however many subtrees reach it. Do the same for any ref that holds a connection. See <a href="#providers">provide()</a>.</p>
+
+          <h3 id="layers-ddd">DDD: the domain owns the interface</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">File</th>
+                  <th scope="col">Exports</th>
+                  <th scope="col">Imports</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>domain/order.ts</code></td>
+                  <td><code>Order</code>, <code>OrderRepository</code>, <code>orderRepositoryToken</code></td>
+                  <td>no other layer</td>
+                </tr>
+                <tr>
+                  <td><code>application/order-service.ts</code></td>
+                  <td><code>orderServiceRef</code></td>
+                  <td>domain</td>
+                </tr>
+                <tr>
+                  <td><code>infra/order-repository.ts</code></td>
+                  <td><code>orderRepositoryProvider</code></td>
+                  <td>domain</td>
+                </tr>
+                <tr>
+                  <td><code>infra/providers.ts</code></td>
+                  <td><code>infraProviders</code></td>
+                  <td>infra</td>
+                </tr>
+                <tr>
+                  <td><code>main.ts</code></td>
+                  <td>nothing</td>
+                  <td>application, infra</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>The domain declares the interface and a token typed by it. It imports no other layer.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code data-example="ddd-domain">// domain/order.ts
+import { token } from 'dn-ioc'
+
+export interface Order {
+  id: string
+  status: 'draft' | 'submitted'
+}
+
+export interface OrderRepository {
+  find(id: string): Promise&lt;Order | undefined&gt;
+  save(order: Order): Promise&lt;void&gt;
+}
+
+export const orderRepositoryToken = token&lt;OrderRepository&gt;('OrderRepository')</code></pre>
+          </div>
+          <p>The application service injects the token. It never learns which adapter is bound.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code data-example="ddd-application">// application/order-service.ts
+import { provide } from 'dn-ioc'
+import { orderRepositoryToken } from '../domain/order'
+
+export const orderServiceRef = provide(function OrderService({ inject }) {
+  const orders = inject(orderRepositoryToken)
+  return {
+    async submit(id: string) {
+      const order = await orders.find(id)
+      if (!order) throw new Error(`Order ${id} not found`)
+      const submitted = { ...order, status: 'submitted' as const }
+      await orders.save(submitted)
+      return submitted
+    },
+  }
+})</code></pre>
+          </div>
+          <p>Infrastructure imports the domain and binds the token. A bundle collects its adapters.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code data-example="ddd-infra">// infra/order-repository.ts
+import { provide, provideFor } from 'dn-ioc'
+import { type Order, orderRepositoryToken } from '../domain/order'
+
+// Stands in for a database client.
+const tableRef = provide(() =&gt; new Map&lt;string, Order&gt;([['o-1', { id: 'o-1', status: 'draft' }]]))
+
+export const orderRepositoryProvider = provideFor(orderRepositoryToken, ({ inject }) =&gt; {
+  const table = inject(tableRef)
+  return {
+    find: async id =&gt; table.get(id),
+    save: async order =&gt; {
+      table.set(order.id, order)
+    },
+  }
+})</code></pre>
+          </div>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code data-example="ddd-bundle">// infra/providers.ts
+import { bundleProviders } from 'dn-ioc'
+import { orderRepositoryProvider } from './order-repository'
+
+export const infraProviders = bundleProviders(
+  orderRepositoryProvider,
+  // One line per adapter. The entry never changes.
+)</code></pre>
+          </div>
+          <p>The entry is the only module that imports both sides. It installs the bundle once.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code data-example="ddd-main">// main.ts
+import { bootstrapApp } from 'dn-ioc'
+import { orderServiceRef } from './application/order-service'
+import { infraProviders } from './infra/providers'
+
+const app = bootstrapApp(
+  async ({ inject }) =&gt; {
+    const orders = inject(orderServiceRef)
+    console.log((await orders.submit('o-1')).status) <span class="note">// submitted</span>
+  },
+  { providers: [infraProviders] },
+)
+
+await app.start()
+await app.stop()</code></pre>
+          </div>
+          <dl class="rules">
+            <dt>New adapter</dt>
+            <dd>Two edits, both in infrastructure: its <code>provideFor()</code> and one line in the bundle. Every entry already installs the bundle.</dd>
+            <dt>Missing binding</dt>
+            <dd>Inject what an entry uses inside its root factory. A missing binding then rejects <code>start()</code>. A token first injected later, from a request handler, fails on that request instead.</dd>
+            <dt>Direction</dt>
+            <dd>The kernel never sees imports. Enforce “the domain imports no other layer” with a lint rule.</dd>
+          </dl>
+          <p class="constraint">Do not export a DDD adapter as a ref for the domain or application to import. That import points outward. Infrastructure already imports the domain’s types, so the two modules form a cycle, and every domain or application test loads infrastructure.</p>
+
+          <h3 id="layers-testing">Tests swap implementations with <code>provideFor()</code></h3>
+          <p><code>provideFor()</code> accepts a ref or a token, so both layouts replace a repository the same way: <code>provideFor(userRepositoryRef, …)</code> in MVC, <code>provideFor(orderRepositoryToken, …)</code> in DDD.</p>
+          <div class="sample">
+            <button type="button" class="copy">Copy</button>
+            <pre><code data-example="ddd-test">// application/order-service.test.ts
+import { bootstrapApp, provideFor } from 'dn-ioc'
+import { type Order, orderRepositoryToken } from '../domain/order'
+import { orderServiceRef } from './order-service'
+
+const saved: Order[] = []
+const app = bootstrapApp(
+  async ({ inject }) =&gt; {
+    await inject(orderServiceRef).submit('o-1')
+  },
+  {
+    providers: [
+      provideFor(orderRepositoryToken, () =&gt; ({
+        find: async id =&gt; ({ id, status: 'draft' }),
+        save: async order =&gt; {
+          saved.push(order)
+        },
+      })),
+    ],
+  },
+)
+
+await app.start()
+console.log(saved.length, saved[0]?.status) <span class="note">// 1 submitted</span>
+await app.stop()</code></pre>
+          </div>
+          <dl class="rules">
+            <dt>Unit tests</dt>
+            <dd>Install only fakes, never the real bundle. A forgotten token fake rejects <code>start()</code> with <code>No provider for token: OrderRepository</code>. A forgotten ref fake is not an error: the ref builds its real implementation.</dd>
+            <dt>Integration tests</dt>
+            <dd>List the real bundle first and the overrides after it: <code>providers: [infraProviders, provideFor(orderRepositoryToken, …)]</code>. Last-write-wins applies: the bundle silently replaces an override listed before it.</dd>
+            <dt>Names</dt>
+            <dd>Name a token after its interface. A ref takes its name from its factory function: <code>provide(function OrderService(…) {…})</code> reports <code>OrderService</code> in a cycle, and an inline arrow reports <code>&lt;anonymous&gt;</code>. A minifier that renames functions changes the name.</dd>
+          </dl>
         </section>
 
         <section class="block" id="errors">
