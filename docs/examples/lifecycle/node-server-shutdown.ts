@@ -16,9 +16,4 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => void app.stop()) // [!hl]
 }
 
-try {
-  await app.start()
-} catch (error) {
-  console.error(error)
-  await app.stop()
-}
+await app.start()

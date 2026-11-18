@@ -134,6 +134,12 @@ describe('docs/examples suite', () => {
     expect(dddUnit).not.toMatch(/from\s+['"][^'"]*infra/)
   })
 
+  test('does not wrap app.start() in a catch block calling app.stop() in node-server-shutdown.ts', async () => {
+    const nodeShutdown = await readFile(join(EXAMPLES_DIR, 'lifecycle/node-server-shutdown.ts'), 'utf8')
+    expect(nodeShutdown).toContain('await app.start()')
+    expect(nodeShutdown).not.toMatch(/catch[\s\S]*app\.stop\s*\(/)
+  })
+
   test('preserves updated site URL and all 8 verbatim runtime error messages in docs/llms.txt', async () => {
     const llms = await readFile(LLMS_TXT_PATH, 'utf8')
     const lines = llms.split('\n')
