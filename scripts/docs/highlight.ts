@@ -250,7 +250,7 @@ function tokenizeTypeScript(code: string, isJsx: boolean): string[] {
 
 function tokenizeShellLine(line: string): string {
   const re =
-    /(\s+#.*$|^#.*$|"(?:\\.|[^"\\])*"|'(?:[^']*)'|--?[a-zA-Z0-9][\w-]*|\b(?:npm|pnpm|yarn|bun|deno|npx|git|cd|export|curl|mkdir|rm)\b)/g
+    /(\s+#.*$|^#.*$|"(?:\\.|[^"\\])*"|'(?:[^']*)'|(?<=^|\s)--?[a-zA-Z0-9][\w-]*|(?<=^|[\s;|&(])(?:npm|pnpm|yarn|bun|deno|npx|git|cd|export|curl|mkdir|rm)(?=$|[\s;|&)]))/g
   let out = ''
   let pos = 0
 
