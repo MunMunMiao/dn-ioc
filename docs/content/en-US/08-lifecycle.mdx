@@ -26,7 +26,7 @@ Repeated or concurrent `app.stop()` calls are idempotent: they return the exact 
 
 ## Automatic Teardown with await using
 
-Every `App` implements `AsyncDisposable`—defining both native `Symbol.asyncDispose` and `Symbol.for('Symbol.asyncDispose')` so TypeScript 5.2+'s downlevel `await using` emit works even on runtimes without the native symbol.
+Every `App` implements `AsyncDisposable`—defining `[Symbol.asyncDispose]` when native `Symbol.asyncDispose` exists, and falling back to `[Symbol.for('Symbol.asyncDispose')]` on older runtimes without the native symbol so TypeScript 5.2+'s downlevel `await using` emit still finds it.
 
 In tests, CLI jobs, or request-scoped workers like `runScopedTask()`, `await using app = bootstrapApp(...)` guarantees `app.stop()` is awaited automatically when the block exits—even if code inside the block throws an error.
 
@@ -64,7 +64,7 @@ A few practical details to watch for in each environment:
 Keep these invariants in mind when writing `onDispose` hooks:
 
 - **Registration window:** You can only call `onDispose()` while its own factory is actively running, and before `stop()` is called. A sync factory closes that window the moment it returns or throws; an async factory closes it when its returned `Promise` settles. Calling `onDispose()` after the factory finishes throws `onDispose can only be called while the factory is running`; calling it after shutdown starts throws `Cannot register cleanup after the app has stopped`.
-- **Return `void` or `Promise<void>`:** Returning any non-`undefined` value from a cleanup hook is a TypeScript compile error, so accidental return values don't slip through unnoticed. Wrap non-void teardown one-liners in braces: `onDispose(() => { socket.close() })`.
+- **Return `void` or `Promise<void>`:** A cleanup hook must return `void` or `Promise<void>`—returning any other value (or a `Promise` resolving to a non-`void` value) is a TypeScript compile error, so accidental return values don't slip through unnoticed. Wrap non-`void` teardown calls (like Node's `http.Server.close()`, which returns the `Server`) in braces: `onDispose(() => { server.close() })`.
 - **Never `await app.stop()` inside a hook:** A cleanup hook is part of `stop()`'s own completion—awaiting `app.stop()` inside `onDispose()` will deadlock forever.
 - **Hook errors & `AggregateError`:** If one hook throws or rejects, `stop()` still executes all remaining hooks. A single failure is rethrown unchanged; multiple failures are combined into an `AggregateError` (`App stop failed`).
 - **Automatic rollback on `start()` failure:** If `app.start()` fails partway through booting, it automatically calls `stop()` to clean up resources registered so far before rejecting. One error is rethrown unchanged; if startup and cleanup both fail, `start()` rejects with an `AggregateError` (`App startup and stop failed`). Once `start()` succeeds, later runtime errors in your app do **not** automatically stop the graph.
