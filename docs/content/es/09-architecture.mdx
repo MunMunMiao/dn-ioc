@@ -1,0 +1,59 @@
+---
+title: "Elegir entre Ref y Token"
+slug: "architecture"
+part: patterns
+order: 9
+summary: "Usa la dirección de los imports entre módulos — no el gusto personal — para decidir entre un Ref autoinstalable y un Token sin implementación."
+---
+import dddAppServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
+import dddDomainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
+import mvcUserRepoCode from '../../examples/mvc/repositories/user-repository.ts' with { type: 'text' }
+import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' with { type: 'text' }
+
+Cuando empiezas a estructurar un proyecto real con `dn-ioc`, la primera duda de diseño suele ser si una dependencia debería ser un `Ref<T>` creado con `provide()` o un `Token<T>` creado con `token()`. No tienes que lanzarte a adivinar ni tratarlo como una cuestión de gustos: **la dirección de los imports entre módulos resuelve la duda siempre.**
+
+<CodeTabs
+  files={[
+    { title: 'mvc/services/user-service.ts', code: mvcUserServiceCode },
+    { title: 'mvc/repositories/user-repository.ts', code: mvcUserRepoCode },
+    { title: 'ddd/application/order-service.ts', code: dddAppServiceCode },
+    { title: 'ddd/domain/order.ts', code: dddDomainOrderCode },
+  ]}
+/>
+
+## La regla de oro es hacia dónde apuntan los imports
+
+Hazte una sola pregunta sobre el archivo que llama a `inject()`: **¿este módulo tiene permiso para importar la implementación concreta?**
+
+- **Sí → usa `provide()` (`Ref<T>`):** Un `Ref` empaqueta su clave y su función factoría en un mismo `export`. Al importar `userRepositoryRef` en `user-service.ts`, te traes `user-repository.ts` — y cualquier `databaseRef` que este importe — directo a tu grafo de módulos. En un servicio **MVC** por capas donde los controladores importan servicios y los servicios importan repositorios, eso es justo lo que buscas: cero archivos extra, cero registro central repetitivo y toda la inferencia de tipos gratis.
+- **No → usa `token<T>()` (`Token<T>`):** Un `Token` solo lleva un tipo de TypeScript y una etiqueta opcional para diagnóstico: cero código de implementación en tiempo de ejecución. En **DDD / Arquitectura Limpia**, tu capa interna `domain/` define `OrderRepository` y exporta `orderRepositoryToken`, mientras que la capa externa `infra/` importa `domain/` y enlaza la implementación SQL con `provideFor()`. Tu lógica de negocio nunca llega a importar un driver de base de datos, un SDK HTTP ni nada de `infra/`.
+
+Los tokens también brillan cuando un valor solo existe al arrancar — como URLs de entorno, credenciales de API o ajustes por subárbol — donde de entrada no tiene sentido escribir ninguna factoría por defecto.
+
+## Comparativa cara a cara
+
+Compara las cuatro pestañas de arriba (`mvc/` frente a `ddd/`) con esta tabla práctica:
+
+| Dimensión | `Ref<T>` (`provide()`) | `Token<T>` (`token()` + `provideFor()`) |
+| --- | --- | --- |
+| **Acoplamiento en compilación** | El consumidor importa directamente el módulo concreto. | El consumidor solo importa el contrato; la capa externa importa el contrato para enlazarlo. |
+| **Código de cableado** | Cero: se autoinstala con el primer `inject()` en el ámbito activo. | Explícito: hay que enlazarlo con `provideFor()` en `{ providers }` o en un bundle. |
+| **Sustitución en tests** | `provideFor(ref, fakeFactory)` | `provideFor(token, fakeFactory)` — exactamente la misma función. |
+| **Si olvidas un fake en un test unitario** | **Caída silenciosa:** construye y ejecuta la implementación real. | **Fallo inmediato:** rechaza `start()` con `No provider for token: Name`. |
+| **Nombre en errores** | Nombre de la función (`provide(function UserService(...) {})`) o `<anonymous>`. | Cadena descriptiva (`token('OrderRepository')`) o `<anonymous>`. |
+| **Dónde encaja mejor** | Controladores MVC, servicios, repositorios, casos de uso y helpers internos. | Puertos de dominio DDD, puertos transversales (`Clock`, `Mailer`), secretos y configuración de entorno. |
+
+## Mezclar ambos en el mismo repositorio
+
+Elegir entre `Ref` y `Token` no es una religión de todo o nada: casi cualquier aplicación en producción combina ambos con toda naturalidad:
+
+- Incluso en un servicio DDD estricto, los **casos de uso de aplicación** (`orderServiceRef`) y los **clientes privados de infraestructura** (`sqlTableRef`) son simples `Ref` porque quienes los llaman viven en capas externas o del mismo nivel que sí deben importarlos. Solo los puertos de frontera que cruzan desde capas internas hacia adaptadores externos necesitan `token()`.
+- E incluso en una app MVC sencilla puedes tirar de `token()` para una cadena `DatabaseUrl` cargada al arrancar o una pasarela de pagos externa que jamás querrías disparar por descuido desde un test unitario.
+
+<Callout kind="note" title="Respalda las fronteras de arquitectura con el linter">
+
+`dn-ioc` resuelve manejadores en tiempo de ejecución: nunca inspecciona tus sentencias `import` de TypeScript. Si eliges `Token` para mantener `domain/` libre de dependencias hacia `infra/`, acompáñalo con una regla `noRestrictedImports` en Biome o ESLint para que cualquier auto-import despistado falle en CI.
+
+</Callout>
+
+Ahora recorramos ambos patrones en proyectos completos de varios archivos: empieza por [Patrón MVC en la práctica](/es/mvc/) para composición directa de arriba abajo, o salta a [DDD y Arquitectura Limpia](/es/ddd/) para inversión de puertos y adaptadores.

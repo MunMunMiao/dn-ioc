@@ -1,0 +1,61 @@
+---
+title: "Vue d’ensemble"
+slug: ""
+part: start
+order: 1
+summary: "Un micro-noyau d’injection de dépendances en TypeScript basé sur de simples fonctions : sans décorateurs, sans réflexion ni conteneur global."
+---
+import minimalCode from '../../examples/overview/minimal.ts' with { type: 'text' }
+
+Dès qu’un projet TypeScript prend un peu d’ampleur, faire passer des objets de config, des clients de base de données et des services à travers cinq couches d’arguments devient vite pénible — et remplacer une seule dépendance dans un test ne devrait jamais t’imposer des bricolages de mock de modules ou des décorateurs partout. Si tu veux câbler tes dépendances proprement avec un typage strict, de simples fonctions et zéro magie cachée à l’exécution, `dn-ioc` est fait pour ça.
+
+<Code title="minimal.ts" code={minimalCode} />
+
+## En clair, un provider n’est qu’une simple fonction
+
+Si tu sais écrire une fonction qui renvoie une valeur, tu sais déjà te servir de `dn-ioc`. Pas besoin de classe parente, pas de décorateur `@Injectable()`, pas d’option `emitDecoratorMetadata` dans le compilateur ni de polyfill `reflect-metadata` : tu passes une fonction et c’est réglé.
+
+Chaque provider est une fonction factory tout ce qu’il y a de plus classique, de type `(ctx: Context) => T` :
+
+- Elle reçoit `{ inject, onDispose }`, récupère ses dépendances avec `inject()` et renvoie **n’importe quelle valeur TypeScript** : un objet littéral, une fonction, un type primitif, une instance de classe ou une `Promise`.
+- `bootstrapApp()` prépare un scope racine isolé et te renvoie immédiatement un handle `App`, sans exécuter la moindre factory pour l’instant.
+- Rien ne tourne tant que tu n’appelles pas `await app.start()`. Et comme `minimal.ts` ne garde ni socket ouvert, ni timer, ni fichier, tu n’as même pas besoin d’appeler `app.stop()`.
+
+<Callout kind="tip" title="La fonction racine lance le travail, elle ne renvoie rien">
+
+La fonction passée à `bootstrapApp()` doit renvoyer `void` ou `Promise<void>`. Vois-la comme le `main()` de ton application : elle injecte ce dont le programme a besoin et démarre l’exécution plutôt que de calculer une valeur à retourner.
+
+</Callout>
+
+## Six fonctions, toute la surface de l’API
+
+Toute l’API publique au runtime tient en six fonctions. Une fois que tu vois comment elles s’assemblent, il n’y a aucune couche cachée à apprendre :
+
+| Fonction | Ce qu’elle crée | Quand l’utiliser |
+| --- | --- | --- |
+| `provide(factory, options?)` | `Ref<T>` | Envelopper une factory concrète qui s’auto-installe au premier `inject()`. |
+| `token<T>(description?)` | `Token<T>` | Déclarer un pur contrat de type sans implémentation par défaut. |
+| `provideFor(key, factory, options?)` | `ProviderDef<T>` | Lier une implémentation à un `Token<T>`, ou remplacer un `Ref<T>` dans les tests et surcharges locales. |
+| `bundleProviders(...inputs)` | `ProviderBundle` | Regrouper plusieurs liaisons et refs pour installer toute une couche en une seule ligne. |
+| `isProvideRef(value)` | `value is Ref<unknown>` | Vérifier à l’exécution si une valeur inconnue est bien un vrai `Ref` issu de `provide()`. |
+| `bootstrapApp(fn, options?)` | `App` | Assembler un graphe isolé avec support de `start()`, `stop()` et `await using`. |
+
+## Tourne partout où JavaScript tourne
+
+`dn-ioc` n’a aucune dépendance au runtime et pèse `4.8 kB` minifié (`1.9 kB` en gzip).
+
+Surtout, le noyau ne touche à **aucune API spécifique à une plateforme** : pas de `process`, pas de globales DOM, pas de timers. Exactement le même graphe de dépendances tourne tel quel sur Node.js, Bun, Deno, dans les navigateurs, les Web Workers et les environnements serverless ou edge. Comme les signaux d’arrêt diffèrent d’un environnement à l’autre, le noyau ne devine rien à ta place : tu branches `app.stop()` sur le signal ou le démontage propre à ta cible quand c’est utile (voir [Cycle de vie et nettoyage](/fr/lifecycle/)).
+
+## Ce que dn-ioc laisse volontairement de côté
+
+Garder un noyau léger suppose de tracer une frontière nette entre le câblage des dépendances et le contrôle d’exécution de ton appli. `dn-ioc` choisit délibérément de **ne pas** inclure :
+
+- **Décorateurs, réflexion ou conteneur global :** Chaque appel à `bootstrapApp()` construit un graphe indépendant, donc tes tests en parallèle ne se marchent jamais dessus.
+- **Cérémonie de framework :** Pas de classes modules, pas de conteneur intégré par requête HTTP, pas de multi-bindings ni d’écouteurs automatiques sur les signaux système.
+- **Annulation magique ou révocation d’objets :** Appeler `stop()` bloque les futurs appels à `inject()` et lance tes hooks de nettoyage, mais n’interrompt pas les entrées/sorties réseau en cours, n’attend pas les factories détachées non résolues et n’invalide pas les objets JavaScript que ton code garde déjà en mémoire. L’admission des requêtes, le branchement d’un `AbortController` et l’ordre de vidage à l’arrêt restent entre tes mains.
+
+<Callout kind="note" title="Des handles opaques gelés, pas un bac à sable">
+
+Les handles renvoyés par `token()`, `provide()`, `provideFor()` et `bundleProviders()` sont des objets opaques gelés suivis en interne par le noyau. Les cloner avec un spread (`{ ...configRef }`) ne marchera pas : le noyau rejette toute copie. `dn-ioc` est un noyau en mémoire pour du code applicatif de confiance dans un même processus, pas un sandbox d’isolation.
+
+</Callout>

@@ -1,0 +1,121 @@
+---
+title: "Référence de l’API publique"
+slug: "api"
+part: reference
+order: 13
+summary: "Référence complète des signatures, paramètres et comportements des six fonctions au runtime, des quinze types TypeScript publics et des handles opaques gelés."
+---
+import signaturesCode from '../../examples/api/signatures.ts' with { type: 'text' }
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+Tout ce qu’exporte `dn-ioc` provient directement de `'dn-ioc'` : six fonctions au runtime et quinze types TypeScript, sans sous-chemins d’import ni effets de bord globaux. Garde ce chapitre sous le coude dès que tu veux vérifier un type de paramètre, une valeur de retour ou une garantie sur un handle.
+
+<Code title="functions.ts" code={signaturesCode} region="functions" />
+
+## Fonctions au runtime
+
+### `token<T>(description?)`
+
+**Signature :** `function token<T>(description?: string): Token<T>`
+
+Crée une pure clé de dépendance portant le type TypeScript `T` et zéro implémentation à l’exécution.
+
+- **`description`** *(`string` optionnel)* : Libellé lisible affiché dans `No provider for token: Name` et `Circular dependency detected: ...`. S’il est omis ou vide, les diagnostics affichent `<anonymous>`. Deux appels distincts à `token('Same')` produisent toujours deux clés distinctes : l’identité ne dépend jamais de la chaîne de description.
+- **Contrats asynchrones :** Place `Promise` directement dans `T` (`token<Promise<Settings>>('Settings')`) afin que les appelants de `inject()` et les implémentations `provideFor()` s’accordent sur le type de retour asynchrone.
+
+### `provide<T>(factory, options?)`
+
+**Signature :** `function provide<T>(factory: Factory<T>, options?: ProviderOptions): Ref<T>`
+
+Enveloppe `factory` dans un handle auto-installable `Ref<T>`.
+
+- **`factory`** : `(ctx: Context) => T`. Si aucune liaison pour ce `Ref` n’existe dans le scope actif ni dans ses ancêtres au moment d’appeler `inject()`, le `Ref` installe sa factory par défaut dans le scope actif, l’exécute une fois et met le résultat en cache (ou partage la `Promise` en vol pour une factory `async`). Les exceptions synchrones et rejets asynchrones ne sont **pas** mis en cache, ce qui autorise de nouveaux essais tant que l’appli tourne.
+- **Nom de diagnostic :** Lu depuis `factory.name` (par exemple, `provide(function UserService(ctx) { ... })` affiche `UserService`, tandis qu’une fonction fléchée anonyme affiche `<anonymous>`).
+- **`options?.providers`** : Sous-arbre enfant privé optionnel visible uniquement par `factory` et ses descendants. Copié lors de l’appel à `provide()` et validé paresseusement lors de la première résolution de ce sous-arbre.
+
+### `provideFor<T>(key, factory, options?)`
+
+**Signature :** `function provideFor<T>(key: InjectKey<T>, factory: Factory<T>, options?: ProviderOptions): ProviderDef<T>`
+
+Lie une implémentation `factory` à `key` — acceptant **aussi bien** un `Token<T>` qu’un `Ref<T>` — et renvoie un `ProviderDef<T>` prêt à être installé dans `{ providers }` ou `bundleProviders()`.
+
+- Valide `key` immédiatement dès l’appel à `provideFor()` ; passer autre chose qu’un vrai `Token` ou `Ref` lève `Invalid inject key received`.
+- **`options?.providers`** : Sous-arbre enfant privé optionnel visible par cette `factory` liée et ses descendants ; copié dès la création.
+
+### `bundleProviders(...inputs)`
+
+**Signature :** `function bundleProviders(...inputs: ProviderInput[]): ProviderBundle`
+
+Regroupe n’importe quel mélange de `Ref`, liaisons `ProviderDef`, tableaux imbriqués et autres `ProviderBundle` dans un seul `ProviderBundle` réutilisable.
+
+- Copie superficiellement les tableaux d’entrée à la création afin qu’aucune mutation ultérieure ne modifie le bundle.
+- Installer un bundle aplatit ses éléments de gauche à droite dans l’ordre du code directement dans le scope cible — il ne crée **pas** de scope enfant isolé à lui seul.
+
+### `isProvideRef(value)`
+
+**Signature :** `function isProvideRef(value: unknown): value is Ref<unknown>`
+
+Garde de type renvoyant `true` **uniquement** lorsque `value` est un vrai `Ref` retourné par `provide()`. Renvoie `false` pour `Token`, `ProviderDef`, `ProviderBundle`, les valeurs primitives, `null` et les objets clonés (`{ ...someRef }`).
+
+### `bootstrapApp(fn, options?)`
+
+**Signature :** `function bootstrapApp(fn: BootstrapAppFn, options?: BootstrapAppOptions): App`
+
+Crée un scope racine isolé, valide et installe `options?.providers` de façon synchrone, puis renvoie un handle `App` **sans** exécuter `fn` ni aucune factory de provider pour l’instant.
+
+- **`fn`** : `(ctx: Context) => void | Promise<void>`. S’exécute à l’appel de `app.start()`. Doit renvoyer `void` ou `Promise<void>`.
+- **`options?.providers`** : Liaisons, refs, tableaux et bundles de niveau racine. Toute entrée invalide lève `Invalid provider input received` de façon synchrone avant même le retour d’un handle `App`.
+
+## Interfaces Context et cycle de vie d’App
+
+### Context (`InjectFn` et `OnDisposeFn`)
+
+Chaque `Factory<T>` de provider et chaque `BootstrapAppFn` reçoit un objet `Context` doté de deux fonctions :
+
+- **`inject: InjectFn`** (`<T>(key: InjectKey<T>) => T`) — Résout `key` en partant du scope propriétaire du provider vers le haut. Renvoie directement les valeurs synchrones et des `Promise` partagées pour les factories asynchrones. Reste appelable depuis les méthodes retournées une fois la factory terminée, jusqu’à l’appel de `app.stop()`.
+- **`onDispose: OnDisposeFn`** (`(fn: () => void | Promise<void>) => void`) — Enregistre un hook de nettoyage exécuté dans l’ordre LIFO (du plus récent au plus ancien) pendant `app.stop()`. Appelable **uniquement** tant que sa propre factory est activement en cours d’exécution et avant `stop()`. Renvoyer autre chose que `void` ou `Promise<void>` est une erreur de compilation TypeScript — entoure d’accolades les appels de fermeture qui retournent une valeur (`onDispose(() => { server.close() })`).
+
+### App (`start`, `stop` et `AsyncDisposable`)
+
+Le handle renvoyé par `bootstrapApp()` expose trois membres :
+
+- **`start(): Promise<void>`** — Exécute une seule fois le callback racine et attend toute `Promise` qu’il renvoie. Les appels concurrents ou répétés renvoient exactement la même `Promise`. Si le démarrage échoue, `start()` lance automatiquement `stop()` pour annuler les ressources déjà acquises avant de rejeter. Une fois `stop()` appelé, `start()` rejette avec `Cannot start an app that has been stopped`.
+- **`stop(): Promise<void>`** — Ferme `inject()` de façon synchrone dans toute l’application, puis attend les hooks `onDispose` enregistrés du plus récent au plus ancien. Idempotent face aux appels concurrents ou répétés. Même si un hook échoue, tous les hooks restants sont quand même exécutés.
+- **`[Symbol.asyncDispose](): Promise<void>`** — Pointe vers exactement la même fonction `stop` pour que `await using app = bootstrapApp(...)` démonte automatiquement l’application à la sortie du bloc. Lorsque le symbole natif `Symbol.asyncDispose` existe sur le runtime, `App` définit `[Symbol.asyncDispose]` ; sur les runtimes plus anciens dépourvus du symbole natif (comme Node 18), il se replie sur `[Symbol.for('Symbol.asyncDispose')]` afin de correspondre à la recherche transpilée de `await using` par TypeScript.
+
+<Code title="types.ts" code={signaturesCode} region="types" />
+
+## Types des handles et types utilitaires
+
+| Type exporté | Définition / forme | Rôle |
+| --- | --- | --- |
+| `Token<T>` | Interface opaque marquée portant `T` | Clé de contrat renvoyée par `token<T>()`. |
+| `Ref<T>` | `extends Token<T>` (marquée comme ref) | Handle auto-installable renvoyé par `provide()`. |
+| `RefType<T>` | `T extends Ref<infer U> ? U : never` | Extrait le type résolu `U` à partir de `typeof someRef` — idéal pour typer des fakes de test sans dupliquer d’interfaces. |
+| `InjectKey<T>` | `Token<T> \| Ref<T>` | Toute cible valide acceptée par `inject()` et `provideFor()`. |
+| `ProviderDef<T>` | Interface opaque marquée portant `T` | Liaison explicite renvoyée par `provideFor()`. |
+| `ProviderBundle` | Interface opaque marquée | Handle de groupe renvoyé par `bundleProviders()`. |
+| `ProviderInput` | `Ref<unknown> \| ProviderDef<unknown> \| ProviderBundle \| readonly ProviderInput[]` | Tout élément installable ou tableau imbriqué accepté par `providers` et `bundleProviders()`. |
+| `ProviderOptions` | `{ providers?: readonly ProviderInput[] }` | Objet d’options de `provide()` et `provideFor()` déclarant un sous-arbre enfant privé. |
+| `BootstrapAppOptions` | `{ providers?: readonly ProviderInput[] }` | Objet d’options de `bootstrapApp()` installant les liaisons du scope racine. |
+| `InjectFn` | `<T>(key: InjectKey<T>) => T` | Type de `ctx.inject` passé dans `Context`. |
+| `OnDisposeFn` | `(fn: () => void \| Promise<void>) => void` | Type de `ctx.onDispose` passé dans `Context`. |
+| `Factory<T>` | `(ctx: Context) => T` | Signature d’une fonction factory de provider. |
+| `BootstrapAppFn` | `(ctx: Context) => void \| Promise<void>` | Signature du callback racine de démarrage passé à `bootstrapApp()`. |
+
+## Sémantique des handles opaques gelés
+
+Chaque handle renvoyé par `token()`, `provide()`, `provideFor()` et `bundleProviders()` est un objet vide gelé (`Object.freeze({})`) sans aucune propriété propre énumérable ni clé symbole propre. Toutes les métadonnées internes sont stockées dans une `WeakMap` privée au sein du noyau :
+
+- **Toute mutation échoue :** Tenter d’ajouter ou d’écraser une propriété sur un handle lève une `TypeError` en mode strict.
+- **Clones et contrefaçons rejetés :** Copier un handle avec un spread (`{ ...sampleRef }`, `Object.assign({}, myToken)`) crée une nouvelle référence absente de la `WeakMap` du noyau. Passer cette copie à `isProvideRef()` renvoie `false` ; la passer à `inject()` ou `provideFor()` lève `Invalid inject key received` ; passer une liaison ou un bundle copié dans `providers` lève `Invalid provider input received`.
+
+<Callout kind="note" title="Noyau de confiance dans le processus, pas un sandbox">
+
+Les handles opaques évitent les mutations accidentelles, les bugs de sérialisation et le duck-typing fragile entre paquets. Ils ne constituent **pas** une barrière de sécurité face à du code non fiable tournant dans le même isolate JavaScript.
+
+</Callout>
+
+Pour retrouver chaque message d’erreur que le noyau peut lever au runtime — et comment le corriger — passe à [Erreurs et diagnostic](/fr/errors/).
+
+<Code title="opaque-handles.ts" code={providersCode} region="isProvideRef" />

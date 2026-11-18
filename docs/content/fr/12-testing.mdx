@@ -1,0 +1,62 @@
+---
+title: "Tests et mocks"
+slug: "testing"
+part: patterns
+order: 12
+summary: "Lance tes tests unitaires et d’intégration en parallèle sans bidouilles de mock de modules grâce à provideFor(), aux surcharges de bundles et à await using."
+---
+import mvcFakeCode from '../../examples/mvc/user-service-fake-example.ts' with { type: 'text' }
+import testingCode from '../../examples/testing/unit-and-integration.ts' with { type: 'text' }
+
+Tester avec `dn-ioc` ne réclame ni `vi.mock()`, ni `mock.module()`, ni rituels fragiles du genre `afterEach(() => container.reset())`. Comme il n’y a **aucun conteneur global**, chaque appel à `bootstrapApp()` construit en mémoire un graphe tout neuf et isolé : des dizaines de fichiers de test peuvent tourner en parallèle sans se marcher sur les pieds, et `provideFor()` remplace n’importe quel `Token<T>` ou `Ref<T>` en une ligne.
+
+<Code title="order-service.unit.test.ts" code={testingCode} region="unit" />
+
+## Tests unitaires avec des fakes isolés
+
+Dans un test unitaire, tu crées un `bootstrapApp()` dédié et tu installes **uniquement** les fakes nécessaires au sujet testé (`fakeOrders`, une `Clock` figée et `fakeMailer` dans `order-service.unit.test.ts`).
+
+`provideFor(key, fakeFactory)` s’utilise exactement de la même manière que `key` soit un `Token<T>` ou un `Ref<T>`, **mais ce qui se passe si tu oublies de mocker une dépendance dépend du type de clé choisi :**
+
+| Type de clé | Si tu oublies `provideFor()` en test unitaire | Conséquence concrète |
+| --- | --- | --- |
+| **`Token<T>`** | Rejette `app.start()` immédiatement avec `No provider for token: Name`. | **Échec immédiat :** un test unitaire ne risque jamais d’ouvrir un vrai socket ou d’envoyer un vrai e-mail par accident. |
+| **`Ref<T>`** | Aucune erreur — auto-installe et exécute la vraie factory du `Ref`. | **Repli silencieux :** pratique pour des helpers purs en mémoire, risqué si le `Ref` oublié touche au réseau ou au disque. |
+
+Compare le test unitaire DDD ci-dessus avec le test MVC (`services/user-service.test.ts`) : remplacer `userRepositoryRef` via `provideFor(userRepositoryRef, fakeUserRepository)` est tout aussi net, tant que tu penses à surcharger chaque `Ref` faisant des entrées/sorties sur le chemin de `userServiceRef`.
+
+<Callout kind="tip" title="Garde des traces lisibles quand un test casse">
+
+Nomme tes tokens d’après leur interface (`token<Mailer>('Mailer')`) et donne un vrai nom de fonction à tes factories `provide()` (`provide(function OrderService({ inject }) { ... })`). Si un test oublie une liaison ou introduit un cycle, tu verras `OrderService` et `Mailer` dans le message d’erreur au lieu de `<anonymous>`.
+
+</Callout>
+
+<Code title="services/user-service.test.ts" code={mvcFakeCode} />
+
+## Tests d’intégration avec surcharge d’un bundle
+
+Les tests unitaires prouvent que ta logique métier tourne avec des fakes ; les tests d’intégration vérifient que tes vrais repositories SQL, ta sérialisation et tes services métier fonctionnent ensemble tout en remplaçant les services tiers comme SMTP ou Stripe.
+
+Comme `dn-ioc` aplatit les tableaux et `ProviderBundle` dans l’ordre du code — et qu’**une liaison ultérieure dans le même scope écrase silencieusement la précédente** — tu peux installer tout ton bundle de production `infraProviders` en premier, puis surcharger un seul port juste après :
+
+- **Bon ordre (`[infraProviders, provideFor(mailerToken, fakeMailer)]`) :** Installe `sqlTableRef`, `sqlOrderRepositoryProvider`, `systemClockProvider` et `smtpMailerProvider`, puis remplace `mailerToken` par `fakeMailer`.
+- **Mauvais ordre (`[provideFor(mailerToken, fakeMailer), infraProviders]`) :** `infraProviders` est aplati *après* ton fake et réécrase silencieusement `mailerToken` avec le vrai `smtpMailerProvider` !
+
+<Callout kind="note" title="Surcharger à l’intérieur d’un sous-arbre imbriqué">
+
+Les surcharges racine passées à `bootstrapApp(..., { providers })` s’appliquent automatiquement à tous les services détenus à la racine. Si jamais tu surcharges une dépendance dans un sous-arbre enfant `{ providers }` alors que son consommateur est déjà installé à la racine, pense à relier à la fois le consommateur et la dépendance dans ce scope enfant (voir [Scopes et sous-arbres](/fr/scopes/)).
+
+</Callout>
+
+<Code title="order-service.integration.test.ts" code={testingCode} region="integration" />
+
+## Nettoyage automatique par test avec await using
+
+Regarde le `await using app = bootstrapApp(...)` dans `testOrderSubmitUnit()` et `testOrderSubmitIntegration()` :
+
+- Comme `App` implémente `AsyncDisposable`, TypeScript attend automatiquement `app.stop()` à la sortie du bloc de fonction — **même si une assertion `expect()` lève une erreur en plein milieu du test.**
+- Le hook `onDispose` de `sqlTableRef` s’exécute avant la fin du test, refermant pools, timers ou serveurs temporaires sans la moindre lourdeur `try / finally`.
+
+Si ton projet n’utilise pas encore `await using`, entourer le corps du test d’un `try { await app.start() } finally { await app.stop() }` fait exactement le même travail — et comme `app.stop()` est idempotent, l’appeler deux fois pendant le démontage ne pose jamais problème.
+
+Besoin de vérifier une signature exacte ou de retrouver un message d’erreur ? Direction la Partie IV avec la [Référence de l’API publique](/fr/api/) et [Erreurs et diagnostic](/fr/errors/).

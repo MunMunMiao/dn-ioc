@@ -1,0 +1,72 @@
+---
+title: "Ámbitos y subárboles"
+slug: "scopes"
+part: kernel
+order: 6
+summary: "Mira cómo inject() busca hacia arriba entre ámbitos, cómo los subárboles privados { providers } aíslan cambios locales y por qué manda el ámbito dueño del consumidor."
+---
+import case1Code from '../../examples/scopes/case1-fallback.ts' with { type: 'text' }
+import case2Code from '../../examples/scopes/case2-local-override.ts' with { type: 'text' }
+import case3Code from '../../examples/scopes/case3-parent-owned.ts' with { type: 'text' }
+import case4Code from '../../examples/scopes/case4-rebind-both.ts' with { type: 'text' }
+
+La mayoría de las aplicaciones conectan todo en el único ámbito raíz que crea `bootstrapApp()`. Usa `{ providers }` dentro de un `provide()` o `provideFor()` concreto cuando un subárbol específico — como un widget de vista previa de temas, un plugin incrustado o un worker aislado — necesite sus propios overrides locales sin filtrarlos ni al padre ni a los subárboles vecinos.
+
+## Cómo funciona la búsqueda por ámbitos
+
+La forma en que `inject(key)` resuelve dependencias dentro de ámbitos anidados se resume en tres reglas:
+
+1. **Sube nivel a nivel y gana la primera coincidencia:** `inject(key)` mira primero en el ámbito actual y luego sube por los ámbitos padres hasta dar con un enlace. Si no existe ninguno, un `Ref` se autoinstala en el ámbito activo mientras que un `Token` lanza `No provider for token: Name`.
+2. **`{ providers }` abre un subárbol hijo privado:** Los enlaces declarados en la opción `{ providers }` de un provider solo son visibles para ese provider y sus descendientes. Cada enlace guarda su instancia en caché en el ámbito al que pertenece — o dentro de su subárbol hijo privado cuando declara `{ providers }`. Ni los hermanos ni los padres ven esos overrides locales.
+3. **Cada provider resuelve desde el ámbito que lo posee:** Un consumidor jamás hereda los overrides locales de quien lo llama. Si un consumidor está registrado en un ámbito padre, sus propias llamadas a `inject()` empiezan desde ese ámbito padre.
+
+Los cuatro escenarios siguientes usan exactamente la misma base con `labelToken`, `rendererRef` y `previewRef`. Pasa de uno a otro para ver cómo mover una sola línea cambia lo que lee `previewRef`.
+
+## 1. Sin override local: cae al ámbito padre
+
+En `case1-fallback.ts`, `previewRef` instala `rendererRef` dentro de su subárbol privado `{ providers }`, mientras que la app raíz enlaza `labelToken` a `'app'`.
+
+Cuando `previewRef` inyecta `rendererRef`, encuentra el enlace local de `rendererRef` en su ámbito privado. Luego `rendererRef` pide `labelToken`: como en el subárbol de vista previa no hay ningún `labelToken` local, la búsqueda sube hasta el ámbito raíz y lee `'app'`.
+
+<Code title="case1-fallback.ts" code={case1Code} />
+
+## 2. Override local junto al consumidor
+
+Ahora añade `provideFor(labelToken, () => 'local')` justo al lado de `rendererRef` dentro de los `{ providers }` privados de `previewRef`.
+
+Como `rendererRef` pertenece al subárbol privado de `previewRef`, su búsqueda de `labelToken` mira primero en ese ámbito privado y da con `'local'`. Mientras tanto, fuera del subárbol, el `inject(rendererRef)` de la raíz autoinstala otro `rendererRef` distinto en la raíz que sigue leyendo `'app'`. Ninguno contamina al otro.
+
+<Code title="case2-local-override.ts" code={case2Code} />
+
+## 3. Ojo con esta trampa habitual: consumidor en el padre
+
+Fíjate en lo que pasa si sacas `rendererRef` de `previewRef` y lo registras en la app raíz, dejando únicamente `provideFor(labelToken, () => 'local')` dentro de `previewRef`.
+
+Aunque `previewRef` sea el primero en llamar a `inject(rendererRef)` — y aunque `previewRef` tenga su propio enlace `'local'` — **¡`previewRef` sigue imprimiendo `'app'`!**
+
+¿Por qué? Porque `previewRef` busca `rendererRef` hacia arriba, lo encuentra registrado en el ámbito raíz y lo ejecuta *allí*. Un provider cuyo dueño es el padre resuelve todas sus dependencias en el ámbito padre, nunca en el ámbito hijo que lo invocó.
+
+<Code title="case3-parent-owned.ts" code={case3Code} />
+
+## 4. Reenlazar juntos consumidor y dependencia
+
+Cuando la app raíz ya es dueña de `rendererRef`, ¿cómo consigues que `previewRef` tenga una versión que lea `'local'`? Reenlazando **ambos** — `labelToken` y `rendererRef` — dentro del `{ providers }` de `previewRef`.
+
+Así `previewRef` posee su propio enlace local de `rendererRef` justo al lado del override `'local'` del token: `previewRef` lee `'local'` y el `rendererRef` de la raíz sigue leyendo `'app'`.
+
+<Code title="case4-rebind-both.ts" code={case4Code} />
+
+## Chuleta comparativa de ámbitos
+
+| Escenario | `providers` en la raíz | `providers` en `previewRef` | Qué lee `previewRef` | Por qué |
+| --- | --- | --- | --- | --- |
+| **1. Caída al padre** | `label = 'app'` | `rendererRef` | `'app'` | El `rendererRef` local sube hasta la raíz para buscar `labelToken`. |
+| **2. Override local** | `label = 'app'` | `rendererRef`, `label = 'local'` | `'local'` | El `rendererRef` local encuentra `'local'` en su mismo ámbito privado. |
+| **3. Dueño en la raíz** | `label = 'app'`, `rendererRef` | `label = 'local'` | `'app'` | `rendererRef` vive en la raíz, así que su `inject(labelToken)` resuelve en la raíz. |
+| **4. Reenlazar ambos** | `label = 'app'`, `rendererRef` | `label = 'local'`, `provideFor(rendererRef, ...)` | `'local'` | Tanto el consumidor como la dependencia pertenecen al ámbito privado de `previewRef`. |
+
+<Callout kind="note" title="Los providers anidados se validan de forma perezosa">
+
+A diferencia de los `providers` raíz (que `bootstrapApp()` valida al instante), el array `{ providers }` anidado de un provider se valida la primera vez que se resuelve ese subárbol. Si contiene una entrada inválida, esa llamada a `inject()` lanza `Invalid provider input received`.
+
+</Callout>

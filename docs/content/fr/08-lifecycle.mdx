@@ -1,0 +1,76 @@
+---
+title: "Cycle de vie et nettoyage"
+slug: "lifecycle"
+part: kernel
+order: 8
+summary: "Libère proprement sockets, pools et timers grâce aux hooks LIFO de onDispose(), au rollback automatique au démarrage, à await using et aux signaux d’arrêt."
+---
+import disposeAndUsingCode from '../../examples/lifecycle/dispose-and-using.ts' with { type: 'text' }
+import nodeShutdownCode from '../../examples/lifecycle/node-server-shutdown.ts' with { type: 'text' }
+import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' with { type: 'text' }
+
+Un `app.start()` réussi n’arrête jamais l’application tout seul : c’est toi qui décides si `app.stop()` a lieu d’être. Un petit script CLI ou un graphe couvrant toute une page navigateur qui disparaît à la fermeture de l’onglet n’a pas besoin de `stop()`, puisque l’OS ou l’onglet récupère déjà tout. Dégaine `onDispose()` et `app.stop()` dès que **quelque chose survit au graphe** : un serveur longue durée qui tient des ports ou des pools SQL, un cas de test isolé, ou un widget d’interface démonté pendant que la page continue de vivre.
+
+<Code title="dispose.ts" code={disposeAndUsingCode} region="dispose" />
+
+## Fermeture de l’injection et démontage LIFO
+
+Appeler `app.stop()` exécute deux étapes dans un ordre strict :
+
+1. **Ferme `inject()` de façon synchrone dans toute l’appli :** Avant même la moindre microtâche, tous les handles `inject()` de l’application sont définitivement coupés. Tout appel ultérieur à `inject()` — même pour une instance déjà en cache ou dans un sous-arbre privé, comme `service.read()` ci-dessus — lève aussitôt `Cannot inject after the app has stopped`.
+2. **Exécute les hooks `onDispose` du plus récent au plus ancien (LIFO) :** Les hooks tournent l’un après l’autre dans l’ordre inverse de leur enregistrement. Si ton pool de base de données s’enregistre en premier et ton serveur HTTP en second, `stop()` ferme le serveur HTTP avant de vider le pool de base de données.
+
+Comme `inject()` est déjà fermé au moment où tournent les hooks de nettoyage, **stocke toujours tes dépendances dans des variables locales avant d’appeler `onDispose()`** — exactement comme `const store = inject(storeRef)` dans `dispose.ts`.
+
+Les appels répétés ou concurrents à `app.stop()` sont idempotents : ils renvoient exactement la même `Promise` et n’exécutent chaque hook qu’une seule fois. Une fois une appli arrêtée, rappeler `app.start()` rejette avec `Cannot start an app that has been stopped`.
+
+## Nettoyage automatique avec await using
+
+Chaque `App` implémente `AsyncDisposable` : il définit `[Symbol.asyncDispose]` lorsque le symbole natif `Symbol.asyncDispose` existe sur le runtime, et se replie sur `[Symbol.for('Symbol.asyncDispose')]` sur les runtimes plus anciens dépourvus du symbole natif afin que la transpilation de `await using` par TypeScript 5.2+ le trouve quand même.
+
+Dans tes tests, jobs CLI ou workers par requête comme `runScopedTask()`, écrire `await using app = bootstrapApp(...)` garantit que `app.stop()` est attendu automatiquement à la sortie du bloc — même si une erreur est levée en plein milieu.
+
+<Code title="await-using.ts" code={disposeAndUsingCode} region="awaitUsing" />
+
+## Brancher l’arrêt selon l’environnement
+
+Les signaux d’arrêt n’ont aucun dénominateur commun entre les runtimes JavaScript ; le noyau n’attache donc jamais d’écouteurs globaux en douce. Branche `app.stop()` sur le déclencheur adapté à ta cible :
+
+| Environnement | Déclencheur | Nettoyage asynchrone |
+| --- | --- | --- |
+| Node.js, Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | Attendu, si le handler garde le processus en vie |
+| Deno | `Deno.addSignalListener('SIGINT', handler)` | Attendu |
+| Sous-appli navigateur | Ton propre démontage (`useEffect` React, `onScopeDispose` Vue, changement de route) | Attendu |
+| Page navigateur | `addEventListener('pagehide', handler)` | Non fiable — garde des hooks synchrones |
+| Web Worker | Un message envoyé par l’hôte avant `worker.terminate()` | Seulement si l’hôte attend avant de terminer |
+| Serverless, edge | Fin de la requête ou de l’invocation à laquelle le graphe est rattaché | Dépend de l’API de keep-alive de la plateforme |
+
+Quelques détails pratiques à garder à l’œil selon l’environnement :
+
+- **Node.js et Bun (`node-server.ts`) :** Enregistre tes écouteurs `SIGINT` / `SIGTERM` *avant* `await app.start()`. Comme `bootstrapApp()` n’exécute encore aucun provider, `app` existe déjà avant l’ouverture du port `3000`. Sur Deno, le même graphe remplace simplement l’écouteur par `Deno.addSignalListener('SIGINT', () => void app.stop())`.
+- **Widgets navigateur (`browser-unmount.ts`) :** Dès que possible, rattache tes graphes navigateur à un composant ou une route que tu démontes toi-même (`await ready; await app.stop()`), là où les hooks asynchrones sont réellement attendus pendant que la page reste ouverte.
+- **Fermeture d’onglet (`browser-pagehide.ts`) :** Préfère `pagehide` à `beforeunload` (qui casse ou est ignoré par le cache avant/arrière du navigateur). Même avec `pagehide`, les navigateurs détruisent régulièrement la page avant la résolution d’une `Promise` asynchrone : garde donc des hooks strictement synchrones, comme `navigator.sendBeacon()`.
+
+<CodeTabs
+  files={[
+    { title: 'node-server.ts', code: nodeShutdownCode },
+    { title: 'browser-unmount.ts', code: browserUnmountCode, region: 'unmount' },
+    { title: 'browser-pagehide.ts', code: browserUnmountCode, region: 'pagehide' },
+  ]}
+/>
+
+## Règles des hooks, rollback au démarrage et limites
+
+Garde bien ces invariants en tête lorsque tu écris des hooks `onDispose` :
+
+- **Fenêtre d’enregistrement :** Tu ne peux appeler `onDispose()` que pendant l’exécution active de sa propre factory, et avant tout appel à `stop()`. Une factory synchrone referme cette fenêtre dès qu’elle retourne ou lève une erreur ; une factory asynchrone la referme dès que sa `Promise` retournée est résolue ou rejetée. Appeler `onDispose()` une fois la factory terminée lève `onDispose can only be called while the factory is running` ; l’appeler après le début de l’arrêt lève `Cannot register cleanup after the app has stopped`.
+- **Retourner `void` ou `Promise<void>` :** Un hook de nettoyage doit renvoyer `void` ou `Promise<void>` — retourner toute autre valeur (ou une `Promise` résolue avec autre chose que `void`) provoque une erreur de compilation TypeScript, histoire qu’aucune valeur de retour accidentelle ne passe inaperçue. Entoure d’accolades les appels de fermeture qui renvoient une valeur (comme `http.Server.close()` dans Node, qui renvoie le `Server`) : `onDispose(() => { server.close() })`.
+- **Ne fais jamais `await app.stop()` dans un hook :** Un hook de nettoyage fait partie de la complétion même de `stop()` — attendre `app.stop()` dans `onDispose()` provoque un interblocage (deadlock) infini.
+- **Erreurs dans les hooks et `AggregateError` :** Si un hook lève une exception ou rejette, `stop()` exécute quand même tous les hooks restants. Un échec unique est relancé tel quel ; plusieurs échecs sont regroupés dans une `AggregateError` (`App stop failed`).
+- **Rollback automatique si `start()` échoue :** Si `app.start()` échoue en cours de démarrage, il appelle automatiquement `stop()` pour libérer les ressources déjà enregistrées avant de rejeter. Une erreur seule est relancée telle quelle ; si le démarrage et le nettoyage échouent tous les deux, `start()` rejette avec une `AggregateError` (`App startup and stop failed`). Une fois `start()` terminé avec succès, les erreurs ultérieures dans ton appli **n’arrêtent pas** automatiquement le graphe.
+
+<Callout kind="caution" title="Ce que stop() ne fait pas">
+
+`stop()` bloque les futurs appels à `inject()` et exécute les hooks `onDispose` enregistrés — rien de plus. Il **n’attend pas** la fin des factories détachées encore en cours, n’annule pas leurs entrées/sorties réseau en vol et ne révoque pas les objets JavaScript que tu tiens déjà dans des variables. Couper l’arrivée de nouvelles requêtes, déclencher `AbortController.abort()` et orchestrer le vidage restent du ressort de ton code applicatif.
+
+</Callout>

@@ -1,0 +1,122 @@
+---
+title: "Installation et environnements"
+slug: "installation"
+part: start
+order: 2
+summary: "Installe dn-ioc avec ton gestionnaire de paquets, importe-le directement sur Deno ou depuis un CDN navigateur, et configure la résolution TypeScript en mode bundler."
+---
+
+`dn-ioc` est distribué sous forme de paquet ESM sans aucune dépendance (`4.8 kB` minifié, `1.9 kB` en gzip) : une seule commande suffit et rien de superflu ne vient alourdir ton `node_modules`. Installe-le avec le gestionnaire de paquets déjà en place sur ton projet, ou charge-le directement via `npm:` sur Deno ou depuis un CDN dans le navigateur.
+
+<CodeTabs
+  files={[
+    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
+    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
+    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
+    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
+    { title: 'deno', lang: 'bash', code: 'deno add npm:dn-ioc' },
+  ]}
+/>
+
+## Sans installation préalable sur Deno
+
+Envie de lancer un petit script Deno en un seul fichier sans créer de `deno.json` d’abord ? Deno sait importer `dn-ioc` directement via son préfixe `npm:` — épingle `@0.3.1` pour être sûr de toujours exécuter exactement la version que tu as testée.
+
+<Code
+  title="deno-import.ts"
+  lang="ts"
+  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc@0.3.1'`}
+/>
+
+## CDN navigateur et Import Maps
+
+Pas besoin non plus de bundler pour utiliser `dn-ioc` dans une page web. Les navigateurs modernes chargent directement le build ESM minifié depuis un CDN :
+
+| CDN | URL épinglée | Ce qui est servi |
+| --- | --- | --- |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1` | `index.min.js` (`4.8 kB`, `1.9 kB` en gzip) |
+| unpkg | `https://unpkg.com/dn-ioc@0.3.1` | `index.min.js` — exactement le même fichier |
+| esm.sh | `https://esm.sh/dn-ioc@0.3.1` | Build transpilé propre à esm.sh |
+
+Épingle toujours une version précise comme `@0.3.1` dans les URLs côté navigateur : sans numéro de version, le CDN sert la toute dernière sortie au fil de l’eau, ce qui peut réserver des surprises sur une page en ligne.
+
+En ajoutant un `<script type="importmap">`, tu gardes des imports courts `'dn-ioc'` dans tes modules, pour que le même code tourne tel quel avec ou sans bundler.
+
+<CodeTabs
+  files={[
+    {
+      title: 'importmap.html',
+      lang: 'html',
+      code: `<!doctype html>
+<html lang="en">
+  <head>
+    <script type="importmap">
+      {
+        "imports": {
+          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module">
+      import { bootstrapApp, provide } from 'dn-ioc'
+
+      const greetingRef = provide(() => 'hello, browser')
+      const app = bootstrapApp(({ inject }) => {
+        document.body.textContent = inject(greetingRef)
+      })
+
+      await app.start()
+    </script>
+  </body>
+</html>`,
+    },
+    {
+      title: 'direct-cdn.html',
+      lang: 'html',
+      code: `<!doctype html>
+<html lang="en">
+  <body>
+    <script type="module">
+      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1'
+
+      const greetingRef = provide(() => 'hello, browser')
+      const app = bootstrapApp(({ inject }) => {
+        document.body.textContent = inject(greetingRef)
+      })
+
+      await app.start()
+    </script>
+  </body>
+</html>`,
+    },
+  ]}
+/>
+
+## Configuration ESM et TypeScript
+
+`dn-ioc` est **100 % ESM** : charge-le toujours avec `import`, jamais avec le `require()` de CommonJS.
+
+Dans tes projets TypeScript, règle `"moduleResolution": "bundler"` dans ton `tsconfig.json`. Les configurations modernes sous Vite, Bun, Deno, Next.js, Astro et `tsdown` utilisent déjà ce mode par défaut.
+
+<Code
+  title="tsconfig.json"
+  lang="json"
+  code={`{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true
+  }
+}`}
+/>
+
+<Callout kind="caution" title="Résolution des déclarations avec NodeNext et Node16">
+
+La résolution de types avec `NodeNext` et `Node16` **n’est pas prise en charge**. Garde `"moduleResolution": "bundler"` dans les fichiers `tsconfig.json` qui vérifient les types avec `dn-ioc`.
+
+</Callout>
+
+Comme le noyau n’utilise ni `process`, ni API DOM, ni timers, tes providers restent 100 % portables entre Node.js, Bun, Deno, navigateurs, Web Workers et runtimes edge. Prêt à câbler ta première appli ? Passe à la [Prise en main en 5 minutes](/fr/quickstart/).

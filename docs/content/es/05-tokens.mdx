@@ -1,0 +1,50 @@
+---
+title: "Tokens y enlaces"
+slug: "tokens"
+part: kernel
+order: 5
+summary: "Declara contratos sin implementación usando token(), conecta implementaciones concretas con provideFor() y obtén mensajes de error legibles."
+---
+import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { type: 'text' }
+
+Echa mano de `token<T>()` cuando el código que pide una dependencia no deba importar — o todavía no conozca — la implementación concreta que hay detrás. Secretos de entorno como URLs de base de datos, temas intercambiables de interfaz o puertos puros de dominio en DDD encajan aquí de lleno: defines un marcador tipado de antemano y conectas el valor real más tarde con `provideFor()`.
+
+<Code title="bound-token.ts" code={tokenBindingCode} region="bound" />
+
+## Declarar contratos con token() y provideFor()
+
+Mientras que `provide()` junta la clave y su factoría por defecto en una sola pieza, `token<T>(description?)` crea **únicamente la clave**. No contiene lógica en tiempo de ejecución ni arrastra imports de implementación: TypeScript transporta el tipo `T` y el texto opcional `description` pone una etiqueta clara en los mensajes de error.
+
+Para darle una implementación, pásale el token y una factoría a `provideFor(key, factory, options?)`:
+
+- En `bound-token.ts`, `prefixToken` declara que alguien tendrá que aportar un `string`.
+- `formatterRef` inyecta `prefixToken` sin saber si ese prefijo sale de una variable de entorno, un archivo de configuración o un stub de pruebas.
+- `boundApp` instala `provideFor(prefixToken, () => '[app] ')` al arrancar, así que `formatterRef` imprime `[app] ready`.
+
+Fíjate en que `provideFor()` acepta cualquier `InjectKey<T>`, es decir, **tanto** un `Token<T>` como un `Ref<T>`. Usas exactamente la misma función para enlazar un puerto abstracto en producción o sustituir un `Ref` concreto en un test.
+
+## Fallo inmediato cuando un Token no tiene enlace
+
+Como un `Token<T>` no tiene factoría de respaldo, inyectar uno que no haya sido enlazado ni en el ámbito activo ni en ningún ámbito padre lanza un error al instante. En `unbound-token.ts`, `unboundApp.start()` rechaza la promesa con `No provider for token: DatabaseUrl` — siguiendo el patrón `No provider for token: Name`, donde `Name` es la descripción pasada a `token()`.
+
+<Callout kind="tip" title="Inyecta las dependencias de entrada dentro de tu función raíz">
+
+Asegúrate de que la función raíz de `bootstrapApp()` inyecte los controladores, rutas o workers principales de los que depende tu punto de entrada. Así, si te olvidas de algún `provideFor()`, `await app.start()` fallará nada más arrancar, en vez de explotar cuando llegue la primera petición real de un usuario.
+
+</Callout>
+
+<Code title="unbound-token.ts" code={tokenBindingCode} region="unbound" />
+
+## Nombrar tokens y factorías para depurar rápido
+
+Un buen mensaje de error te ahorra un buen rato de depuración cuando falta enlazar un token o dos providers forman un bucle sin querer (`Circular dependency detected: A -> B -> A`). De aquí salen esos nombres:
+
+- **Los tokens usan su cadena `description`:** Ponle al token el nombre de la interfaz o ajuste que representa, como `token<OrderRepository>('OrderRepository')` o `token<string>('DatabaseUrl')`. Si omites la descripción (`token<string>()`), los errores mostrarán `<anonymous>`.
+- **Los refs leen `factory.name`:** `provide()` no recibe una etiqueta aparte, sino que lee la propiedad `.name` de la función en JavaScript. Si escribes `provide(function Formatter({ inject }) { ... })`, el ref se mostrará como `Formatter`; en cambio, una función flecha en línea (`provide(({ inject }) => ...)`) no tiene nombre propio y aparecerá como `<anonymous>`.
+
+<Callout kind="note" title="Minificadores y claves inválidas">
+
+- **Ojo con los minificadores:** Como un `Ref` saca su etiqueta de diagnóstico de `factory.name`, un bundler o minificador que renombre o borre los nombres de función cambiará ese texto en los errores de ciclos (salvo que actives `keepNames`). Las descripciones pasadas a `token('Name')` son cadenas normales, así que los minificadores no las tocan.
+- **Validación de claves opacas:** Pasar `null`, un primitivo, un `ProviderDef`, un `ProviderBundle` o una copia superficial (`{ ...prefixToken }`) a `inject()` o `provideFor()` lanza `Invalid inject key received`.
+
+</Callout>

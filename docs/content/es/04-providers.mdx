@@ -1,0 +1,50 @@
+---
+title: "Providers y Refs"
+slug: "providers"
+part: kernel
+order: 4
+summary: "Entiende cómo provide() se autoinstala y guarda instancias en caché por ámbito, cómo bundleProviders() agrupa enlaces y en qué orden se aplican."
+---
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+Usa `provide()` siempre que una dependencia tenga una implementación por defecto clara que quien la consume pueda importar directamente: un helper de configuración, un repositorio MVC o un servicio de aplicación. Devuelve un `Ref<T>` que sabe construirse bajo demanda y guarda su resultado en caché dentro del ámbito al que pertenece.
+
+<Code title="caching.ts" code={providersCode} region="caching" />
+
+## Refs autoinstalables frente a registro en la raíz
+
+En muchas librerías de inyección, olvidarte de apuntar una clase en el contenedor central revienta en tiempo de ejecución. Un `Ref<T>` creado con `provide()` te ahorra ese trámite: si ni el ámbito activo ni sus padres han registrado `configRef` todavía, el primer `inject(configRef)` instala su factoría por defecto ahí mismo, la ejecuta una sola vez y guarda la instancia en caché (`first === second` es `true` y `created` se queda en `1`).
+
+Esa comodidad trae consigo un matiz clave: **un `Ref` vive por ámbito, no es un singleton global.**
+
+- Dos llamadas distintas a `bootstrapApp()` jamás comparten instancias.
+- Si dos subárboles hermanos `{ providers }` inyectan por primera vez un `Ref` no registrado arriba, cada subárbol se autoinstala y guarda su propia copia independiente.
+
+Cuando un `Ref` mantiene estado compartido o un recurso escaso — como un pool de conexiones a base de datos, una caché en memoria o el `configRef` de arriba — regístralo explícitamente en `bootstrapApp(..., { providers: [configRef] })`. Instalarlo en la raíz sigue siendo perezoso (la factoría no corre hasta que alguien llame a `inject()`), pero te garantiza que toda la aplicación comparta esa única instancia.
+
+## Agrupar cableado relacionado con bundleProviders()
+
+A veces una funcionalidad necesita entregar varios enlaces juntos: por ejemplo, un token público acompañado del token interno de opciones que lee su factoría, o toda una carpeta `infra/` llena de adaptadores de base de datos y correo.
+
+`bundleProviders(...inputs)` empaqueta cualquier mezcla de refs, enlaces `provideFor()`, arrays o paquetes anidados en un solo `ProviderBundle`. Quien lo usa suelta `provideTheme({ palette: 'ocean' })` dentro de `{ providers }` en una línea sin tener que enterarse de sus tripas.
+
+Ten presente que un bundle es solo un empaquetador plano: **no** crea un ámbito aislado propio. Todo lo que lleva dentro se instala directamente en el ámbito donde metas el bundle (para ámbitos privados, mira [Ámbitos y subárboles](/es/scopes/)).
+
+<Code title="bundle.ts" code={providersCode} region="bundle" />
+
+## Comprobar manejadores con isProvideRef()
+
+Si estás escribiendo una capa ligera de integración o un helper de pruebas que inspecciona valores desconocidos en tiempo de ejecución, usa `isProvideRef(value)` para afinar el tipo a `Ref<unknown>`.
+
+`isProvideRef()` devuelve `true` **únicamente** ante un `Ref` auténtico salido de `provide()`. Devuelve `false` para claves de `token()`, enlaces de `provideFor()`, paquetes de `bundleProviders()`, valores primitivos y copias superficiales como `{ ...sampleRef }`.
+
+<Code title="is-provide-ref.ts" code={providersCode} region="isProvideRef" />
+
+## Reglas de instalación y casos borde
+
+Cada vez que el núcleo instala una lista `providers` — tanto en `bootstrapApp()` como dentro de una opción `{ providers }` anidada — aplica cuatro reglas sin sorpresas:
+
+1. **Copia inmediata al crear:** Los arrays y bundles pasados a `provide()`, `provideFor()`, `bundleProviders()` o `bootstrapApp()` se copian superficialmente al momento. Si mutas tu array original más tarde, no alterarás ningún ref, enlace o bundle ya creado.
+2. **Aplanado en orden de código:** Los arrays anidados y `ProviderBundle` se aplanan de izquierda a derecha respetando exactamente el orden en que aparecen escritos.
+3. **El último gana en el mismo ámbito:** Si instalas la misma clave dos veces en un mismo ámbito, el segundo enlace sustituye sin ruido al primero — incluyendo cualquier `{ providers }` anidado que tuviera asociado el anterior. Eso es justo lo que permite a un test de integración escribir `[infraProviders, provideFor(repoToken, fakeRepo)]` y pisar un único adaptador limpiamente.
+4. **Momento de validación:** Los `providers` raíz pasados a `bootstrapApp()` se validan de entrada; un valor inválido lanza `Invalid provider input received` antes siquiera de crear el manejador `App`. En cambio, los `{ providers }` anidados en un ref o enlace se validan de forma perezosa la primera vez que se resuelve ese subárbol, lanzando `Invalid provider input received` desde esa llamada a `inject()`.

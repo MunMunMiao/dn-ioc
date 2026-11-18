@@ -1,0 +1,67 @@
+---
+title: "Erreurs et diagnostic"
+slug: "errors"
+part: reference
+order: 14
+summary: "Retrouve chaque message exact Error et AggregateError de dn-ioc, vérifie l’ordre de priorité des contrôles et applique directement le correctif."
+---
+import disposeCode from '../../examples/lifecycle/dispose-and-using.ts' with { type: 'text' }
+import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { type: 'text' }
+
+Quand un câblage déraille, `dn-ioc` échoue tout de suite avec des messages `Error` clairs et prévisibles plutôt que des piles d’appels obscures ou des `undefined` silencieux. Tu trouveras ci-dessous tous les messages exacts (en anglais dans le runtime) que le noyau peut produire, avec leur ordre de vérification, leur propagation et le correctif concret.
+
+<Code title="unbound-token.ts" code={tokenBindingCode} region="unbound" />
+
+## Catalogue exact des messages d’erreur
+
+`dn-ioc` lève huit messages `Error` standards ainsi que deux enveloppes `AggregateError` lorsque plusieurs erreurs se télescopent pendant le nettoyage :
+
+| `Error.message` exact | Levé / rejeté par | Cause |
+| --- | --- | --- |
+| `No provider for token: Name` | `inject()` | `token('Name')` a été injecté, mais ni le scope actif ni aucun scope ancêtre ne l’a lié via `provideFor()`. Affiche `<anonymous>` si le token n’a pas de description. |
+| `Circular dependency detected: A -> B -> A` | `inject()` | Des providers synchrones ou asynchrones en attente dépendent l’un de l’autre en boucle. Le chemin commence sur la clé qui referme le cycle (`A -> A` en auto-injection) et affiche `<anonymous>` pour les clés sans nom. |
+| `Invalid inject key received` | `inject()`, `provideFor()` | La clé n’est ni un vrai `Token` ni un vrai `Ref` — par exemple `null`, une valeur primitive, un `ProviderDef`, un `ProviderBundle` ou une copie superficielle (`{ ...myToken }`). |
+| `Invalid provider input received` | `bootstrapApp()` (racine) ou `inject()` (imbriqué) | Une entrée dans `providers` ou `bundleProviders()` (une fois installé) n’est ni un `Ref`, ni un `ProviderDef`, ni un `ProviderBundle`, ni un tableau de ceux-ci (par exemple un `Token` nu passé sans `provideFor()`). |
+| `Cannot inject after the app has stopped` | `inject()` | `inject()` a été appelé pendant ou après `app.stop()` — y compris dans un hook `onDispose`, la suite d’une fonction `async` détachée ou sur une clé déjà en cache. |
+| `onDispose can only be called while the factory is running` | `onDispose()` | `onDispose()` a été appelé après le retour synchrone de sa factory, une exception ou le règlement de sa `Promise` retournée (par exemple dans un `setTimeout`, un handler HTTP ou un autre hook de nettoyage). |
+| `Cannot register cleanup after the app has stopped` | `onDispose()` | Une factory `async` était encore suspendue sur un `await` quand `app.stop()` a tourné, puis s’est réveillée et a appelé `onDispose()`. |
+| `Cannot start an app that has been stopped` | `app.start()` (rejette) | `app.start()` a été appelé alors que `app.stop()` avait déjà commencé ou terminé. |
+| `App stop failed` (`AggregateError`) | `app.stop()` (rejette) | Deux hooks `onDispose` ou plus ont levé une erreur ou rejeté pendant l’arrêt (`error.errors` contient chaque échec dans l’ordre d’exécution LIFO). |
+| `App startup and stop failed` (`AggregateError`) | `app.start()` (rejette) | `app.start()` a échoué *et* le `stop()` automatique de rollback a lui aussi échoué (`error.errors` contient `[startupError, cleanupError]`). |
+
+## Priorités de vérification et subtilités temporelles
+
+Quatre garanties d’ordre dans le noyau valent le coup d’être connues pour débusquer les cas limites :
+
+1. **Dans `inject()`, le contrôle d’arrêt passe en premier :** `Cannot inject after the app has stopped` est vérifié *avant* la validation de la clé, la détection de cycle, la recherche de scope ou la lecture du cache. Même injecter une instance déjà en cache ou une clé invalide après `app.stop()` lève `Cannot inject after the app has stopped`.
+2. **`Invalid provider input received` à la racine vs imbriqué :** Les `providers` racine passés à `bootstrapApp()` sont aplatis et validés **de façon synchrone** avant la création du handle `App`. Les `{ providers }` imbriqués sur `provide()` ou `provideFor()` sont validés **paresseusement** dans `inject()` à la toute première résolution de ce sous-arbre privé.
+3. **Dans `onDispose()`, la fenêtre active prime sur l’état arrêté :** Dès qu’une factory se termine (retour, exception ou règlement de sa `Promise`), son handle `onDispose` est désactivé pour de bon et lève toujours `onDispose can only be called while the factory is running` — même si l’application s’arrête ensuite.
+4. **Dans `start()`, le contrôle d’arrêt passe avant l’idempotence :** Tant qu’une appli n’a pas démarré ou tourne encore, `app.start()` garde et renvoie la même `Promise`. Dès que `app.stop()` est appelé, `app.start()` vérifie l’état arrêté *avant* ce cache et rejette avec `Cannot start an app that has been stopped` au lieu de rejouer une ancienne exécution résolue.
+
+<Code title="dispose.ts" code={disposeCode} region="dispose" />
+
+## Matrice de propagation des erreurs
+
+L’endroit où atterrit une erreur — et l’état du cache et des ressources derrière — dépend de la phase où elle survient :
+
+| Scénario d’échec | Comment l’erreur remonte | État du cache et de l’appli ensuite |
+| --- | --- | --- |
+| Entrée invalide dans `bootstrapApp(..., { providers })` racine | Lève de façon synchrone depuis `bootstrapApp()` | Aucun handle `App` n’est créé. |
+| Entrée invalide dans `{ providers }` imbriqué | Lève de façon synchrone depuis `inject()` à la première résolution du sous-arbre | Le sous-arbre n’est pas créé ; l’erreur remonte à l’appelant (et déclenche le rollback de `start()` au démarrage). |
+| Une factory synchrone lève une erreur dans `inject()` | Lève de façon synchrone depuis `inject()` | Rien n’est mis en cache ; un `inject()` ultérieur pendant que l’appli tourne relance la factory. |
+| Une factory asynchrone rejette dans `inject()` | La `Promise` partagée retournée est rejetée | L’entrée en attente est retirée du cache ; un `inject()` ultérieur pendant que l’appli tourne repart à neuf. |
+| Le callback racine (ou une `Promise` attendue au démarrage) échoue | `app.start()` exécute `await app.stop()`, puis rejette | L’appli reste définitivement arrêtée ; l’erreur unique est relancée telle quelle, ou dans une `AggregateError` si le nettoyage a aussi échoué. |
+| Une `Promise` de fond non attendue rejette | Rejette directement sur cette `Promise` (`start()` l’ignore) | L’appli continue de tourner ; le provider asynchrone en échec est retiré du cache. |
+| Un seul hook `onDispose` échoue pendant `app.stop()` | Les hooks restants tournent quand même ; `app.stop()` rejette avec cette erreur telle quelle | L’appli reste définitivement arrêtée. |
+| Plusieurs hooks `onDispose` échouent pendant `app.stop()` | Tous les hooks tournent ; `app.stop()` rejette avec `AggregateError` (`App stop failed`) | L’appli reste définitivement arrêtée. |
+
+## Correctifs rapides
+
+- **`No provider for token: Name` :** Lie le token avec `provideFor(myToken, ...)` dans tes `providers` racine ou dans le bundle `infraProviders`. Si ça arrive dans un test d’intégration, vérifie que tu n’as pas oublié `infraProviders` ; dans un sous-arbre enfant, jette un œil à [Scopes et sous-arbres](/fr/scopes/) pour vérifier que le consommateur n’appartient pas à un scope parent dépourvu de cette liaison.
+- **`Circular dependency detected: A -> B -> A` :** Extrais l’état partagé ou le helper dont `A` et `B` ont tous deux besoin dans un troisième provider `C` (`A -> C` et `B -> C`). Si `<anonymous>` apparaît dans la chaîne, remplace `provide(({ inject }) => ...)` par `provide(function MyService({ inject }) { ... })` pour repérer immédiatement le coupable.
+- **`Invalid provider input received` :** Inspecte tes tableaux `providers: [...]` et appels `bundleProviders(...)` à la recherche d’un `token()` passé nu au lieu de `provideFor(myToken, factory)`, d’un `undefined` causé par un import ES circulaire ou d’un objet cloné.
+- **`Invalid inject key received` :** Vérifie que tu passes bien un `Token` ou un `Ref` — et non un `ProviderDef` renvoyé par `provideFor()` ni un `ProviderBundle` renvoyé par `bundleProviders()` — à `inject()` ou `provideFor()`.
+- **`Cannot inject after the app has stopped` :** Déplace `const dep = inject(depRef)` tout en haut de ta factory *avant* `onDispose(() => { ... })` afin que tes hooks de fermeture capturent les valeurs déjà résolues au lieu d’appeler `inject()` pendant l’arrêt (voir [Cycle de vie et nettoyage](/fr/lifecycle/)). Si un handler HTTP a levé cette erreur pendant le vidage à l’arrêt, coupe l’arrivée des nouvelles requêtes avant d’appeler `app.stop()`.
+- **`onDispose can only be called while the factory is running` :** Enregistre ton nettoyage de façon synchrone au début de ta factory — ou avant la résolution de la `Promise` retournée par ta factory `async` — jamais dans un timer, un écouteur d’événements ou une méthode appelée plus tard.
+- **`Cannot register cleanup after the app has stopped` :** Ton appli a appelé `stop()` pendant qu’une factory `async` attendait encore sur un `await`. Enregistre `onDispose()` *avant* le `await` quand c’est possible, ou passe un `AbortSignal` pour interrompre proprement l’initialisation en cours dès le début de l’arrêt (voir [Providers asynchrones](/fr/async/)).
+- **`Cannot start an app that has been stopped` :** Une instance `App` arrêtée est à usage unique, car ses hooks de nettoyage ont déjà libéré ses ressources. Rappelle `bootstrapApp(...)` pour construire une instance `App` toute neuve — exactement comme le fait chaque test dans [Tests et mocks](/fr/testing/).

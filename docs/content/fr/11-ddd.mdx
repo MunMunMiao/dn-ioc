@@ -1,0 +1,199 @@
+---
+title: "DDD et Clean Architecture"
+slug: "ddd"
+part: patterns
+order: 11
+summary: "Garde tes couches domaine et application libres de tout import SQL, HTTP ou SDK grâce aux ports purs token(), aux bundles d’adaptateurs d’infrastructure et aux règles de linter."
+---
+import orderServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
+import domainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
+import domainPortsCode from '../../examples/ddd/domain/ports.ts' with { type: 'text' }
+import infraProvidersCode from '../../examples/ddd/infra/providers.ts' with { type: 'text' }
+import sqlOrderRepoCode from '../../examples/ddd/infra/sql-order-repository.ts' with { type: 'text' }
+import systemAdaptersCode from '../../examples/ddd/infra/system-adapters.ts' with { type: 'text' }
+import dddMainCode from '../../examples/ddd/main.ts' with { type: 'text' }
+import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' with { type: 'text' }
+
+Quand tes règles métier survivent à ton driver SQL actuel, à ton prestataire d’e-mailing ou à ton framework HTTP, la **DDD / Clean Architecture (Hexagonale)** garde toute cette plomberie externe hors du modèle central. Avec `dn-ioc`, nul besoin de classes abstraites ni de modules conteneurs pour inverser les dépendances : ton dossier interne `domain/` déclare les interfaces et les ports `token()`, `application/` orchestre les cas d’usage avec `provide()`, et `infra/` rassemble les vrais adaptateurs dans un seul export `bundleProviders()`.
+
+<Code
+  title="ddd-project"
+  lang="text"
+  code={`src/
+├── domain/                        # N’importe AUCUNE autre couche du projet
+│   ├── order.ts                   # Entité Order + port et token OrderRepository
+│   └── ports.ts                   # Ports et tokens transverses Clock et Mailer
+├── application/                   # Importe uniquement domain/
+│   ├── order-service.ts           # Ref de cas d’usage OrderService injectant les tokens métier
+│   └── order-service.test.ts      # Test unitaire pur liant des fakes légers
+├── infra/                         # Importe uniquement domain/
+│   ├── sql-order-repository.ts    # sqlTableRef privé + sqlOrderRepositoryProvider
+│   ├── system-adapters.ts         # systemClockProvider + smtpMailerProvider
+│   └── providers.ts               # infraProviders = bundleProviders(...)
+└── main.ts                        # Composition Root : importe application/ + infra/`}
+/>
+
+## 1. Entités métier pures et tokens de port (domain/)
+
+Ton dossier `domain/` trône au centre du graphe et n’importe **aucune** autre couche du projet. Aux côtés d’entités comme `Order`, il définit les **ports** que le monde extérieur doit satisfaire — aussi bien la persistance (`OrderRepository`) que les effets de bord transverses comme l’horloge système (`Clock`) et l’envoi d’e-mails (`Mailer`).
+
+Chaque port associe une `interface` TypeScript à un `token<T>('Name')` nommé directement d’après cette interface. Placer `Clock` derrière `clockToken` évite tout appel direct à `new Date()` dans la logique métier, ce qui rend les transitions sensibles au temps 100 % déterministes en test.
+
+<CodeTabs
+  files={[
+    { title: 'domain/order.ts', code: domainOrderCode },
+    { title: 'domain/ports.ts', code: domainPortsCode },
+  ]}
+/>
+
+## 2. Cas d’usage applicatifs (application/)
+
+La couche `application/` coordonne entités et ports du domaine pour accomplir un cas d’usage comme `OrderService.submit(id)`. Remarque l’approche hybride assumée ici :
+
+- `OrderService` récupère ses capacités externes exclusivement via les **tokens du domaine** (`orderRepositoryToken`, `clockToken`, `mailerToken`) — il ignore complètement si les commandes vivent dans Postgres, SQLite ou une simple `Map`.
+- Pourtant, `orderServiceRef` lui-même est exporté sous forme de **`Ref`** via `provide(function OrderService({ inject }) { ... })` ! Pourquoi ? Parce que les appelants de `application/` — contrôleurs HTTP, commandes CLI, workers de file d’attente et tests — vivent dans des couches *externes* faites pour importer directement les cas d’usage. Inutile d’empiler des tokens redondants quand la flèche d’import pointe déjà vers l’intérieur.
+
+<Code title="application/order-service.ts" code={orderServiceCode} />
+
+## 3. Adaptateurs d’infrastructure et bundle (infra/)
+
+Le dossier `infra/` importe les contrats de `domain/` et les implémente face aux vrais drivers, SDK et bases de données :
+
+- **Garde les handles de drivers privés dans `infra/` :** Dans `sql-order-repository.ts`, `sqlTableRef` est un `Ref` interne qui détient l’état de la table/du pool et enregistre un hook `onDispose`. `sqlOrderRepositoryProvider` injecte `sqlTableRef` en coulisses, sans que `domain/` ni `application/` ne soupçonnent son existence.
+- **Emballe toute la couche dans `infraProviders` :** `infra/providers.ts` regroupe `sqlTableRef` (pour que tous les adaptateurs du scope racine partagent un seul client sous-jacent) ainsi que chaque liaison `provideFor()` dans un unique handle `bundleProviders(...)`.
+- **Règle des deux retouches pour un nouvel adaptateur :** Ajouter un adaptateur d’infrastructure ne demande que deux gestes dans `infra/` — écrire sa liaison `provideFor()` et ajouter une ligne dans `infraProviders`. Aucun point d’entrée n’a besoin de bouger.
+
+<Callout kind="caution" title="N’exporte jamais un adaptateur DDD comme Ref destiné à domain ou application">
+
+Ne cède pas à la tentation d’écrire `export const sqlOrderRepositoryRef = provide(...)` dans `infra/` pour l’importer dans `domain/` ou `application/`. Non seulement tu couplerais ton cœur métier directement au driver SQL, mais tu retournerais la flèche d’import **vers l’extérieur** : `infra/sql-order-repository.ts` importe déjà `Order` depuis `domain/order.ts`, donc réimporter `infra/` dans `domain/` crée immédiatement une dépendance circulaire entre modules. Garde les ports sous forme de `token()` dans `domain/` et lie-les avec `provideFor()` dans `infra/`.
+
+</Callout>
+
+<CodeTabs
+  files={[
+    { title: 'infra/sql-order-repository.ts', code: sqlOrderRepoCode },
+    { title: 'infra/system-adapters.ts', code: systemAdaptersCode },
+    { title: 'infra/providers.ts', code: infraProvidersCode },
+  ]}
+/>
+
+## 4. Composition Root et réutilisation sur plusieurs points d’entrée
+
+`main.ts` est la **Composition Root** — le seul endroit du projet qui importe à la fois `application/` et `infra/` pour les assembler avec `providers: [infraProviders]`.
+
+Comme `infraProviders` est une valeur réutilisable et que `orderServiceRef` est découplé du transport, monter plusieurs points d’entrée sur le même domaine ne prend que quelques lignes à chaque fois :
+
+- **Serveur API HTTP (`main.ts`) :** Installe `[infraProviders]`, injecte `orderServiceRef` dès `bootstrapApp()` (pour que le moindre token non lié échoue immédiatement sur `await app.start()`, et non en plein milieu d’une commande client) et le passe à ton routeur.
+- **Worker de file ou job CLI (`worker.ts`) :** Appelle `bootstrapApp(..., { providers: [infraProviders] })` dans son propre point d’entrée et injecte exactement le même `orderServiceRef` — ou glisse un `provideFor(mailerToken, dryRunMailer)` *après* `infraProviders` pour un script de rattrapage qui ne doit pas envoyer d’e-mails aux clients.
+- **Test unitaire (`application/order-service.test.ts`) :** Zappe complètement `infraProviders` et installe des fakes légers avec `provideFor()`. Oublier ne serait-ce qu’un seul fake de port fait immédiatement rejeter `unitTestApp.start()` avec `No provider for token: Mailer`.
+
+<CodeTabs
+  files={[
+    { title: 'main.ts', code: dddMainCode },
+    { title: 'application/order-service.test.ts', code: dddUnitTestCode },
+  ]}
+/>
+
+## 5. Verrouiller le sens des couches avec Biome ou ESLint
+
+Comme `dn-ioc` ne manipule que des handles au runtime, rien dans le noyau n’empêche l’auto-import de l’éditeur d’un collègue de glisser `../infra/sql-order-repository` dans `application/order-service.ts`. Verrouille les flèches d’import avec une règle de linter pour que toute dérive d’architecture fasse échouer `lint:check` automatiquement :
+
+| Couche | Imports projet autorisés | Imports projet interdits |
+| --- | --- | --- |
+| **`domain/`** | Aucun (`token` de `'dn-ioc'` uniquement) | `application/`, `infra/`, `main.ts` |
+| **`application/`** | `domain/` | `infra/`, `main.ts` |
+| **`infra/`** | `domain/` | `application/`, `main.ts` |
+| **`main.ts` (Points d’entrée)** | `application/`, `infra/`, `domain/` | — |
+
+<CodeTabs
+  files={[
+    {
+      title: 'biome.json',
+      lang: 'json',
+      code: `{
+  "overrides": [
+    {
+      "includes": ["src/domain/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../application/**", "../infra/**", "**/application/**", "**/infra/**"],
+                    "message": "domain/ must stay pure and cannot import application/ or infra/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/application/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../infra/**", "**/infra/**"],
+                    "message": "application/ must depend on domain/ tokens, not infra/ adapters."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}`,
+    },
+    {
+      title: 'eslint.config.js',
+      lang: 'js',
+      code: `export default [
+  {
+    files: ['src/domain/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../application/*', '../application/**', '../infra/*', '../infra/**'],
+              message: 'domain/ must stay pure and cannot import application/ or infra/.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/application/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../infra/*', '../infra/**'],
+              message: 'application/ must depend on domain/ tokens, not infra/ adapters.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+]`,
+    },
+  ]}
+/>
+
+Mettons maintenant côte à côte les tests unitaires et les tests d’intégration dans [Tests et mocks](/fr/testing/).

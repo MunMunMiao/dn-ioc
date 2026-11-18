@@ -1,0 +1,64 @@
+---
+title: "Guía rápida en 5 minutos"
+slug: "quickstart"
+part: start
+order: 3
+summary: "Pasa de cero a un grafo funcional en tres pasos cortos: define providers, arranca la app y cambia una dependencia asíncrona en tus tests."
+---
+import step1Code from '../../examples/quickstart/step1-provide.ts' with { type: 'text' }
+import step2Code from '../../examples/quickstart/step2-compose.ts' with { type: 'text' }
+import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with { type: 'text' }
+
+No hace falta diseñar una jerarquía de carpetas ni registrar clases en un archivo central para empezar. Vamos a montar un grafo real en tres pasos rápidos: envolver funciones normales con `provide()`, arrancarlas con `bootstrapApp()` y sustituir una dependencia asíncrona por un fake en un test.
+
+## 1. Define tus providers con provide()
+
+Pásale cualquier función factoría a `provide()` y obtendrás un manejador tipado `Ref<T>`. En `step1-provide.ts`, `configRef` devuelve un objeto plano y `greeterRef` lo pide mediante `{ inject }` para construir un helper `greet()`.
+
+Fíjate en dos detalles desde el primer momento:
+
+- **Cero anotaciones manuales de tipos:** TypeScript infiere el tipo de `config` dentro de `greeterRef` directamente a partir de lo que devuelve `configRef`.
+- **Todavía no se ha ejecutado nada:** Llamar a `provide()` solo deja anotado *cómo* construir el valor cuando una app lo pida más adelante.
+
+<Code title="step1-provide.ts" code={step1Code} />
+
+## 2. Arranca el grafo con bootstrapApp()
+
+Ahora pásale una función raíz a `bootstrapApp()` y llama a `await app.start()`. `bootstrapApp()` crea un ámbito aislado para la app y te devuelve el manejador `app` al instante, todavía sin ejecutar ninguna factoría.
+
+Cuando corre `await app.start()`:
+
+1. Tu función raíz pide `inject(greeterRef)`.
+2. `greeterRef` se autoinstala en el ámbito de la app y pide `inject(configRef)`.
+3. `configRef` se ejecuta una sola vez, guarda en caché `{ greeting: 'hello' }`, y `greeterRef` guarda en caché su objeto `{ greet }` e imprime `hello, world`.
+
+Como este pequeño grafo no abre sockets, temporizadores ni pools de base de datos, no necesitas llamar a `app.stop()`: en cuanto termina `start()`, el recolector de basura normal limpia todo.
+
+<CodeTabs
+  files={[
+    { title: 'step2-compose.ts', code: step2Code },
+    { title: 'step1-provide.ts', code: step1Code },
+  ]}
+/>
+
+## 3. Hazlo asíncrono y mete un fake de prueba
+
+En el mundo real, los servicios suelen cargar ajustes por red o hablar con una base de datos, y en los tests necesitas cambiarlos sin dolor. Ambas cosas se resuelven en una línea:
+
+- **Los providers asíncronos usan funciones `async` normales:** Marca `settingsRef` como `async` y `inject(settingsRef)` devolverá una `Promise` compartida a la que `greeterRef` le hace `await`. Al marcar también como `async` la función raíz de `bootstrapApp` y esperar `await inject(greeterRef)`, `await testApp.start()` aguarda hasta que todo el arranque termine.
+- **`provideFor()` cambia cualquier dependencia al vuelo:** Pasar `provideFor(settingsRef, async () => ({ greeting: 'test-hello' }))` en `{ providers }` sustituye `settingsRef` dentro de `testApp` sin tocar ni una línea del código de `greeterRef`.
+- **Limpieza ordenada en tests:** Llamar a `await testApp.stop()` cierra la inyección y ejecuta los hooks de limpieza registrados para que ningún recurso se cuele en el siguiente test.
+
+<Code title="step3-async-and-fake.ts" code={step3Code} />
+
+## Tres costumbres que te ahorrarán dolores de cabeza
+
+<Callout kind="note" title="Tres reglas de uso diario">
+
+- **Registra los listeners antes de `start()`:** Como `bootstrapApp()` no ejecuta nada todavía, `app` ya existe antes de abrir cualquier puerto o temporizador. Eso te permite enganchar señales de apagado con total seguridad antes de llamar a `await app.start()`.
+- **`start()` es idempotente:** Llamar varias veces a `app.start()` devuelve exactamente la misma `Promise` y ejecuta la función raíz una única vez.
+- **La función raíz devuelve `void`:** Haz todo el trabajo de arranque dentro del callback de `bootstrapApp()` en lugar de intentar devolver un valor desde él.
+
+</Callout>
+
+A continuación veremos en detalle [Providers y Refs](/es/providers/) y [Tokens y enlaces](/es/tokens/). O, si prefieres ir directo a organizar un proyecto real por capas, salta a las guías de [Patrón MVC en la práctica](/es/mvc/) o [DDD y Arquitectura Limpia](/es/ddd/).

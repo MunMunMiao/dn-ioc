@@ -1,0 +1,121 @@
+---
+title: "Referencia de la API pública"
+slug: "api"
+part: reference
+order: 13
+summary: "Referencia completa de firmas, parámetros y comportamiento de las seis funciones en tiempo de ejecución, los quince tipos públicos de TypeScript y los manejadores opacos congelados."
+---
+import signaturesCode from '../../examples/api/signatures.ts' with { type: 'text' }
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+Todo lo que exporta `dn-ioc` sale directamente de `'dn-ioc'`: seis funciones en tiempo de ejecución y quince tipos de TypeScript, sin subrutas de importación ni efectos secundarios globales. Ten este capítulo a mano siempre que quieras comprobar al detalle un parámetro, un valor de retorno o las garantías de un manejador.
+
+<Code title="functions.ts" code={signaturesCode} region="functions" />
+
+## Funciones en tiempo de ejecución
+
+### `token<T>(description?)`
+
+**Firma:** `function token<T>(description?: string): Token<T>`
+
+Crea una clave pura de dependencia que transporta el tipo `T` de TypeScript y cero implementación en tiempo de ejecución.
+
+- **`description`** *(`string` opcional)*: Etiqueta legible que aparece en `No provider for token: Name` y `Circular dependency detected: ...`. Si se omite o se pasa vacía, los mensajes muestran `<anonymous>`. Dos llamadas distintas a `token('Same')` producen siempre claves diferentes: la identidad jamás sale del texto descriptivo.
+- **Contratos asíncronos:** Pon `Promise` dentro de `T` (`token<Promise<Settings>>('Settings')`) para que tanto quien llama a `inject()` como quien implementa `provideFor()` compartan el tipo de retorno asíncrono.
+
+### `provide<T>(factory, options?)`
+
+**Firma:** `function provide<T>(factory: Factory<T>, options?: ProviderOptions): Ref<T>`
+
+Envuelve `factory` en un manejador autoinstalable `Ref<T>`.
+
+- **`factory`**: `(ctx: Context) => T`. Si al llamar a `inject()` no existe ningún enlace para este `Ref` ni en el ámbito activo ni en sus ancestros, el `Ref` instala su factoría por defecto en el ámbito activo, la ejecuta una vez y guarda el resultado en caché (o comparte la `Promise` en vuelo si la factoría es `async`). Los errores síncronos y rechazos asíncronos **no** se guardan en caché, permitiendo reintentar mientras la app siga en marcha.
+- **Nombre de diagnóstico:** Se toma de `factory.name` (por ejemplo, `provide(function UserService(ctx) { ... })` muestra `UserService`, mientras que una flecha anónima muestra `<anonymous>`).
+- **`options?.providers`**: Subárbol hijo privado opcional visible únicamente para `factory` y sus descendientes. Se copia al llamar a `provide()` y se valida de forma perezosa la primera vez que se resuelve ese subárbol.
+
+### `provideFor<T>(key, factory, options?)`
+
+**Firma:** `function provideFor<T>(key: InjectKey<T>, factory: Factory<T>, options?: ProviderOptions): ProviderDef<T>`
+
+Enlaza una factoría de implementación `factory` a `key` — aceptando **tanto** un `Token<T>` como un `Ref<T>` — y devuelve un `ProviderDef<T>` listo para instalar en `{ providers }` o `bundleProviders()`.
+
+- Valida `key` al instante cuando llamas a `provideFor()`; pasar cualquier cosa que no sea un `Token` o `Ref` auténtico lanza `Invalid inject key received`.
+- **`options?.providers`**: Subárbol hijo privado opcional visible para esta `factory` enlazada y sus descendientes; se copia al crearse.
+
+### `bundleProviders(...inputs)`
+
+**Firma:** `function bundleProviders(...inputs: ProviderInput[]): ProviderBundle`
+
+Agrupa cualquier combinación de `Ref`, enlaces `ProviderDef`, arrays anidados y otros `ProviderBundle` en un único `ProviderBundle` reutilizable.
+
+- Hace copia superficial de los arrays de entrada en el momento de crearse para que mutaciones posteriores no alteren el paquete.
+- Al instalar un bundle, sus elementos se aplanan de izquierda a derecha en orden de escritura directamente en el ámbito receptor: **no** crea un ámbito hijo aislado propio.
+
+### `isProvideRef(value)`
+
+**Firma:** `function isProvideRef(value: unknown): value is Ref<unknown>`
+
+Guarda de tipos que devuelve `true` **únicamente** cuando `value` es un `Ref` auténtico devuelto por `provide()`. Devuelve `false` para `Token`, `ProviderDef`, `ProviderBundle`, primitivos, `null` y objetos clonados (`{ ...someRef }`).
+
+### `bootstrapApp(fn, options?)`
+
+**Firma:** `function bootstrapApp(fn: BootstrapAppFn, options?: BootstrapAppOptions): App`
+
+Crea un ámbito raíz aislado, valida e instala `options?.providers` de forma síncrona y devuelve un manejador `App` **sin** ejecutar todavía `fn` ni ninguna factoría de providers.
+
+- **`fn`**: `(ctx: Context) => void | Promise<void>`. Se ejecuta al llamar a `app.start()`. Debe devolver `void` o `Promise<void>`.
+- **`options?.providers`**: Enlaces, refs, arrays y bundles de nivel raíz. Cualquier entrada inválida lanza `Invalid provider input received` de forma síncrona antes de devolver ningún manejador `App`.
+
+## Interfaces de Context y ciclo de vida de App
+
+### Context (`InjectFn` y `OnDisposeFn`)
+
+Toda `Factory<T>` de un provider y toda `BootstrapAppFn` reciben un objeto `Context` con dos funciones:
+
+- **`inject: InjectFn`** (`<T>(key: InjectKey<T>) => T`) — Resuelve `key` empezando en el ámbito dueño del provider y subiendo hacia los padres. Devuelve valores síncronos directamente y `Promise` compartidas en factorías asíncronas. Sigue pudiendo llamarse desde los métodos devueltos una vez terminada la factoría, hasta que se llame a `app.stop()`.
+- **`onDispose: OnDisposeFn`** (`(fn: () => void | Promise<void>) => void`) — Registra un hook de limpieza que se ejecutará en orden LIFO (del más reciente al más antiguo) durante `app.stop()`. Solo puede llamarse **mientras** su propia factoría está en ejecución activa y antes de `stop()`. Devolver cualquier cosa distinta de `void` o `Promise<void>` es un error de compilación en TypeScript: envuelve entre llaves las expresiones de cierre que devuelvan valores (`onDispose(() => { server.close() })`).
+
+### App (`start`, `stop` y `AsyncDisposable`)
+
+El manejador devuelto por `bootstrapApp()` expone tres miembros:
+
+- **`start(): Promise<void>`** — Ejecuta el callback raíz una sola vez y espera cualquier `Promise` que devuelva. Las llamadas concurrentes o repetidas devuelven exactamente la misma `Promise`. Si el arranque falla, `start()` ejecuta `stop()` automáticamente para revertir los recursos ya adquiridos antes de rechazar su promesa. Una vez llamado `stop()`, llamar a `start()` rechaza con `Cannot start an app that has been stopped`.
+- **`stop(): Promise<void>`** — Cierra `inject()` de forma síncrona en toda la aplicación y a continuación espera los hooks `onDispose` registrados empezando por el más reciente. Es idempotente ante llamadas repetidas o concurrentes. Aunque un hook falle, todos los demás siguen ejecutándose.
+- **`[Symbol.asyncDispose](): Promise<void>`** — Apunta exactamente a la misma función `stop` para que `await using app = bootstrapApp(...)` desmonte la app automáticamente al salir del bloque. Cuando el entorno dispone del símbolo nativo `Symbol.asyncDispose`, `App` define `[Symbol.asyncDispose]`; en entornos anteriores sin el símbolo nativo (como Node 18), recurre a `[Symbol.for('Symbol.asyncDispose')]` para coincidir con la búsqueda transpilada de `await using` en TypeScript.
+
+<Code title="types.ts" code={signaturesCode} region="types" />
+
+## Tipos de manejadores y utilidades
+
+| Tipo exportado | Definición / forma | Propósito |
+| --- | --- | --- |
+| `Token<T>` | Interfaz opaca con marca de tipo que transporta `T` | Clave de contrato devuelta por `token<T>()`. |
+| `Ref<T>` | `extends Token<T>` (con marca de ref) | Manejador autoinstalable devuelto por `provide()`. |
+| `RefType<T>` | `T extends Ref<infer U> ? U : never` | Extrae el tipo resuelto `U` a partir de `typeof someRef`: ideal para tipar fakes de pruebas sin duplicar interfaces. |
+| `InjectKey<T>` | `Token<T> \| Ref<T>` | Cualquier clave válida aceptada por `inject()` y `provideFor()`. |
+| `ProviderDef<T>` | Interfaz opaca con marca de tipo que transporta `T` | Enlace explícito devuelto por `provideFor()`. |
+| `ProviderBundle` | Interfaz opaca con marca de tipo | Manejador de grupo devuelto por `bundleProviders()`. |
+| `ProviderInput` | `Ref<unknown> \| ProviderDef<unknown> \| ProviderBundle \| readonly ProviderInput[]` | Cualquier elemento instalable o array anidado a cualquier nivel aceptado por `providers` y `bundleProviders()`. |
+| `ProviderOptions` | `{ providers?: readonly ProviderInput[] }` | Objeto de opciones de `provide()` y `provideFor()` para declarar un subárbol hijo privado. |
+| `BootstrapAppOptions` | `{ providers?: readonly ProviderInput[] }` | Objeto de opciones de `bootstrapApp()` para instalar enlaces en el ámbito raíz. |
+| `InjectFn` | `<T>(key: InjectKey<T>) => T` | Tipo de `ctx.inject` dentro de `Context`. |
+| `OnDisposeFn` | `(fn: () => void \| Promise<void>) => void` | Tipo de `ctx.onDispose` dentro de `Context`. |
+| `Factory<T>` | `(ctx: Context) => T` | Firma de las funciones factoría de providers. |
+| `BootstrapAppFn` | `(ctx: Context) => void \| Promise<void>` | Firma del callback raíz de arranque para `bootstrapApp()`. |
+
+## Semántica de los manejadores opacos congelados
+
+Todo manejador devuelto por `token()`, `provide()`, `provideFor()` y `bundleProviders()` es un objeto vacío congelado (`Object.freeze({})`), sin propiedades enumerables propias ni claves símbolo propias. Todos los metadatos internos viven en un `WeakMap` privado dentro del núcleo:
+
+- **No se pueden mutar:** Intentar añadir o sobrescribir propiedades en un manejador lanza un `TypeError` en modo estricto.
+- **Se rechazan clones y falsificaciones:** Hacer spread o copiar un manejador (`{ ...sampleRef }`, `Object.assign({}, myToken)`) crea una referencia de objeto nueva que no existe en el `WeakMap` del núcleo. Pasarle esa copia a `isProvideRef()` devuelve `false`; pasársela a `inject()` o `provideFor()` lanza `Invalid inject key received`; y pasar un enlace o bundle copiado en `providers` lanza `Invalid provider input received`.
+
+<Callout kind="note" title="Núcleo confiable dentro del proceso, no un sandbox">
+
+Los manejadores opacos evitan mutaciones accidentales, fallos de serialización y duck-typing frágil entre paquetes. **No** son una barrera de seguridad frente a código no confiable que se ejecute en el mismo isolate de JavaScript.
+
+</Callout>
+
+Para consultar todos los mensajes de error que puede lanzar el núcleo en tiempo de ejecución — y cómo arreglar cada uno — pasa a [Errores y diagnóstico](/es/errors/).
+
+<Code title="opaque-handles.ts" code={providersCode} region="isProvideRef" />

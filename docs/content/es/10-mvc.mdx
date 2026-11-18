@@ -1,0 +1,105 @@
+---
+title: "Patrón MVC en la práctica"
+slug: "mvc"
+part: patterns
+order: 10
+summary: "Estructura una aplicación TypeScript completa con Controlador-Servicio-Repositorio usando Refs autoinstalables, pools compartidos en la raíz y cero ceremonia de contenedor."
+---
+import userControllerCode from '../../examples/mvc/controllers/user-controller.ts' with { type: 'text' }
+import databaseCode from '../../examples/mvc/db/database.ts' with { type: 'text' }
+import mvcMainCode from '../../examples/mvc/main.ts' with { type: 'text' }
+import userModelCode from '../../examples/mvc/models/user.ts' with { type: 'text' }
+import userRepoCode from '../../examples/mvc/repositories/user-repository.ts' with { type: 'text' }
+import userServiceCode from '../../examples/mvc/services/user-service.ts' with { type: 'text' }
+import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with { type: 'text' }
+
+Para la mayoría de las APIs HTTP, herramientas internas y backends CRUD, el clásico **MVC** por capas (`Controller → Service → Repository → Database`) da justo en el clavo. Como cada capa puede importar directamente la capa concreta que tiene debajo, cada módulo de la pila puede ser un `Ref<T>` autoinstalable: mantienes cada responsabilidad en su sitio sin tener que cuidar un archivo contenedor gigante en el centro.
+
+<Code
+  title="mvc-project"
+  lang="text"
+  code={`src/
+├── models/
+│   └── user.ts                # Tipos planos de TypeScript (cero código en runtime)
+├── db/
+│   └── database.ts            # Ref con estado del pool + limpieza en onDispose
+├── repositories/
+│   └── user-repository.ts     # Ref de acceso a datos que inyecta databaseRef
+├── services/
+│   ├── user-service.ts        # Ref de reglas de negocio que inyecta userRepositoryRef
+│   └── user-service.test.ts   # Test unitario que cambia userRepositoryRef con provideFor()
+├── controllers/
+│   └── user-controller.ts     # Ref de transporte que inyecta userServiceRef
+└── main.ts                    # Punto de entrada que registra [databaseRef] en la raíz`}
+/>
+
+## Reglas de importación capa por capa
+
+En un proyecto MVC sano, los imports fluyen estrictamente de arriba hacia abajo: los controladores nunca se saltan los servicios para consultar tablas por su cuenta y los repositorios jamás importan controladores HTTP:
+
+| Capa | Archivo | Qué exporta | Imports del proyecto permitidos | Responsabilidad |
+| --- | --- | --- | --- | --- |
+| **Models** | `models/user.ts` | `type User` | Ninguno | Interfaces y estructuras de datos compartidas en TypeScript. |
+| **Database** | `db/database.ts` | `databaseRef` | Ninguno | Gestiona el pool de conexiones y registra la limpieza con `onDispose()`. |
+| **Repositories** | `repositories/user-repository.ts` | `userRepositoryRef` | `db/`, `models/` | Encapsula consultas SQL o de colecciones detrás de métodos tipados. |
+| **Services** | `services/user-service.ts` | `userServiceRef` | `repositories/`, `models/` | Aplica validaciones y reglas de negocio (`Invalid email`, duplicados). |
+| **Controllers** | `controllers/user-controller.ts` | `userControllerRef` | `services/`, `models/` | Traduce entradas HTTP/RPC en llamadas al servicio y códigos de estado. |
+| **Punto de entrada** | `main.ts` | `app` | `controllers/`, `db/` | Fija los refs con estado compartido en la raíz y arranca la app. |
+
+## Recorrido completo por el grafo MVC
+
+Navega por las seis pestañas de código de abajo arriba para seguir el viaje de una petición por todo el grafo:
+
+1. **`db/database.ts`:** `provide(function Database({ onDispose }) { ... })` usa una función con nombre para que los errores de ciclos muestren `Database` en lugar de `<anonymous>`, y registra su hook `onDispose` justo al lado del estado que cierra.
+2. **`models/user.ts`:** Un `interface User` puro de TypeScript, sin un solo import de DI.
+3. **`repositories/user-repository.ts`:** `userRepositoryRef` llama una vez a `inject(databaseRef)` cuando corre su factoría, toma la colección `'users'` y devuelve `{ findByEmail, create }`.
+4. **`services/user-service.ts`:** `userServiceRef` inyecta `userRepositoryRef` y saca las validaciones y comprobaciones de unicidad fuera de los handlers HTTP.
+5. **`controllers/user-controller.ts`:** `userControllerRef` inyecta `userServiceRef` y da forma a la respuesta `{ status: 201, body }`.
+6. **`main.ts`:** `bootstrapApp()` instala `providers: [databaseRef]` en el ámbito raíz e inyecta `userControllerRef` dentro del callback de arranque.
+
+<CodeTabs
+  files={[
+    { title: 'db/database.ts', code: databaseCode },
+    { title: 'models/user.ts', code: userModelCode },
+    { title: 'repositories/user-repository.ts', code: userRepoCode },
+    { title: 'services/user-service.ts', code: userServiceCode },
+    { title: 'controllers/user-controller.ts', code: userControllerCode },
+    { title: 'main.ts', code: mvcMainCode },
+  ]}
+/>
+
+## Por qué los pools de conexiones van en los providers raíz
+
+Quizá te preguntes: si `databaseRef` se crea con `provide()`, ¿no se autoinstalaría solo al hacer `inject(databaseRef)` dentro de `userRepositoryRef` aunque quitáramos `providers: [databaseRef]` de `main.ts`?
+
+En una app plana de un único ámbito, sí: el primer `inject(databaseRef)` en la raíz lo dejaría en caché ahí mismo. **Declarar explícitamente `providers: [databaseRef]` en `main.ts` te cubre las espaldas conforme crece la aplicación:**
+
+- Recuerda de [Providers y Refs](/es/providers/) y [Ámbitos y subárboles](/es/scopes/) que un `Ref` no registrado se autoinstala en *el primer ámbito que lo inyecte*.
+- Si más adelante montas dos subárboles `{ providers }` aislados — digamos un router de administración y un worker de tareas en segundo plano — y ningún ámbito padre registró `databaseRef`, cada subárbol abriría en silencio **su propio pool de conexiones aparte**.
+- Fijar los recursos con estado (`databaseRef`, clientes Redis, almacenes de rate-limit) en los `providers` raíz mantiene la creación perezosa, pero garantiza que todos los subárboles del proceso compartan ese único pool y lo cierren una sola vez con `await app.stop()`.
+
+## Flujo de trabajo: añadir un módulo nuevo
+
+Añadir una segunda funcionalidad — por ejemplo, `posts` — sigue un ciclo predecible de cuatro pasos sin tocar los módulos existentes de usuarios:
+
+1. **Añade el modelo (`models/post.ts`):** Exporta `interface Post { id: string; authorId: string; title: string }`.
+2. **Añade el repositorio (`repositories/post-repository.ts`):** Exporta `postRepositoryRef = provide(function PostRepository({ inject }) { ... })` inyectando el `databaseRef` ya existente.
+3. **Añade el servicio (`services/post-service.ts`):** Exporta `postServiceRef = provide(function PostService({ inject }) { ... })` inyectando `postRepositoryRef` (y `userRepositoryRef` si necesita comprobar que el autor exista).
+4. **Monta el controlador (`controllers/post-controller.ts` → `main.ts`):** Exporta `postControllerRef` y haz `inject(postControllerRef)` dentro de `main.ts` al conectar las rutas.
+
+Fíjate en lo que *no* tuviste que tocar: no hay ningún manifiesto central de DI que editar por cada nuevo repositorio o servicio, y `databaseRef` ya está compartido en la raíz.
+
+## Sustituir userRepositoryRef en tests unitarios
+
+Aunque `userServiceRef` importe `userRepositoryRef` directamente, no necesitas mocks a nivel de módulo (`vi.mock` o `mock.module`) para probar `UserService` de forma aislada. Pásale `provideFor(userRepositoryRef, fakeUserRepository)` a `bootstrapApp()` en tu test:
+
+- `userServiceRef` recibe tu fake en memoria basado en `Map` en lugar del repositorio real.
+- Como la factoría por defecto de `userRepositoryRef` ni llega a ejecutarse, `databaseRef` tampoco se instancia siquiera durante el test.
+
+<Callout kind="caution" title="Ojo con los Refs sin mockear en tests unitarios">
+
+Como cada `Ref` trae su propia factoría funcional por defecto, olvidarte de poner `provideFor(someOtherRef, fake)` en un test unitario MVC **no lanzará ningún error**: el núcleo construirá encantado la implementación real. Si tu equipo prefiere mantener la lógica de negocio separada de imports de base de datos/SDK *y* asegurarse de fallar al instante cuando a un test le falte un fake, echa un vistazo ahora a [DDD y Arquitectura Limpia](/es/ddd/).
+
+</Callout>
+
+<Code title="services/user-service.test.ts" code={mvcTestCode} />

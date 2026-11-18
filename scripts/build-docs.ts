@@ -14,7 +14,7 @@ async function isDirectory(path: string): Promise<boolean> {
   }
 }
 
-export async function resolveActiveLocales(contentDir: string, strictAllLocales = false): Promise<LocaleCode[]> {
+export async function resolveActiveLocales(contentDir: string, strictAllLocales = true): Promise<LocaleCode[]> {
   if (strictAllLocales) {
     return LOCALES.map(loc => loc.code)
   }
@@ -35,7 +35,7 @@ export async function resolveActiveLocales(contentDir: string, strictAllLocales 
 
 export async function runDocsBuild(
   rootDir = REPO_ROOT,
-  strictAllLocales = process.env.STRICT_ALL_LOCALES === '1',
+  strictAllLocales = true,
 ): Promise<{ pagesWritten: number; localesBuilt: LocaleCode[] }> {
   const pkgRaw = await readFile(join(rootDir, 'package.json'), 'utf8')
   const pkg = JSON.parse(pkgRaw) as { version?: string }

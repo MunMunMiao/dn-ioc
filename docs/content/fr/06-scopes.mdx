@@ -1,0 +1,72 @@
+---
+title: "Scopes et sous-arbres"
+slug: "scopes"
+part: kernel
+order: 6
+summary: "Découvre comment inject() remonte les scopes, comment les sous-arbres privés { providers } isolent les surcharges locales et pourquoi le scope propriétaire du consommateur décide du résultat."
+---
+import case1Code from '../../examples/scopes/case1-fallback.ts' with { type: 'text' }
+import case2Code from '../../examples/scopes/case2-local-override.ts' with { type: 'text' }
+import case3Code from '../../examples/scopes/case3-parent-owned.ts' with { type: 'text' }
+import case4Code from '../../examples/scopes/case4-rebind-both.ts' with { type: 'text' }
+
+La plupart des applications font tout leur câblage dans l’unique scope racine créé par `bootstrapApp()`. Utilise `{ providers }` sur un `provide()` ou un `provideFor()` précis lorsqu’un sous-arbre particulier — un aperçu de thème, un plugin embarqué ou un worker isolé — a besoin de ses propres surcharges locales sans baver sur le parent ni sur les sous-arbres voisins.
+
+## Comment fonctionne la résolution dans les scopes
+
+La façon dont `inject(key)` résout une clé dans des scopes imbriqués tient en trois règles :
+
+1. **Remontée vers les parents, le premier trouvé gagne :** `inject(key)` vérifie d’abord le scope courant, puis remonte de parent en parent jusqu’à trouver une liaison. S’il n’y en a aucune, un `Ref` s’auto-installe dans le scope actif tandis qu’un `Token` lève `No provider for token: Name`.
+2. **`{ providers }` crée un sous-arbre enfant privé :** Les liaisons listées dans l’option `{ providers }` d’un provider ne sont visibles que par ce provider et ses descendants. Chaque liaison met son instance en cache dans le scope qui la possède — ou dans son sous-arbre enfant privé lorsqu’elle déclare `{ providers }`. Ni les frères ni les parents ne voient ces surcharges locales.
+3. **Un provider résout ses dépendances depuis son propre scope :** Un consommateur n’hérite jamais des surcharges locales de celui qui l’appelle. S’il est lié dans un scope parent, ses propres appels à `inject()` démarrent depuis ce scope parent.
+
+Les quatre scénarios ci-dessous reprennent exactement les mêmes `labelToken`, `rendererRef` et `previewRef` — parcours-les dans l’ordre pour voir comment déplacer une seule ligne change ce que lit `previewRef`.
+
+## 1. Pas de surcharge locale : repli sur le parent
+
+Dans `case1-fallback.ts`, `previewRef` installe `rendererRef` dans son sous-arbre privé `{ providers }`, tandis que l’appli racine lie `labelToken` à `'app'`.
+
+Quand `previewRef` injecte `rendererRef`, il trouve la liaison locale `rendererRef` dans son scope privé. `rendererRef` demande ensuite `labelToken` : comme aucune liaison `labelToken` n’existe dans le sous-arbre d’aperçu, la recherche remonte au scope racine et lit `'app'`.
+
+<Code title="case1-fallback.ts" code={case1Code} />
+
+## 2. Surcharge locale à côté du consommateur
+
+Ajoute maintenant `provideFor(labelToken, () => 'local')` juste à côté de `rendererRef` dans les `{ providers }` privés de `previewRef`.
+
+Comme `rendererRef` appartient au sous-arbre privé de `previewRef`, sa recherche de `labelToken` commence dans ce scope privé et tombe sur `'local'`. Pendant ce temps, hors du sous-arbre, le `inject(rendererRef)` à la racine auto-installe un `rendererRef` racine distinct qui continue de lire `'app'`. Aucun des deux ne fuit dans l’autre.
+
+<Code title="case2-local-override.ts" code={case2Code} />
+
+## 3. Attention à ce piège classique : consommateur logé chez le parent
+
+Regarde ce qui se passe si tu sors `rendererRef` de `previewRef` pour l’enregistrer sur l’appli racine, en ne laissant que `provideFor(labelToken, () => 'local')` dans `previewRef`.
+
+Même si `previewRef` est le tout premier à appeler `inject(rendererRef)` — et même si `previewRef` possède sa propre liaison `'local'` — **`previewRef` affiche quand même `'app'` !**
+
+Pourquoi ? Parce que `previewRef` cherche `rendererRef` en remontant, le trouve attaché au scope racine et l’exécute *là-haut*. Un provider détenu par le parent résout toujours ses dépendances dans le scope parent, jamais dans le scope enfant qui vient de l’appeler.
+
+<Code title="case3-parent-owned.ts" code={case3Code} />
+
+## 4. Relier ensemble le consommateur et sa dépendance
+
+Quand l’appli racine possède déjà `rendererRef`, comment donner à `previewRef` une version qui voit `'local'` ? Il suffit de relier **à la fois** `labelToken` et `rendererRef` dans les `{ providers }` de `previewRef`.
+
+Désormais, `previewRef` possède sa propre liaison locale de `rendererRef` juste à côté de la surcharge `'local'` du token : `previewRef` lit `'local'` pendant que le `rendererRef` de la racine continue de lire `'app'`.
+
+<Code title="case4-rebind-both.ts" code={case4Code} />
+
+## Mémo comparatif des scopes
+
+| Scénario | `providers` racine | `providers` de `previewRef` | `previewRef` lit | Pourquoi |
+| --- | --- | --- | --- | --- |
+| **1. Repli** | `label = 'app'` | `rendererRef` | `'app'` | Le `rendererRef` local remonte jusqu’à la racine pour `labelToken`. |
+| **2. Surcharge locale** | `label = 'app'` | `rendererRef`, `label = 'local'` | `'local'` | Le `rendererRef` local trouve `'local'` dans le même scope privé. |
+| **3. Détenu à la racine** | `label = 'app'`, `rendererRef` | `label = 'local'` | `'app'` | `rendererRef` vit à la racine, donc son `inject(labelToken)` résout à la racine. |
+| **4. Relier les deux** | `label = 'app'`, `rendererRef` | `label = 'local'`, `provideFor(rendererRef, ...)` | `'local'` | Le consommateur et sa dépendance appartiennent tous deux au scope privé de `previewRef`. |
+
+<Callout kind="note" title="Les providers imbriqués sont validés paresseusement">
+
+Contrairement aux `providers` racine (validés tout de suite par `bootstrapApp()`), le tableau `{ providers }` imbriqué d’un provider n’est validé qu’à la première résolution effective de ce sous-arbre. S’il contient une entrée invalide, cet appel à `inject()` lève `Invalid provider input received`.
+
+</Callout>

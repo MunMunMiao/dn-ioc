@@ -1,0 +1,64 @@
+---
+title: "Prise en main en 5 minutes"
+slug: "quickstart"
+part: start
+order: 3
+summary: "Passe de zéro à un graphe fonctionnel en trois petites étapes : définis tes providers, démarre l’appli et remplace une dépendance asynchrone dans un test."
+---
+import step1Code from '../../examples/quickstart/step1-provide.ts' with { type: 'text' }
+import step2Code from '../../examples/quickstart/step2-compose.ts' with { type: 'text' }
+import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with { type: 'text' }
+
+Pas besoin de dessiner toute une arborescence de dossiers ni d’enregistrer des classes dans un fichier central juste pour démarrer. Construisons un vrai graphe en trois étapes rapides : envelopper de simples fonctions avec `provide()`, les lancer avec `bootstrapApp()` et remplacer une dépendance asynchrone par un fake dans un test.
+
+## 1. Définis tes providers avec provide()
+
+Passe n’importe quelle fonction factory à `provide()` et tu récupères un handle typé `Ref<T>`. Dans `step1-provide.ts`, `configRef` renvoie un simple objet, et `greeterRef` le récupère via `{ inject }` pour fabriquer un helper `greet()`.
+
+Remarque tout de suite deux choses :
+
+- **Zéro annotation de type manuelle :** TypeScript déduit tout seul le type de `config` dans `greeterRef` à partir du retour de `configRef`.
+- **Rien ne s’est encore exécuté :** Appeler `provide()` enregistre simplement *comment* construire la valeur le jour où une appli la demandera.
+
+<Code title="step1-provide.ts" code={step1Code} />
+
+## 2. Démarre le graphe avec bootstrapApp()
+
+Ensuite, passe une fonction racine à `bootstrapApp()` puis appelle `await app.start()`. `bootstrapApp()` crée un scope isolé pour l’application et te renvoie aussitôt le handle `app` — toujours sans exécuter la moindre factory.
+
+Quand `await app.start()` se lance :
+
+1. Ta fonction racine demande `inject(greeterRef)`.
+2. `greeterRef` s’auto-installe dans le scope de l’appli et demande à son tour `inject(configRef)`.
+3. `configRef` s’exécute une seule fois, met `{ greeting: 'hello' }` en cache, puis `greeterRef` met en cache son objet `{ greet }` et affiche `hello, world`.
+
+Comme ce petit graphe ne garde aucun socket, timer ou pool de connexions ouvert, inutile d’appeler `app.stop()` : dès que `start()` se termine, le ramasse-miettes nettoie tout normalement.
+
+<CodeTabs
+  files={[
+    { title: 'step2-compose.ts', code: step2Code },
+    { title: 'step1-provide.ts', code: step1Code },
+  ]}
+/>
+
+## 3. Passe en asynchrone et injecte un fake de test
+
+Dans la vraie vie, les services chargent souvent leur config via le réseau ou parlent à une base de données, et tes tests doivent pouvoir les remplacer proprement. Les deux tiennent en une ligne :
+
+- **Les providers asynchrones utilisent de simples fonctions `async` :** Passe `settingsRef` en `async`, et `inject(settingsRef)` renvoie une `Promise` partagée que `greeterRef` attend avec `await`. En passant aussi la fonction racine de `bootstrapApp` en `async` avec `await inject(greeterRef)`, `await testApp.start()` attend que tout le démarrage soit résolu.
+- **`provideFor()` remplace n’importe quelle dépendance sur place :** Passer `provideFor(settingsRef, async () => ({ greeting: 'test-hello' }))` dans `{ providers }` remplace `settingsRef` pour `testApp` sans toucher une ligne au code de `greeterRef`.
+- **Nettoyage propre en fin de test :** Appeler `await testApp.stop()` coupe l’injection et exécute tous les hooks de nettoyage enregistrés pour qu’aucune ressource ne déborde sur le test suivant.
+
+<Code title="step3-async-and-fake.ts" code={step3Code} />
+
+## Trois bons réflexes au quotidien
+
+<Callout kind="note" title="Trois règles sur lesquelles compter tous les jours">
+
+- **Branche tes écouteurs avant `start()` :** Comme `bootstrapApp()` n’exécute encore rien, `app` existe déjà avant l’ouverture du moindre port ou timer — tu peux donc brancher tes signaux d’arrêt sereinement avant d’appeler `await app.start()`.
+- **`start()` est idempotent :** Appeler `app.start()` plusieurs fois renvoie exactement la même `Promise` et n’exécute la fonction racine qu’une seule fois.
+- **La fonction racine renvoie `void` :** Garde ta logique de démarrage à l’intérieur du callback de `bootstrapApp()` plutôt que d’essayer d’en retourner une valeur.
+
+</Callout>
+
+Pour la suite, on regarde sous le capot avec [Providers et Refs](/fr/providers/) et [Tokens et liaisons](/fr/tokens/) — ou si tu veux tout de suite structurer un vrai projet, file directement vers les guides [Pattern MVC en pratique](/fr/mvc/) ou [DDD et Clean Architecture](/fr/ddd/).

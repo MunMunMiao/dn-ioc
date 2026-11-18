@@ -1,0 +1,50 @@
+---
+title: "Providers et Refs"
+slug: "providers"
+part: kernel
+order: 4
+summary: "Comprends comment provide() s’auto-installe et met en cache ses instances par scope, comment bundleProviders() regroupe tes liaisons et dans quel ordre elles s’appliquent."
+---
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+Utilise `provide()` dès qu’une dépendance possède une implémentation par défaut évidente que ses consommateurs ont le droit d’importer directement : un helper de config, un repository MVC ou un service applicatif. Il renvoie un `Ref<T>` capable de se construire à la demande et de mettre son résultat en cache dans le scope qui le possède.
+
+<Code title="caching.ts" code={providersCode} region="caching" />
+
+## Refs auto-installables vs enregistrement à la racine
+
+Dans beaucoup de librairies d’injection, oublier de déclarer une classe dans un conteneur central fait planter l’appli à l’exécution. Un `Ref<T>` créé avec `provide()` t’évite cette corvée : si ni le scope actif ni ses parents n’ont encore lié `configRef`, le premier `inject(configRef)` installe sa factory par défaut sur place, l’exécute une seule fois et garde l’instance en cache (`first === second` vaut `true` et `created` reste à `1`).
+
+Ce confort vient avec une nuance essentielle : **un `Ref` est lié à un scope, ce n’est pas un singleton global.**
+
+- Deux appels distincts à `bootstrapApp()` ne partagent jamais leurs instances.
+- Si deux sous-arbres frères `{ providers }` injectent chacun pour la première fois un `Ref` non enregistré plus haut, chaque sous-arbre s’auto-installe et garde sa propre copie séparée.
+
+Quand un `Ref` porte un état partagé ou une ressource coûteuse — un pool de connexions SQL, un cache en mémoire ou le `configRef` ci-dessus — déclare-le explicitement dans `bootstrapApp(..., { providers: [configRef] })`. L’installer à la racine reste paresseux (la factory ne tourne pas tant que personne n’appelle `inject()`), tout en garantissant que toute l’application partage cette unique instance.
+
+## Regrouper un câblage cohérent avec bundleProviders()
+
+Parfois, une fonctionnalité doit livrer plusieurs liaisons d’un bloc : par exemple un token public accompagné du token privé d’options que lit sa factory, ou tout un dossier `infra/` regroupant tes adaptateurs de base de données et d’e-mail.
+
+`bundleProviders(...inputs)` rassemble n’importe quel mélange de refs, liaisons `provideFor()`, tableaux ou bundles imbriqués dans un seul `ProviderBundle`. Côté appelant, il suffit de glisser `provideTheme({ palette: 'ocean' })` dans `{ providers }` en une ligne sans se soucier des détails internes.
+
+Garde simplement en tête qu’un bundle n’est qu’un emballage à plat : il ne crée **pas** de scope isolé à lui seul. Chaque élément qu’il contient s’installe directement dans le scope qui reçoit le bundle (pour créer des scopes privés, voir [Scopes et sous-arbres](/fr/scopes/)).
+
+<Code title="bundle.ts" code={providersCode} region="bundle" />
+
+## Vérifier un handle avec isProvideRef()
+
+Si tu écris une fine couche d’intégration ou un utilitaire de test qui inspecte des valeurs inconnues à l’exécution, utilise `isProvideRef(value)` pour affiner le type vers `Ref<unknown>`.
+
+`isProvideRef()` renvoie `true` **uniquement** pour un vrai `Ref` issu de `provide()`. Il renvoie `false` pour les clés `token()`, les liaisons `provideFor()`, les paquets `bundleProviders()`, les valeurs primitives et les copies superficielles comme `{ ...sampleRef }`.
+
+<Code title="is-provide-ref.ts" code={providersCode} region="isProvideRef" />
+
+## Règles d’installation et cas limites
+
+À chaque fois que le noyau installe une liste `providers` — que ce soit dans `bootstrapApp()` ou dans une option `{ providers }` imbriquée — quatre règles simples s’appliquent :
+
+1. **Instantané dès la création :** Les tableaux et bundles passés à `provide()`, `provideFor()`, `bundleProviders()` ou `bootstrapApp()` sont copiés superficiellement tout de suite. Modifier ton tableau d’origine après coup ne changera jamais un ref, une liaison ou un bundle déjà créé.
+2. **Aplatissement dans l’ordre du code :** Les tableaux imbriqués et `ProviderBundle` sont aplatis de gauche à droite dans l’ordre exact où tu les as écrits.
+3. **Le dernier écrit gagne dans un même scope :** Installer deux fois la même clé dans un même scope remplace silencieusement la liaison précédente — y compris les éventuels `{ providers }` imbriqués qui lui étaient attachés. C’est ce qui permet dans un test d’intégration d’écrire `[infraProviders, provideFor(repoToken, fakeRepo)]` pour surcharger proprement un seul adaptateur.
+4. **Moment de la validation :** Les `providers` racine passés à `bootstrapApp()` sont validés immédiatement ; une entrée invalide lève `Invalid provider input received` avant même qu’un handle `App` n’existe. À l’inverse, les `{ providers }` imbriqués sur un ref ou une liaison sont validés paresseusement à la première résolution de ce sous-arbre, en levant `Invalid provider input received` depuis cet appel à `inject()`.

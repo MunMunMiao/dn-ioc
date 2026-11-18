@@ -1,0 +1,50 @@
+---
+title: "Providers asíncronos"
+slug: "async"
+part: kernel
+order: 7
+summary: "Escribe factorías async sin APIs aparte: comparte promesas en vuelo, reintenta tras fallos puntuales, separa el arranque de tareas en segundo plano y tipa tokens asíncronos."
+---
+import asyncCode from '../../examples/async/shared-and-background.ts' with { type: 'text' }
+
+Abrir un pool de base de datos, traer secretos remotos o precalentar una caché en memoria no debería obligarte a cambiar a una API paralela del estilo `provideAsync()` / `injectAsync()`. En `dn-ioc` basta con escribir una factoría `async`: `inject()` devuelve una `Promise<T>` estándar y comparte esa única `Promise` en vuelo entre todos los que la pidan en el mismo ámbito.
+
+<Code title="shared-promise.ts" code={asyncCode} region="shared" />
+
+## Promesa compartida y reintento automático si falla
+
+`inject()` jamás envuelve valores síncronos en promesas: las factorías síncronas devuelven `T` tal cual y las asíncronas devuelven `Promise<T>`.
+
+Cuando `sharedApp` llama dos veces seguidas a `inject(settingsRef)` dentro del mismo ámbito, la factoría corre una sola vez y ambas llamadas reciben exactamente la misma instancia de `Promise` (`first === second` es `true`). Te olvidas de programar candados manuales de memoización para evitar que cinco servicios abran cinco conexiones repetidas al arrancar.
+
+¿Y qué pasa si un provider asíncrono falla — por ejemplo, por un corte puntual de red?
+
+- **Limpieza automática de la caché al rechazar:** En cuanto la `Promise` de la factoría es rechazada, el núcleo borra esa entrada pendiente de la caché del ámbito antes de propagar el error.
+- **Reintentos limpios con la app en marcha:** Mientras la app no se haya detenido, un `inject()` posterior en ese ámbito volverá a ejecutar la factoría desde cero en lugar de repetir para siempre una promesa rota.
+
+## Arranque bloqueante frente a tareas en segundo plano
+
+`app.start()` sigue una regla muy directa: espera **únicamente** a tu función raíz y a las `Promise` a las que tu función raíz les haga `await` (o devuelva). Eso te da control total sobre qué bloquea el arranque y qué corre por detrás:
+
+- **Bloquear `start()` con dependencias críticas:** Haz `await inject(settingsRef)` dentro de `bootstrapApp(async ({ inject }) => { ... })` cuando la aplicación no deba darse por lista hasta que ese recurso esté disponible. Si falla, `start()` ejecuta la limpieza automáticamente y rechaza su promesa.
+- **Lanzar tareas en segundo plano sin bloquear:** Dispara `inject(warmupRef)` *sin* hacerle `await` dentro de la función raíz, y `app.start()` terminará enseguida mientras `warmupRef` sigue corriendo. Guarda siempre esa `Promise` sin `await` en una variable externa (como `warmupTask` en `background-task.ts`) para poder leer su resultado o capturar errores: `start()` no vigila promesas sueltas.
+
+<Code title="background-task.ts" code={asyncCode} region="background" />
+
+## Cómo tipar tokens asíncronos
+
+Con `provide(async () => ...)`, TypeScript ve el retorno de la función `async` e infiere `Ref<Promise<T>>` solo. En cambio, un `token()` no tiene factoría de la que inferir nada, así que para un token asíncrono pon `Promise<...>` directamente dentro del parámetro de tipo.
+
+Escribir `token<Promise<Settings>>('Settings')` deja el contrato clarísimo en ambos lados: quien consume ve al instante que `inject(settingsToken)` devuelve una `Promise` que hay que esperar con `await`, y `provideFor(settingsToken, ...)` comprueba en compilación que el adaptador devuelva `Promise<Settings>`.
+
+<Code title="async-token.ts" code={asyncCode} region="asyncToken" />
+
+## Ciclos asíncronos y límites al apagar
+
+- **Detección de ciclos sin bloqueos infinitos:** El núcleo rastrea las aristas de dependencias asíncronas en vuelo incluso a través de `await`. Si un provider pendiente `A` espera a `B` mientras `B` vuelve a esperar a `A`, `inject()` lanza `Circular dependency detected: A -> B -> A` al instante en lugar de dejar colgado el proceso para siempre.
+
+<Callout kind="caution" title="stop() no cancela promesas en vuelo">
+
+Llamar a `app.stop()` bloquea de inmediato cualquier *nueva* llamada a `inject()`, incluidas las que haga una factoría `async` al despertar tras un `await`. Sin embargo, `stop()` no espera a que terminen las factorías sueltas en curso ni aborta sus `fetch()` o sockets subyacentes. Conecta un `AbortController` dentro de `onDispose()` cuando necesites cancelar explícitamente tareas en segundo plano; veamos ahora [Ciclo de vida y limpieza](/es/lifecycle/).
+
+</Callout>

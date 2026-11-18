@@ -52,3 +52,4 @@ jobs:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - run: bun run build
+      - run: bun run docs:build

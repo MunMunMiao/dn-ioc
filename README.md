@@ -47,7 +47,7 @@ This graph holds no resources, so it does not need `stop()`. Scopes, cleanup, as
 
 ## Development
 
-Bun 1.4.3. `bun test --coverage` exits 0 below 100%, so `bun run test` is the test run and the coverage gate together. `bun check` fails on type errors, so that is `bun run type-check`.
+Bun 1.4.3. `bun test --coverage` exits 0 below 100%, so `bun run test` is the test run and the coverage gate together. `bun check` fails on type errors, so that is `bun run type-check`. `bun run docs:dev` previews the documentation site locally, and `bun run docs:build` builds all eight locales into `docs/dist`.
 
 ```bash
 bun install
@@ -55,4 +55,5 @@ bun run test
 bun run type-check
 bun run lint
 bun run build
+bun run docs:build
 ```

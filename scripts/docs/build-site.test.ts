@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { LOCALES } from '../../docs/locales'
 import { resolveActiveLocales, runDocsBuild } from '../build-docs'
 import { buildDocsSite } from './build-site'
 
@@ -217,7 +218,8 @@ describe('buildDocsSite', () => {
       expect(built.localesBuilt).toEqual(['en-US', 'es'])
       expect(built.pagesWritten).toBe(2)
 
-      await expect(runDocsBuild(root, true)).rejects.toThrow(/zh-Hans/)
+      expect(await resolveActiveLocales(join(root, 'docs/content'))).toEqual(LOCALES.map(loc => loc.code))
+      await expect(runDocsBuild(root)).rejects.toThrow(/zh-Hans/)
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -400,4 +402,64 @@ describe('buildDocsSite', () => {
     })
     expect(preventedNormal).toBe(true)
   })
+
+  test('builds all 8 real locales (112 pages), 8 search indices, llms.txt, and verified cross-locale links end-to-end', async () => {
+    const repoRoot = join(import.meta.dir, '../..')
+    const outDir = await mkdtemp(join(tmpdir(), 'dn-site-e2e-'))
+    try {
+      const res = await buildDocsSite({
+        contentDir: join(repoRoot, 'docs/content'),
+        assetsDir: join(repoRoot, 'docs/assets'),
+        llmsPath: join(repoRoot, 'docs/llms.txt'),
+        outDir,
+        version: '0.3.1',
+      })
+
+      const expectedLocales = LOCALES.map(loc => loc.code)
+      expect(res.localesBuilt).toEqual(expectedLocales)
+      expect(res.pagesWritten).toBe(112)
+
+      for (const locale of expectedLocales) {
+        const rawIdx = await readFile(join(outDir, `search-index.${locale}.json`), 'utf8')
+        const parsed = JSON.parse(rawIdx) as Array<{ title: string; href: string }>
+        expect(parsed.length).toBeGreaterThanOrEqual(14)
+      }
+
+      const llmsOut = await readFile(join(outDir, 'llms.txt'), 'utf8')
+      expect(llmsOut).toContain('https://dn-ioc.lyz.cloud/')
+      await access(join(outDir, '_redirects'))
+
+      const collectHtmlFiles = async (dir: string): Promise<string[]> => {
+        const entries = await readdir(dir, { withFileTypes: true })
+        const files: string[] = []
+        for (const entry of entries) {
+          const full = join(dir, entry.name)
+          if (entry.isDirectory()) {
+            files.push(...(await collectHtmlFiles(full)))
+          } else if (entry.isFile() && entry.name.endsWith('.html')) {
+            files.push(full)
+          }
+        }
+        return files
+      }
+
+      const htmlFiles = await collectHtmlFiles(outDir)
+      expect(htmlFiles).toHaveLength(112)
+
+      const localeLinkRe = /<a\b[^>]*\bdata-locale-link="([^"]+)"[^>]*\bhref="([^"]+)"[^>]*>/gi
+      for (const htmlFile of htmlFiles) {
+        const html = await readFile(htmlFile, 'utf8')
+        const matches = Array.from(html.matchAll(localeLinkRe))
+        expect(matches).toHaveLength(8)
+        for (const m of matches) {
+          const href = m[2]!
+          const relRoute = href.replace(/^\/+|\/+$/g, '')
+          const targetHtml = relRoute ? join(outDir, relRoute, 'index.html') : join(outDir, 'index.html')
+          await access(targetHtml)
+        }
+      }
+    } finally {
+      await rm(outDir, { recursive: true, force: true })
+    }
+  }, 20_000)
 })
