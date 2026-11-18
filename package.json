@@ -27,7 +27,9 @@
     "lint": "biome check --write --error-on-warnings .",
     "lint:check": "biome check --error-on-warnings .",
     "lint:fix": "biome check --write --unsafe --error-on-warnings .",
-    "type-check": "bun check && bun x tsc -p docs/tsconfig.json"
+    "type-check": "bun check && bun x tsc -p docs/tsconfig.json",
+    "docs:build": "bun run scripts/build-docs.ts",
+    "docs:dev": "bun run scripts/dev-docs.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
