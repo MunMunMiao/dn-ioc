@@ -1,0 +1,122 @@
+---
+title: "安裝與執行環境"
+slug: "installation"
+part: start
+order: 2
+summary: "用開慣嘅套件管理工具安裝 dn-ioc、喺 Deno 或瀏覽器 CDN 直接引入，以及設定好 TypeScript bundler 解析模式。"
+---
+
+`dn-ioc` 係一個零外部依賴嘅純 ESM 套件（minify 後 `4.8 kB`，gzip 後 `1.9 kB`），一行指令就裝好，唔會順手拖一大堆雜七雜八嘅間接依賴入 `node_modules`。你平時個專案用開邊套套件管理工具就照用邊套，喺 Deno 用 `npm:` 或者喺瀏覽器直接拉 CDN 都一樣咁方便。
+
+<CodeTabs
+  files={[
+    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
+    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
+    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
+    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
+    { title: 'deno', lang: 'bash', code: 'deno add npm:dn-ioc' },
+  ]}
+/>
+
+## Deno 免安裝直接用
+
+寫緊單一檔案嘅 Deno 小工具，費事特登開個 `deno.json` 先？Deno 可以直接透過 `npm:` 前綴 import `dn-ioc`——記得鎖實 `@0.3.1` 版本號，費事第日再行嗰陣無啦啦拉咗個新版本返嚟。
+
+<Code
+  title="deno-import.ts"
+  lang="ts"
+  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc@0.3.1'`}
+/>
+
+## 瀏覽器 CDN 與 Import Maps
+
+喺網頁度用 `dn-ioc` 唔一定要先砌套打包工具（bundler）。現代瀏覽器可以直接由 CDN 載入壓縮好嘅 ESM 版本：
+
+| CDN | 鎖定版本 URL | 實際派發內容 |
+| --- | --- | --- |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1` | `index.min.js`（`4.8 kB`，gzip 後 `1.9 kB`） |
+| unpkg | `https://unpkg.com/dn-ioc@0.3.1` | `index.min.js` —— 同上面完全同一個檔案 |
+| esm.sh | `https://esm.sh/dn-ioc@0.3.1` | esm.sh 自己轉譯出嚟嘅產物 |
+
+喺瀏覽器度連去 CDN URL 嗰陣，記住一定要釘死好似 `@0.3.1` 咁嘅版本號——如果甩咗版本標籤，CDN 就會直接派最新嗰版畀你，隨時令線上頁面無聲無息中伏。
+
+加返段 `<script type="importmap">`，你喺模組入面就可以照寫 `'dn-ioc'` 呢種裸模組路徑（bare specifier），無論有冇 bundler 都唔使改一行業務 code。
+
+<CodeTabs
+  files={[
+    {
+      title: 'importmap.html',
+      lang: 'html',
+      code: `<!doctype html>
+<html lang="en">
+  <head>
+    <script type="importmap">
+      {
+        "imports": {
+          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module">
+      import { bootstrapApp, provide } from 'dn-ioc'
+
+      const greetingRef = provide(() => 'hello, browser')
+      const app = bootstrapApp(({ inject }) => {
+        document.body.textContent = inject(greetingRef)
+      })
+
+      await app.start()
+    </script>
+  </body>
+</html>`,
+    },
+    {
+      title: 'direct-cdn.html',
+      lang: 'html',
+      code: `<!doctype html>
+<html lang="en">
+  <body>
+    <script type="module">
+      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1'
+
+      const greetingRef = provide(() => 'hello, browser')
+      const app = bootstrapApp(({ inject }) => {
+        document.body.textContent = inject(greetingRef)
+      })
+
+      await app.start()
+    </script>
+  </body>
+</html>`,
+    },
+  ]}
+/>
+
+## ESM 與 TypeScript 設定
+
+`dn-ioc` **只提供純 ESM 版本**——請一律用 `import` 載入，唔好再用舊式 CommonJS `require()`。
+
+喺 TypeScript 專案入面，請將 `tsconfig.json` 嘅 `"moduleResolution"` 設做 `"bundler"`。而家主流嘅 Vite、Bun、Deno、Next.js、Astro 同 `tsdown` 預設已經係呢個模式，基本上即插即用。
+
+<Code
+  title="tsconfig.json"
+  lang="json"
+  code={`{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true
+  }
+}`}
+/>
+
+<Callout kind="caution" title="關於 NodeNext 同 Node16 型別解析">
+
+`dn-ioc` **唔支援** `NodeNext` 同 `Node16` 嘅型別宣告解析模式。凡係需要對住 `dn-ioc` 做型別檢查嘅 `tsconfig.json`，請保持 `"moduleResolution": "bundler"`。
+
+</Callout>
+
+因為核心完全唔會掂 `process`、DOM API 同 timer，你寫好嘅 provider 可以 100% 原封不動喺 Node.js、Bun、Deno、瀏覽器、Web Worker 同 Edge runtime 之間共用。準備好落手砌第一個 app 未？即刻揭去下一篇[五分鐘快速上手](/zh-hant-hk/quickstart/)。

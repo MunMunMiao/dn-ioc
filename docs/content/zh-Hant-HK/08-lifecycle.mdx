@@ -1,0 +1,76 @@
+---
+title: "生命週期與資源清理"
+slug: "lifecycle"
+part: kernel
+order: 8
+summary: "用後進先出嘅 onDispose() hook、啟動失敗自動回滾、await using 語法以及各平台熄機訊號，乾手淨腳釋放 socket、連線池同 timer。"
+---
+import disposeAndUsingCode from '../../examples/lifecycle/dispose-and-using.ts' with { type: 'text' }
+import nodeShutdownCode from '../../examples/lifecycle/node-server-shutdown.ts' with { type: 'text' }
+import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' with { type: 'text' }
+
+`app.start()` 成功跑完之後，核心永遠唔會自把自為幫你停機——到底使唔使 call `app.stop()`，完全由你自己決定。好似跑完即棄嘅 CLI 小腳本，或者成頁瀏覽器一閂 tab 就成個清走嘅前端應用，根本唔使特登 call `stop()`，作業系統或者瀏覽器自然會收返晒啲資源。只有當**某啲嘢比張依賴圖更長命**嗰陣——例如長駐霸住 port 同 DB 連線池嘅後端伺服器、跑完一個接一個嘅獨立測試、或者頁面仲留喺度但要局部卸載嘅 UI 元件——先至需要出動 `onDispose()` 同 `app.stop()`。
+
+<Code title="dispose.ts" code={disposeAndUsingCode} region="dispose" />
+
+## 封鎖注入與 LIFO 逆序清理
+
+一旦呼叫 `app.stop()`，核心會嚴格跟足先後次序做兩件事：
+
+1. **同步封死成個 App 嘅所有 `inject()`：** 喺任何一個 microtask 行之前，全個 app 入面所有 `inject()` handle 都會永久落閘。之後任何 `inject()` 呼叫——就算係攞已經快取好嘅實例，或者喺私有子樹入面（好似上面 `service.read()` 咁）——都會即刻拋出 `Cannot inject after the app has stopped`。
+2. **按後進先出（LIFO）次序逐個行 `onDispose` hook：** 越遲登記嘅清理 hook 越早執行，一個接一個串行跑完。如果你先開 DB 連線池、再開 HTTP 伺服器，`stop()` 嗰陣自然會先閂咗 HTTP 伺服器停收新客，然後先至排空閂埋個 DB 連線池。
+
+正因為執行清理 hook 嗰陣 `inject()` 已經落咗閘，**千祈記得喺登記 `onDispose()` 之前，先將要用嘅依賴存落區域變數度**——就好似 `dispose.ts` 入面句 `const store = inject(storeRef)` 咁。
+
+重複或者同時並行 call `app.stop()` 都係冪等嘅：大家會攞到完全同一個 `Promise`，每個 hook 保證只會執行一次。而一旦個 app 停咗機，再走去 call `app.start()` 就會直接 reject `Cannot start an app that has been stopped`。
+
+## 用 await using 自動執手尾
+
+每一個 `App` 都實作咗 `AsyncDisposable`——當執行環境支援原生 `Symbol.asyncDispose` 嗰陣會直接掛喺 `[Symbol.asyncDispose]` 上面；如果跑喺未有原生 symbol 嘅舊環境，就會自動 fallback 去 `[Symbol.for('Symbol.asyncDispose')]`，完美配合 TypeScript 5.2+ 降級編譯出嚟嘅 `await using` 查找邏輯。
+
+喺測試案例、CLI 批次任務，或者好似 `runScopedTask()` 呢類單次工作入面，寫句 `await using app = bootstrapApp(...)`，離開大括號區塊嗰陣就會自動 `await` 埋 `app.stop()`——就算中途拋出例外錯誤都一樣保證執好手尾。
+
+<Code title="await-using.ts" code={disposeAndUsingCode} region="awaitUsing" />
+
+## 喺唔同執行環境駁返熄機訊號
+
+JavaScript 各個執行環境嘅熄機訊號完全冇統一標準，所以核心絕對唔會偷偷地喺背後掛全域 listener。請按返你用緊嘅平台，揀最夾嘅生命週期觸發點去接駁 `app.stop()`：
+
+| 執行環境 | 觸發時機 | 非同步清理可唔可靠 |
+| --- | --- | --- |
+| Node.js、Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | 可等待（只要個 handler 頂住個 process 未即刻退出） |
+| Deno | `Deno.addSignalListener('SIGINT', handler)` | 可等待 |
+| 瀏覽器局部子應用 | 框架自己嘅卸載時機（React `useEffect`、Vue `onScopeDispose`、路由切換） | 可等待 |
+| 瀏覽器成頁關閉 | `addEventListener('pagehide', handler)` | 唔可靠 —— 清理邏輯請保持純同步 |
+| Web Worker | 主執行緒 call `worker.terminate()` 之前發過嚟嘅通知訊息 | 視乎主執行緒肯唔肯等埋先 terminate |
+| Serverless、Edge | 綁定該次請求或導出函式結束嗰一刻 | 視乎平台有冇提供 keep-alive / `waitUntil` API |
+
+落手寫嗰陣，有幾個環境細節特別值得留意：
+
+- **Node.js 與 Bun（`node-server.ts`）：** 記得喺 `await app.start()` *之前* 就掛好 `SIGINT` / `SIGTERM` listener。因為 `bootstrapApp()` 唔會提早行任何 provider，早喺 `3000` port 打開之前個 `app` 已經喺你手度。去到 Deno 環境，成張依賴圖完全唔使改，淨係將個 listener 換做 `Deno.addSignalListener('SIGINT', () => void app.stop())` 就得。
+- **瀏覽器局部元件（`browser-unmount.ts`）：** 喺前端盡量將依賴圖綁喺某個你自己控制卸載嘅元件或者路由上面（`await ready; await app.stop()`），事關頁面仲開住嗰陣，非同步清理 hook 可以穩穩陣陣 `await` 到做完為止。
+- **瀏覽器閂 Tab 離場（`browser-pagehide.ts`）：** 請優先用 `pagehide` 而唔好再用 `beforeunload`（後者成日破壞 bfcache 往返快取或者乾脆被跳過）。就算用咗 `pagehide`，瀏覽器都好大機會喺 `async` Promise 完成之前就直接清走成頁——所以離場 hook 務必保持純同步，例如直接射個 `navigator.sendBeacon()`。
+
+<CodeTabs
+  files={[
+    { title: 'node-server.ts', code: nodeShutdownCode },
+    { title: 'browser-unmount.ts', code: browserUnmountCode, region: 'unmount' },
+    { title: 'browser-pagehide.ts', code: browserUnmountCode, region: 'pagehide' },
+  ]}
+/>
+
+## Hook 規則、啟動失敗自動回滾與邊界限制
+
+寫 `onDispose` hook 嗰陣，記實下面幾條底層規則就唔怕中伏：
+
+- **合法登記窗口：** 你只可以喺所屬嗰個 factory 仲行緊、而且成個 app 未開始 `stop()` 之前呼叫 `onDispose()`。同步 factory 一 return 或者拋錯就即刻落閘；非同步 factory 就喺佢回傳嗰個 `Promise` settle 嗰刻落閘。一旦個 factory 行完之後再 call `onDispose()`，會拋出 `onDispose can only be called while the factory is running`；如果開始熄機之後先 call，就會拋出 `Cannot register cleanup after the app has stopped`。
+- **回傳型別只准係 `void` 或 `Promise<void>`：** 清理 hook 必須回傳 `void` 或者 `Promise<void>`——如果回傳咗任何其他值（或者 resolve 出非 `void` 值嘅 `Promise`），TypeScript 喺編譯期就會直接報錯，幫你防住唔小心寫多咗個回傳值。好似 Node 嘅 `http.Server.close()` 會回傳返個 `Server` 實例，記得出面加對大括號包住：`onDispose(() => { server.close() })`。
+- **千祈唔好喺 hook 入面 `await app.stop()`：** 清理 hook 本身就係 `stop()` 完成過程嘅一部分——喺 `onDispose()` 入面反轉頭 `await app.stop()` 會令自己等自己，永遠死鎖。
+- **Hook 報錯與 `AggregateError`：** 就算其中一個 hook 拋錯或者 reject，`stop()` 依然會堅持行埋淨低嗰啲 hook。如果得一個錯誤，會原封不動向外拋出；如果有兩個或以上失敗，就會打包成一個 `AggregateError`（訊息為 `App stop failed`）。
+- **`start()` 半路失敗自動回滾：** 如果 `app.start()` 開機開到一半爆錯，核心會自動呼叫 `stop()` 幫你清走前面已經建立咗嘅資源，然後先向外 reject。單一錯誤會原樣拋出；萬一開機失敗連帶清理都一齊失敗，`start()` 就會 reject 一個 `AggregateError`（訊息為 `App startup and stop failed`）。注意一旦 `start()` 成功完成，之後業務運行期間拋出嘅普通錯誤**唔會**自動觸發停機。
+
+<Callout kind="caution" title="stop() 唔會幫你做啲咩">
+
+`stop()` 淨係負責封鎖後續嘅 `inject()` 同埋行晒登記咗嘅 `onDispose` hook——僅此而已。佢**唔會**幫你死等脫離咗啟動鏈嘅背景 factory、唔會強行切斷飛緊嘅網路 I/O，亦唔會廢除你變數入面已經拎住嘅 JS 物件。幾時停收新 request、幾時觸發 `AbortController.abort()`、點樣排隊優雅收工，全部由你自己嘅業務 code 話事。
+
+</Callout>

@@ -1,0 +1,59 @@
+---
+title: "點揀 Ref 定 Token"
+slug: "architecture"
+part: patterns
+order: 9
+summary: "唔使靠個人口味亂估——單憑模組之間嘅 import 方向，就可以一秒決定應該用自帶實作嘅 Ref 定係零實作嘅 Token。"
+---
+import dddAppServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
+import dddDomainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
+import mvcUserRepoCode from '../../examples/mvc/repositories/user-repository.ts' with { type: 'text' }
+import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' with { type: 'text' }
+
+當你開始用 `dn-ioc` 砌一個真實專案嗰陣，第一個撞到嘅設計問題一定係：某個依賴應該寫成 `provide()` 嘅 `Ref<T>`，定係 `token()` 嘅 `Token<T>`？呢件事完全唔使靠感覺或者團隊個人喜好——**單憑模組嘅 `import` 方向，每一次都可以一秒落決定。**
+
+<CodeTabs
+  files={[
+    { title: 'mvc/services/user-service.ts', code: mvcUserServiceCode },
+    { title: 'mvc/repositories/user-repository.ts', code: mvcUserRepoCode },
+    { title: 'ddd/application/order-service.ts', code: dddAppServiceCode },
+    { title: 'ddd/domain/order.ts', code: dddDomainOrderCode },
+  ]}
+/>
+
+## 模組 Import 方向就係唯一準則
+
+對住準備寫 `inject()` 嗰個檔案，你只需要問自己一條問題：**呢個檔案本身准唔准直接 `import` 背後套具體實作？**
+
+- **准 → 直接用 `provide()`（`Ref<T>`）：** `Ref` 將個識別鍵同預設 factory 包埋喺同一個 export 入面。當 `user-service.ts` 引入 `userRepositoryRef` 嗰陣，會順手將 `user-repository.ts`（以及佢背後 import 嘅 `databaseRef`）直接拉入模組依賴圖。喺經典分層 **MVC** 服務入面，Controller 本身就應該引入 Service、Service 本身就應該引入 Repository，用 `Ref` 啱啱好：唔使拆多堆介面檔、唔使維護中央註冊表，型別仲全自動推斷埋。
+- **唔准 → 用 `token<T>()`（`Token<T>`）：** `Token` 只帶住一個 TypeScript 型別同一條選填嘅診斷字串——入面零 runtime 實作碼。喺 **DDD / 整潔架構** 入面，最內層嘅 `domain/` 負責定義 `OrderRepository` 介面兼匯出 `orderRepositoryToken`，再由最外層嘅 `infra/` 反過嚟引入 `domain/` 並用 `provideFor()` 綁上 SQL 實作。你嘅核心業務邏輯永遠唔會掂到半行 DB driver、HTTP SDK 或者 `infra/` 程式碼。
+
+另外，凡係嗰啲要等到開機嗰刻先至有值嘅嘢——例如環境變數入面嘅 DB URL、第三方 API 金鑰，或者局部子樹嘅動態設定——本身根本寫唔出合理嘅預設 factory，用 `Token` 就最貼切不過。
+
+## 兩者取捨一表睇晒
+
+不妨一路對比上面四個分頁（`mvc/` 對照 `ddd/`），一路睇埋下面張實戰取捨表：
+
+| 比較維度 | `Ref<T>`（`provide()`） | `Token<T>`（`token()` + `provideFor()`） |
+| --- | --- | --- |
+| **編譯期耦合度** | 呼叫方直接 `import` 具體實作模組。 | 呼叫方只 `import` 純契約；由外層模組反過嚟引入契約並綁定實作。 |
+| **接線樣板碼** | 零樣板碼 —— 第一次 `inject()` 即自動喺當前 scope 掛載。 | 顯式綁定 —— 必須喺 `{ providers }` 或 bundle 入面用 `provideFor()` 掛載。 |
+| **測試替換方式** | `provideFor(ref, fakeFactory)` | `provideFor(token, fakeFactory)` —— 用法完全一模一樣。 |
+| **單元測試漏綁假實作嗰陣** | **靜默行返真嘢：** 核心照樣起個真實實例出嚟行。 | **即刻 Fail fast：** `start()` 即場 reject `No provider for token: Name`。 |
+| **錯誤訊息入面個名** | 取自函式名（`provide(function UserService(...) {})`），否則係 `<anonymous>`。 | 取自描述字串（`token('OrderRepository')`），否則係 `<anonymous>`。 |
+| **最啱用喺邊度** | MVC 嘅 Controller / Service / Repository、應用層 Use Case、內部輔助模組。 | DDD 領域 Port、橫切關注點 Port（`Clock`、`Mailer`）、啟動期設定與密鑰。 |
+
+## 同一個專案入面兩樣夾埋用
+
+揀 `Ref` 定揀 `Token` 絕對唔係非黑即白嘅教條——絕大多數真實線上專案都係兩樣夾埋一齊用：
+
+- 就算係最嚴格嘅 DDD 服務，**應用層 Use Case**（`orderServiceRef`）同埋 **`infra/` 內部私有嘅底層 client**（`sqlTableRef`）一樣係直接寫成普通 `Ref`，因為呼叫佢哋嘅人本來就喺外層或者同一層，直接 `import` 係天經地義。只有真正由內層跨出去外層 adapter 嗰道邊界 port，先至需要動用 `token()`。
+- 就算係最直白嘅 MVC 專案，遇到連線字串 `DatabaseUrl` 或者第三方扣數金流 SDK 呢類「單元測試死都唔應該唔小心打真電話出去」嘅外部邊界，一樣可以抽個 `token()` 出嚟守住門口。
+
+<Callout kind="note" title="記住配埋 Linter 鎖實架構邊界">
+
+`dn-ioc` 只負責喺 runtime 解析 handle，佢睇唔到你喺 TypeScript 檔案頭寫咗邊句 `import`。如果你揀咗用 `Token` 嚟保護 `domain/` 唔好掂到 `infra/`，記得順手配返條 Biome 或 ESLint 嘅 `noRestrictedImports` 規則，萬一同事個編輯器自動 import 錯咗方向，CI 一跑即刻攔截到。
+
+</Callout>
+
+跟住落嚟，我哋會用兩個完整嘅多檔案範例，由頭到尾行一次呢兩種架構：想睇直接自頂向下組裝，先揭去 [MVC 架構實戰](/zh-hant-hk/mvc/)；想睇 Port 與 Adapter 依賴倒置，可以跳去 [DDD 與整潔架構實戰](/zh-hant-hk/ddd/)。

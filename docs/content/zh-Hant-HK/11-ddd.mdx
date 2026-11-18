@@ -1,0 +1,199 @@
+---
+title: "DDD 與整潔架構實戰"
+slug: "ddd"
+part: patterns
+order: 11
+summary: "利用零實作嘅 token() port、基礎設施 adapter bundle 同埋 Linter 邊界規則，令 domain 同 application 層徹底擺脫 SQL、HTTP 與第三方 SDK 依賴。"
+---
+import orderServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
+import domainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
+import domainPortsCode from '../../examples/ddd/domain/ports.ts' with { type: 'text' }
+import infraProvidersCode from '../../examples/ddd/infra/providers.ts' with { type: 'text' }
+import sqlOrderRepoCode from '../../examples/ddd/infra/sql-order-repository.ts' with { type: 'text' }
+import systemAdaptersCode from '../../examples/ddd/infra/system-adapters.ts' with { type: 'text' }
+import dddMainCode from '../../examples/ddd/main.ts' with { type: 'text' }
+import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' with { type: 'text' }
+
+當你套核心業務規則要比眼前用緊嘅 SQL driver、電郵供應商或者 HTTP 框架更加長命嗰陣，行 **DDD / 整潔架構（六角形架構）** 就可以將所有外部基建雜務隔絕喺核心模型之外。喺 `dn-ioc` 入面做依賴倒置，完全唔使寫抽象 base class 或者複雜嘅 Container Module：最入面嘅 `domain/` 負責宣告介面同 `token()` port，`application/` 用 `provide()` 編排 Use Case，而最出面嘅 `infra/` 將真實 adapter 打包成單一個 `bundleProviders()` 匯出就搞掂。
+
+<Code
+  title="ddd-project"
+  lang="text"
+  code={`src/
+├── domain/                        # 唔准 import 專案入面任何其他層
+│   ├── order.ts                   # Order 實體 + OrderRepository port 介面與 token
+│   └── ports.ts                   # Clock、Mailer 等橫切 port 介面與 token
+├── application/                   # 只准 import domain/
+│   ├── order-service.ts           # OrderService 用例 Ref，inject domain 層嘅 token
+│   └── order-service.test.ts      # 純記憶體單元測試：綁定輕量假實作
+├── infra/                         # 只准 import domain/
+│   ├── sql-order-repository.ts    # 內部私有 sqlTableRef + sqlOrderRepositoryProvider
+│   ├── system-adapters.ts         # systemClockProvider + smtpMailerProvider
+│   └── providers.ts               # infraProviders = bundleProviders(...)
+└── main.ts                        # Composition Root：唯一同時 import application/ 同 infra/ 嘅地方`}
+/>
+
+## 1. 純淨嘅領域實體與 Port Token（domain/）
+
+`domain/` 資料夾坐鎮成張依賴圖嘅正中心，**絕對唔會 import 專案入面任何其他分層**。除咗 `Order` 呢類領域實體之外，佢仲會定義外部世界必須配合嘅 **Port（端口）**——既包括持久化儲存（`OrderRepository`），亦包括系統時間（`Clock`）同發送電郵（`Mailer`）呢類橫切副作用。
+
+每個 Port 都係一對拍檔：一個 TypeScript `interface`，配一個直接跟介面改名嘅 `token<T>('Name')`。將讀取時間收埋喺 `clockToken` 後面，業務邏輯入面就唔使周圍直接 call `new Date()`，凡係同時間有關嘅狀態轉換喺測試入面都可以做到 100% 穩定可控。
+
+<CodeTabs
+  files={[
+    { title: 'domain/order.ts', code: domainOrderCode },
+    { title: 'domain/ports.ts', code: domainPortsCode },
+  ]}
+/>
+
+## 2. 應用層 Use Case（application/）
+
+`application/` 層負責協調領域實體同各個 Port，去完成好似 `OrderService.submit(id)` 咁嘅業務流程。留意呢度特登採用咗一種好實用嘅混合寫法：
+
+- `OrderService` 攞外部能力嗰陣，清一色透過 **domain token**（`orderRepositoryToken`、`clockToken`、`mailerToken`）注入——佢完全唔知亦唔理啲訂單到底擺喺 Postgres、SQLite 定係記憶體 `Map` 入面。
+- 但係 `orderServiceRef` 自己本身，就係用 `provide(function OrderService({ inject }) { ... })` 匯出成一個 **`Ref`**！點解呢？因為會去呼叫 `application/` 嘅人——無論係 HTTP Controller、CLI 指令、Queue Worker 定係測試——全部都住喺*更外層*，本來就應該直接向內 `import` 業務 Use Case。既然 import 箭嘴方向已經指緊向內，就完全冇必要畫蛇添足再整多個多餘 Token。
+
+<Code title="application/order-service.ts" code={orderServiceCode} />
+
+## 3. 基礎設施 Adapter 與打包（infra/）
+
+`infra/` 資料夾負責 `import` `domain/` 嘅契約，並對住真實嘅 DB driver、第三方 SDK 同資料庫寫出具體實作：
+
+- **將底層 Driver Handle 鎖死喺 `infra/` 內部：** 喺 `sql-order-repository.ts` 入面，`sqlTableRef` 係一個唔對外公開嘅內部 `Ref`，負責揸住底層資料表／連線池狀態兼登記 `onDispose` 清理 hook。`sqlOrderRepositoryProvider` 喺幕後自動注入 `sqlTableRef`，而 `domain/` 同 `application/` 由頭到尾都唔知道有 `sqlTableRef` 嘅存在。
+- **將成層基建打包成 `infraProviders`：** `infra/providers.ts` 將 `sqlTableRef`（確保 root scope 入面所有 adapter 共用同一個底層 client）連同所有 `provideFor()` 綁定，一次過收進單一個 `bundleProviders(...)` handle。
+- **新增 Adapter 只需改兩處：** 之後每次要加新嘅基建 adapter，淨係喺 `infra/` 入面做兩步——寫好佢個 `provideFor()` 綁定，再加一行落 `infraProviders`。出面所有程式入口檔案連一行都唔使郁。
+
+<Callout kind="caution" title="千祈唔好將 DDD Adapter 匯出做 Ref 畀 domain 或 application 引入">
+
+千祈唔好一時貪手快，喺 `infra/` 寫句 `export const sqlOrderRepositoryRef = provide(...)` 然後喺 `domain/` 或 `application/` 入面反轉頭 `import` 佢。咁做唔單止令核心邏輯直接同 SQL driver 綁死，仲會令 import 箭嘴**調轉槍頭指向外層**：因為 `infra/sql-order-repository.ts` 本身已經 import 咗 `domain/order.ts` 入面個 `Order`，一旦 `domain/` 反過嚟 import `infra/`，即刻就會撞正 ES 模組循環依賴（circular import）。記住：Port 一律喺 `domain/` 寫成 `token()`，實作一律喺 `infra/` 用 `provideFor()` 綁上去。
+
+</Callout>
+
+<CodeTabs
+  files={[
+    { title: 'infra/sql-order-repository.ts', code: sqlOrderRepoCode },
+    { title: 'infra/system-adapters.ts', code: systemAdaptersCode },
+    { title: 'infra/providers.ts', code: infraProvidersCode },
+  ]}
+/>
+
+## 4. Composition Root 與多入口重用
+
+`main.ts` 就係成個專案嘅 **Composition Root（組裝根）**——全個 repo 唯一同時 `import` `application/` 同 `infra/`，並透過 `providers: [infraProviders]` 將兩邊扣埋一齊嘅地方。
+
+正因為 `infraProviders` 係一個可以隨處重用嘅打包值，而 `orderServiceRef` 又同傳輸層完全解耦，想喺同一套領域模型上面開多幾個唔同入口，每個都係幾行 code 就搞掂：
+
+- **HTTP API 伺服器（`main.ts`）：** 掛上 `[infraProviders]`，喺 `bootstrapApp()` 入面即場 `inject(orderServiceRef)`（萬一漏綁咗任何一個 Token，一跑 `await app.start()` 就會即刻爆錯，唔會等到真實客落單行到一半先出事），然後交畀路由層處理請求。
+- **背景 Queue Worker 或 CLI 腳本（`worker.ts`）：** 喺獨立入口檔案 call `bootstrapApp(..., { providers: [infraProviders] })`，照樣注入同一個 `orderServiceRef`——如果係跑緊補資料腳本唔想真係發電郵騷擾客，仲可以喺 `infraProviders` *後面* 補多句 `provideFor(mailerToken, dryRunMailer)` 即場蓋走電郵服務。
+- **純單元測試（`application/order-service.test.ts`）：** 完全唔載入 `infraProviders`，淨係綁幾個超輕量嘅記憶體 `provideFor()` 假實作。就算漏綁咗一個 Port，`unitTestApp.start()` 都會即刻 reject `No provider for token: Mailer`。
+
+<CodeTabs
+  files={[
+    { title: 'main.ts', code: dddMainCode },
+    { title: 'application/order-service.test.ts', code: dddUnitTestCode },
+  ]}
+/>
+
+## 5. 用 Biome 或 ESLint 鎖死分層 Import 方向
+
+由於 `dn-ioc` 喺 runtime 只認得 handle，核心本身阻止唔到同事個編輯器自動補全唔小心將 `../infra/sql-order-repository` 拉咗入 `application/order-service.ts`。最穩陣嘅做法係直接用 Linter 規則鎖死 import 箭嘴，一旦有人過界，跑 `lint:check` 嗰陣即刻自動紅燈：
+
+| 分層目錄 | 准許引入嘅專案路徑 | 嚴禁引入嘅專案路徑 |
+| --- | --- | --- |
+| **`domain/`** | 冇（只准引入 `'dn-ioc'` 嘅 `token`） | `application/`、`infra/`、`main.ts` |
+| **`application/`** | `domain/` | `infra/`、`main.ts` |
+| **`infra/`** | `domain/` | `application/`、`main.ts` |
+| **`main.ts`（各個入口檔）** | `application/`、`infra/`、`domain/` | — |
+
+<CodeTabs
+  files={[
+    {
+      title: 'biome.json',
+      lang: 'json',
+      code: `{
+  "overrides": [
+    {
+      "includes": ["src/domain/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../application/**", "../infra/**", "**/application/**", "**/infra/**"],
+                    "message": "domain/ must stay pure and cannot import application/ or infra/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/application/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../infra/**", "**/infra/**"],
+                    "message": "application/ must depend on domain/ tokens, not infra/ adapters."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}`,
+    },
+    {
+      title: 'eslint.config.js',
+      lang: 'js',
+      code: `export default [
+  {
+    files: ['src/domain/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../application/*', '../application/**', '../infra/*', '../infra/**'],
+              message: 'domain/ must stay pure and cannot import application/ or infra/.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/application/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../infra/*', '../infra/**'],
+              message: 'application/ must depend on domain/ tokens, not infra/ adapters.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+]`,
+    },
+  ]}
+/>
+
+睇完兩種專案架構之後，下一篇我哋將單元測試同整合測試擺埋一齊對比——即刻揭去[測試與替身模擬](/zh-hant-hk/testing/)。

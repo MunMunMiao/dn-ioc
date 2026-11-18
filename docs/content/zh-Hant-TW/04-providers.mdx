@@ -1,0 +1,50 @@
+---
+title: "Provider 與 Ref 深入解析"
+slug: "providers"
+part: kernel
+order: 4
+summary: "搞懂 provide() 如何依作用域自動掛載並快取實例、bundleProviders() 如何打包相依綁定，以及安裝順序的判定規則。"
+---
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+只要某個相依項目有明確的單一預設實作，而且呼叫端模組本來就可以直接匯入它——像是設定輔助函式、MVC 架構裡的 Repository 或是業務層 Service——直接用 `provide()` 就對了。它會回傳一個 `Ref<T>`，不僅知道該如何按需建立自己，還會把建立出來的實例快取在擁有它的作用域裡。
+
+<Code title="caching.ts" code={providersCode} region="caching" />
+
+## 自動掛載的 Ref 與根作用域註冊
+
+在許多傳統 DI 函式庫裡，只要忘記去中央容器註冊某個類別，執行期馬上就會噴錯。`provide()` 產生的 `Ref<T>` 省掉了這層樣板程式碼：如果當前作用域（以及它所有的上層父作用域）都還沒綁定 `configRef`，第一次呼叫 `inject(configRef)` 時就會當場把預設工廠裝進當前作用域、執行一次，並把結果快取起來（因此 `first === second` 為 `true`，`created` 也只會是 `1`）。
+
+不過這份便利背後有個非常關鍵的觀念：**`Ref` 是跟著作用域走的，並不是全域單例（global singleton）。**
+
+- 兩次獨立的 `bootstrapApp()` 呼叫之間，永遠不會共用任何實例。
+- 如果兩個平行的 `{ providers }` 子樹各自第一次 `inject` 同一個未曾在上層註冊過的 `Ref`，這兩個子樹就會各自自動掛載並快取一份獨立的副本。
+
+因此，當某個 `Ref` 持有共用狀態或珍貴的系統資源——像是資料庫連線池、記憶體快取，或是上面的 `configRef`——請明確把它列在 `bootstrapApp(..., { providers: [configRef] })` 裡。掛在根作用域依然維持延遲建立（沒人呼叫 `inject()` 就不會執行工廠函式），同時又能確保整個應用程式從頭到尾共用同一份實例。
+
+## 用 bundleProviders() 打包相關綁定
+
+有時候一個功能模組需要一次交付好幾組綁定——例如把公開給外部使用的 Token 跟工廠內部讀取的設定 Token 包在一起，或是把整個 `infra/` 資料夾裡的資料庫與寄信轉接器（adapter）整批匯出。
+
+`bundleProviders(...inputs)` 可以將任意組合的 `Ref`、`provideFor()` 綁定、陣列或巢狀 bundle 收納成單一一個 `ProviderBundle`。使用端只要在 `{ providers }` 裡丟進一行 `provideTheme({ palette: 'ocean' })` 就好，完全不必關心裡面拆了多少內部細節。
+
+請記得，bundle 純粹是一個扁平化的打包輔助工具——它本身**不會**建立獨立的子作用域。裡面的每個項目都會直接安裝進接收這個 bundle 的那個作用域中（若需要隔離的私有作用域，請參考[作用域與私有子樹](/zh-hant-tw/scopes/)）。
+
+<Code title="bundle.ts" code={providersCode} region="bundle" />
+
+## 用 isProvideRef() 檢查控柄真偽
+
+如果你正在寫薄薄一層框架整合膠水程式碼或測試輔助工具，需要在執行期判斷某個未知值是不是 `Ref`，可以用 `isProvideRef(value)` 將型別收斂為 `Ref<unknown>`。
+
+`isProvideRef()` **只會**對真正由 `provide()` 建立出來的 `Ref` 回傳 `true`。一旦傳入 `token()` 鍵、`provideFor()` 綁定、`bundleProviders()` 打包物件、一般數值，或是像 `{ ...sampleRef }` 這樣淺層複製出來的物件，一律都會回傳 `false`。
+
+<Code title="is-provide-ref.ts" code={providersCode} region="isProvideRef" />
+
+## 掛載順序規則與邊界情境
+
+每當核心安裝一份 `providers` 清單時——無論是在頂層 `bootstrapApp()` 還是巢狀的 `{ providers }` 設定項裡——都會遵守以下四條好預測的規則：
+
+1. **建立當下立即建立快照：** 傳給 `provide()`、`provideFor()`、`bundleProviders()` 或 `bootstrapApp()` 的陣列與 bundle 都會當場做一次淺層複製。事後再去修改原本的陣列，也不會影響已經建好的 `Ref`、綁定或 bundle。
+2. **依原始碼順序由左至右攤平：** 巢狀陣列與 `ProviderBundle` 會嚴格按照原始碼由左到右的順序攤平展開。
+3. **同一作用域內後寫蓋前寫（Last-write-wins）：** 在同一個作用域裡重複掛載同一個 key 時，後面的綁定會直接覆蓋前面的綁定——連同前面那個綁定附帶的 `{ providers }` 子樹也會一併被替換。這正是為什麼整合測試可以寫 `[infraProviders, provideFor(repoToken, fakeRepo)]`，輕鬆換掉其中一個轉接器。
+4. **驗證時機的差異：** 傳給 `bootstrapApp()` 的根層級 `providers` 會立即同步驗證；只要混入不合法的值，在產生 `App` 控柄之前就會直接拋出 `Invalid provider input received`。至於掛在個別 `Ref` 或綁定底下的巢狀 `{ providers }`，則會等到該子樹第一次被解析時才進行延遲驗證，並從那次 `inject()` 呼叫拋出 `Invalid provider input received`。

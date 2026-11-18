@@ -1,0 +1,62 @@
+---
+title: "測試與替身模擬"
+slug: "testing"
+part: patterns
+order: 12
+summary: "完全唔使搞 module mock 黑魔法，單靠 provideFor()、後寫覆蓋前寫嘅 bundle override 同埋 await using，就可以並行跑晒獨立隔離嘅單元測試與整合測試。"
+---
+import mvcFakeCode from '../../examples/mvc/user-service-fake-example.ts' with { type: 'text' }
+import testingCode from '../../examples/testing/unit-and-integration.ts' with { type: 'text' }
+
+用 `dn-ioc` 寫測試，完全唔使出動 `vi.mock()`、`mock.module()`，亦唔使每個檔案例牌寫句脆弱嘅 `afterEach(() => container.reset())`。事關全個程式庫根本**冇全域 Container**，每次呼叫 `bootstrapApp()` 都會喺記憶體入面起一張全新、完全隔離嘅依賴圖——幾十個測試檔案一齊並行開跑都唔會互相踩場，而且用 `provideFor()` 一行就可以換走任何 `Token<T>` 或 `Ref<T>`。
+
+<Code title="order-service.unit.test.ts" code={testingCode} region="unit" />
+
+## 用獨立假實作跑單元測試
+
+寫單元測試嗰陣，你只需要開一個專屬嘅 `bootstrapApp()`，然後**淨係裝入**受測目標需要嗰幾個假實作（好似 `order-service.unit.test.ts` 入面嘅 `fakeOrders`、固定時間嘅 `Clock` 同埋 `fakeMailer`）。
+
+無論個 `key` 係 `Token<T>` 定係 `Ref<T>`，`provideFor(key, fakeFactory)` 嘅寫法都完全一樣；**但萬一你唔記得 mock 某個依賴，兩者嘅後果就差好遠：**
+
+| Key 種類 | 單元測試漏寫 `provideFor()` 嗰陣 | 實際影響 |
+| --- | --- | --- |
+| **`Token<T>`** | `app.start()` 即刻 reject `No provider for token: Name`。 | **即刻 Fail fast：** 單元測試絕對唔可能唔小心連咗去真 socket 或者真係寄咗封電郵出去。 |
+| **`Ref<T>`** | 唔當係錯 —— 自動安裝兼執行嗰個 `Ref` 帶住嘅真實 factory。 | **靜默行返真嘢：** 對於純記憶體輔助工具好方便，但如果嗰個漏咗 mock 嘅 `Ref` 會掂外部 I/O 就有風險。 |
+
+你可以將上面份 DDD 單元測試同下面份 MVC 測試（`services/user-service.test.ts`）拍埋一齊睇：用 `provideFor(userRepositoryRef, fakeUserRepository)` 換走 `userRepositoryRef` 一樣咁乾手淨腳，只要你記得將 `userServiceRef` 背後會掂到外部 I/O 嘅 `Ref` 全部換晒做假實作就冇問題。
+
+<Callout kind="tip" title="令測試失敗時嘅錯誤訊息更易睇">
+
+記得幫每個 Token 寫返清楚個介面描述名（例如 `token<Mailer>('Mailer')`），同時幫 `provide()` 嘅 factory 改返個真函式名（例如 `provide(function OrderService({ inject }) { ... })`）。咁樣萬一測試漏綁咗依賴或者唔小心寫出循環依賴，錯誤訊息會直接指明 `OrderService` 同 `Mailer`，唔使對住堆 `<anonymous>` 估餐死。
+
+</Callout>
+
+<Code title="services/user-service.test.ts" code={mvcFakeCode} />
+
+## 整合測試：喺 Bundle 後面局部覆蓋
+
+單元測試負責驗證業務邏輯配假實作行得通；整合測試就負責驗證真實嘅 SQL Repository、資料序列化同業務 Service 夾埋一齊真係夾得埋，同時將 SMTP 電郵或者 Stripe 扣數呢類外部第三方服務換成假替身。
+
+因為 `dn-ioc` 會按源碼順序由左至右攤平陣列同 `ProviderBundle`，而且**同一個 scope 入面寫喺後面嘅綁定會靜靜雞覆蓋前面嗰個**，你可以先裝入成包正式環境用嘅 `infraProviders`，再緊貼喺佢後面覆蓋單一個 Port：
+
+- **正確次序（`[infraProviders, provideFor(mailerToken, fakeMailer)]`）：** 先裝好 `sqlTableRef`、`sqlOrderRepositoryProvider`、`systemClockProvider` 同 `smtpMailerProvider`，跟住用 `fakeMailer` 換走 `mailerToken`。
+- **調轉咗次序（`[provideFor(mailerToken, fakeMailer), infraProviders]`）：** `infraProviders` 喺你個假實作*之後*攤平，結果會無聲無息將 `mailerToken` 蓋返做真實嘅 `smtpMailerProvider`！呢個位千萬要睇清楚次序。
+
+<Callout kind="note" title="喺巢狀子樹入面做局部覆蓋">
+
+喺頂層 `bootstrapApp(..., { providers })` 做嘅覆蓋，會自動對所有住喺 root scope 嘅 service 生效。如果你試過喺某棵子 `{ providers }` 子樹入面覆蓋某個依賴，但用佢嗰個 consumer 一早已經註冊咗喺頂層 root scope，記得要喺子 scope 入面將 consumer 同依賴兩個一齊重新綁定（詳見[作用域與私有子樹](/zh-hant-hk/scopes/)）。
+
+</Callout>
+
+<Code title="order-service.integration.test.ts" code={testingCode} region="integration" />
+
+## 用 await using 幫每個測試自動清場
+
+留意吓 `testOrderSubmitUnit()` 同 `testOrderSubmitIntegration()` 入面嗰句 `await using app = bootstrapApp(...)`：
+
+- 因為 `App` 實作咗 `AsyncDisposable`，一離開個測試函式區塊，TypeScript 就會自動幫你 `await app.stop()`——**就算跑到一半某句 `expect()` 斷言爆咗錯都照樣保證執行。**
+- `sqlTableRef` 入面登記嘅 `onDispose` hook 會喺測試結束前乖乖跑完，自動閂好連線池、timer 或者臨時測試 server，連 `try / finally` 樣板碼都慳返。
+
+如果你個專案環境暫時未開 `await using`，用傳統嘅 `try { await app.start() } finally { await app.stop() }` 包住測試內容效果完全一樣——而且因為 `app.stop()` 係冪等嘅，就算喺清理階段唔小心 call 多咗次都絕對安全。
+
+想隨時翻查某個 API 嘅精準型別簽名，或者對照某條報錯原文搵解法？即刻揭去最後一部分：[公開 API 參考手冊](/zh-hant-hk/api/)同埋[錯誤訊息與排錯指南](/zh-hant-hk/errors/)。

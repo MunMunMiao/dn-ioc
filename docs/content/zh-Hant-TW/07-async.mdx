@@ -1,0 +1,50 @@
+---
+title: "非同步 Provider"
+slug: "async"
+part: kernel
+order: 7
+summary: "不用另外學一套特殊 API 就能寫非同步工廠函式：共用執行中的 Promise、短暫失敗後自動重試、區分啟動等待與背景任務，並為非同步 Token 標好型別。"
+---
+import asyncCode from '../../examples/async/shared-and-background.ts' with { type: 'text' }
+
+建立資料庫連線池、拉取遠端機密設定或是預熱記憶體快取，實在不應該強迫開發者另外換一套 `provideAsync()` / `injectAsync()` 專屬 API。在 `dn-ioc` 裡，你只要直接寫標準的 `async` 工廠函式就好：`inject()` 會回傳標準的 `Promise<T>`，並且讓同一個作用域裡的所有呼叫端共用同一個執行中（in-flight）的 `Promise`。
+
+<Code title="shared-promise.ts" code={asyncCode} region="shared" />
+
+## 共用同一個 Promise 與失敗後自動重試
+
+`inject()` 絕不會多此一舉把同步數值包進 Promise——同步工廠直接回傳 `T`，非同步工廠就回傳 `Promise<T>`。
+
+當 `sharedApp` 在同一個解析作用域裡連續呼叫兩次 `inject(settingsRef)` 時，背後的工廠函式只會執行一次，兩邊拿到的是完全同一個 `Promise` 實例（`first === second` 為 `true`）。你完全不用自己手寫快取鎖定邏輯，去防止五個服務在開機時同時發起五次重複的資料庫連線交握。
+
+那如果非同步 provider 發生錯誤被 reject 呢——比方說遇到短暫的網路逾時？
+
+- **Reject 時自動清除失敗快取：** 只要工廠回傳的 `Promise` 一發生 reject，核心在向外傳遞錯誤之前，會立刻把這筆失敗的執行中紀錄從該作用域的快取裡移除。
+- **運作期間可乾淨重試：** 只要應用程式還沒呼叫 `stop()`，後續在同一個作用域再次呼叫 `inject()` 就會重新執行一次工廠函式，而不會一直卡在同一個壞掉的 rejected Promise。
+
+## 等待啟動完成 vs 非阻塞背景任務
+
+`app.start()` 的規則非常單純：它**只會**等待你的根入口函式，以及根入口函式裡面實際有 `await` 或回傳的 `Promise`。這讓你能精準決定哪些工作必須擋住啟動流程、哪些工作可以丟到背景慢慢跑：
+
+- **關鍵相依項目擋住 `start()`：** 當某項資源還沒就緒前整個服務都不該對外接客時，請在 `bootstrapApp(async ({ inject }) => { ... })` 裡面明確寫上 `await inject(settingsRef)`。一旦它發生 reject，`start()` 會自動執行資源清理回滾並向外 reject。
+- **啟動非阻塞背景任務：** 在根入口函式裡觸發 `inject(warmupRef)` 但*不要 `await` 它*，`app.start()` 就會立刻解析完成，讓 `warmupRef` 繼續在背景執行。記得像 `background-task.ts` 裡的 `warmupTask` 一樣，在入口函式外部用變數接住這個沒有 `await` 的 `Promise`，方便後續觀察結果或捕捉例外錯誤——因為脫離啟動鏈的 Promise 不會由 `start()` 代管。
+
+<Code title="background-task.ts" code={asyncCode} region="background" />
+
+## 替非同步 Token 標註型別
+
+使用 `provide(async () => ...)` 時，TypeScript 看得見 `async` 函式的回傳型別，自然會推論出 `Ref<Promise<T>>`。但 `token()` 本身沒有附帶工廠函式可供推論——因此在定義非同步 Token 時，請直接把 `Promise<...>` 寫進泛型參數裡。
+
+寫成 `token<Promise<Settings>>('Settings')` 後，雙方的型別契約都清清楚楚：呼叫端一看就知道 `inject(settingsToken)` 回傳的是需要 `await` 的 `Promise`，而負責綁定的 `provideFor(settingsToken, ...)` 也會由 TypeScript 自動檢查轉接器是否確實回傳 `Promise<Settings>`。
+
+<Code title="async-token.ts" code={asyncCode} region="asyncToken" />
+
+## 非同步循環相依與關機邊界
+
+- **零死結的循環相依偵測：** 核心會跨越 `await` 邊界追蹤正在執行的非同步相依鏈。如果尚未完成的 provider `A` 正在等待 `B`，而 `B` 又繞一圈回來等待 `A`，`inject()` 會立刻拋出 `Circular dependency detected: A -> B -> A`，絕不會讓整個執行程序永遠卡死。
+
+<Callout kind="caution" title="stop() 不會自動取消執行中的 Promise">
+
+呼叫 `app.stop()` 會立刻擋掉所有*新發起*的 `inject()` 呼叫——包含在 `await` 之後剛醒來的非同步工廠裡再次呼叫 `inject()`。不過，`stop()` 不會等待那些未掛入啟動鏈的背景工廠跑完，也不會主動中斷底層的 `fetch()` 或網路連線 I/O。如果背景工作在關機時需要明確取消，請把 `AbortController` 接進 `onDispose()`——下一章我們馬上來看[生命週期與資源清理](/zh-hant-tw/lifecycle/)。
+
+</Callout>

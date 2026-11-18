@@ -1,0 +1,50 @@
+---
+title: "Provider 與 Ref 詳解"
+slug: "providers"
+part: kernel
+order: 4
+summary: "搞清楚 provide() 點樣按 scope 自動安裝兼快取實例、bundleProviders() 點樣打包依賴，以及掛載順序嘅規則。"
+---
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+只要某個依賴有明確嘅唯一預設實作，而且用家模組可以直接 `import` 佢——例如設定讀取器、MVC 入面嘅 Repository 或者業務 Service——直接用 `provide()` 就最順手。佢會回傳一個 `Ref<T>`，識得喺需要嗰陣自己建立實例，仲會將結果快取喺擁有佢嗰個 scope 入面。
+
+<Code title="caching.ts" code={providersCode} region="caching" />
+
+## 自動安裝嘅 Ref vs 喺 Root 顯式註冊
+
+好多傳統 DI 程式庫一漏咗喺中央 Container 登記某個 class，去到 runtime 就會即刻爆錯。`provide()` 產生嘅 `Ref<T>` 幫你慳返呢浸樣板 code：如果當前 scope（同埋佢所有上層 parent scope）都未綁過 `configRef`，第一次 call `inject(configRef)` 嗰陣就會即場喺當前 scope 裝好預設 factory、執行一次，再將個實例快取起嚟（所以 `first === second` 係 `true`，`created` 亦維持係 `1`）。
+
+不過呢份方便背後有一個好緊要嘅細節：**`Ref` 係跟 scope 走嘅，並唔係全域單例（global singleton）。**
+
+- 兩次獨立嘅 `bootstrapApp()` 呼叫之間，永遠唔會共用任何實例。
+- 如果兩個並排嘅 `{ providers }` 子樹各自第一次 `inject` 一個從未喺上層註冊過嘅 `Ref`，兩個子樹就會各自自動安裝兼快取一份獨立副本。
+
+所以當某個 `Ref` 揸住共用狀態或者珍貴資源——好似資料庫連線池、記憶體快取，或者上面個 `configRef`——記得喺 `bootstrapApp(..., { providers: [configRef] })` 顯式列返佢出嚟。擺喺 root scope 註冊依然係懶載入（冇人 `inject()` 就唔會行個 factory），但可以保證成個 app 上上下下都係共用緊同一份實例。
+
+## 用 bundleProviders() 打包一組相關接線
+
+有時一個功能模組需要將幾條綁定一齊交出去——例如公開畀出面用嘅 Token 加埋內部專用嘅設定 Token，又或者成個 `infra/` 資料夾入面嘅資料庫同電郵 adapter。
+
+`bundleProviders(...inputs)` 可以將任意組合嘅 `Ref`、`provideFor()` 綁定、陣列甚至巢狀 bundle 打包成單一個 `ProviderBundle`。用家喺 `{ providers }` 入面寫一行 `provideTheme({ palette: 'ocean' })` 就搞掂，完全唔使理入面拆咗幾多個內部項目。
+
+要留意嘅係，bundle 純粹係一個攤平打包工具——佢本身**唔會**開一個獨立嘅私有子 scope。入面裝住嘅每一項，都會直接安裝落接收呢個 bundle 嗰個 scope 度（如果想開隔離子樹，請睇[作用域與私有子樹](/zh-hant-hk/scopes/)）。
+
+<Code title="bundle.ts" code={providersCode} region="bundle" />
+
+## 用 isProvideRef() 檢查 Handle 真偽
+
+如果你寫緊薄薄一層框架轉接層或者測試輔助工具，需要喺 runtime 判斷手頭上個未知值係咪 `Ref`，可以用 `isProvideRef(value)` 將型別收窄做 `Ref<unknown>`。
+
+`isProvideRef()` **只會**對真正由 `provide()` 建立出嚟嘅 `Ref` 回傳 `true`。如果傳入 `token()` 鍵、`provideFor()` 綁定、`bundleProviders()` 打包物件、普通 JS 值，或者好似 `{ ...sampleRef }` 咁樣淺複製出嚟嘅物件，一律都會回傳 `false`。
+
+<Code title="is-provide-ref.ts" code={providersCode} region="isProvideRef" />
+
+## 掛載規則與邊界細節
+
+無論係喺 `bootstrapApp()` 定係巢狀嘅 `{ providers }` 選項入面安裝 `providers` 清單，核心都會嚴格跟足下面四條規則：
+
+1. **建立嗰刻即場做快照（Snapshot）：** 傳入 `provide()`、`provideFor()`、`bundleProviders()` 或 `bootstrapApp()` 嘅陣列同 bundle 會即刻做一次淺複製。事後你再改動原本個陣列，都唔會影響已經建立好嘅 `Ref`、綁定或者 bundle。
+2. **按源碼順序由左至右攤平：** 巢狀陣列同 `ProviderBundle` 會嚴格跟足源碼由左至右嘅順序攤平。
+3. **同一 scope 內後寫覆蓋前寫（Last-write-wins）：** 喺同一個 scope 入面重複安裝同一個 key，後面嗰個會靜靜雞取代前面嗰個——連帶前面嗰個綁定附帶嘅 `{ providers }` 子樹都會一併換走。正因為有呢條規則，寫整合測試嗰陣先可以寫 `[infraProviders, provideFor(repoToken, fakeRepo)]`，輕鬆換走單一個 adapter。
+4. **驗證時機有別：** 傳畀 `bootstrapApp()` 嘅頂層 `providers` 會即場同步檢查；一旦混入非法值，未拎到 `App` handle 之前就會即刻拋出 `Invalid provider input received`。至於掛喺某個 `Ref` 或綁定下面嘅巢狀 `{ providers }`，就會去到嗰棵子樹第一次俾人解析嗰陣先做懶檢查，並喺嗰次 `inject()` 拋出 `Invalid provider input received`。

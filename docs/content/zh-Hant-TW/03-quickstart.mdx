@@ -1,0 +1,64 @@
+---
+title: "五分鐘快速上手"
+slug: "quickstart"
+part: start
+order: 3
+summary: "三個小步驟從零組出可運作的依賴圖：定義 provider、啟動應用程式，並在測試裡換掉非同步相依項目。"
+---
+import step1Code from '../../examples/quickstart/step1-provide.ts' with { type: 'text' }
+import step2Code from '../../examples/quickstart/step2-compose.ts' with { type: 'text' }
+import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with { type: 'text' }
+
+剛開始寫的時候，完全不用先規劃一整套複雜的資料夾結構，也不用去某個中央檔案手動註冊一堆類別。我們用三個超直覺的步驟把依賴圖跑起來：先用 `provide()` 包裝普通函式、接著用 `bootstrapApp()` 啟動它，最後在測試裡把非同步相依服務換成測試替身（fake）。
+
+## 1. 用 provide() 定義 Provider
+
+只要丟一個工廠函式給 `provide()`，就會拿到一個帶有完整型別的 `Ref<T>` 控柄。在 `step1-provide.ts` 裡，`configRef` 回傳一個單純的設定物件，而 `greeterRef` 則透過 `{ inject }` 把它取出來，組出一個 `greet()` 方法。
+
+這裡有兩個細節值得馬上注意：
+
+- **完全不用手動標註型別：** `greeterRef` 裡拿到的 `config`，TypeScript 會直接從 `configRef` 的回傳型別自動推論出來，一個字都不用多寫。
+- **此刻還沒有任何程式碼被執行：** 呼叫 `provide()` 只是先記下「未來有人需要它時該怎麼建立實例」，工廠函式本身還不會跑。
+
+<Code title="step1-provide.ts" code={step1Code} />
+
+## 2. 用 bootstrapApp() 啟動依賴圖
+
+接下來，把入口函式交給 `bootstrapApp()` 並呼叫 `await app.start()`。`bootstrapApp()` 會立刻建立一個獨立隔離的應用程式作用域並回傳 `app` 控柄——這時候一樣還沒執行任何工廠函式。
+
+等到呼叫 `await app.start()` 時：
+
+1. 你的入口函式呼叫 `inject(greeterRef)`。
+2. `greeterRef` 在應用程式作用域自動掛載自己，接著呼叫 `inject(configRef)`。
+3. `configRef` 執行一次並快取 `{ greeting: 'hello' }`，隨後 `greeterRef` 快取好 `{ greet }` 物件並印出 `hello, world`。
+
+因為這張小巧的依賴圖完全沒有開啟網路連線、計時器或資料庫連線池，跑完根本不需要呼叫 `app.stop()`——只要 `start()` 結束，交給一般的垃圾回收機制清理就夠了。
+
+<CodeTabs
+  files={[
+    { title: 'step2-compose.ts', code: step2Code },
+    { title: 'step1-provide.ts', code: step1Code },
+  ]}
+/>
+
+## 3. 換成非同步並在測試中注入測試替身
+
+真實專案通常會透過網路載入遠端設定或連線到資料庫，而在單元測試裡我們又希望乾淨俐落地把外部 I/O 換掉。這兩件事在 `dn-ioc` 裡都只要一行就能解決：
+
+- **非同步 provider 直接寫標準 `async` 函式：** 把 `settingsRef` 改成 `async` 後，`inject(settingsRef)` 自然會回傳一個共用的 `Promise` 讓 `greeterRef` 去 `await`。記得把 `bootstrapApp` 的入口函式也標成 `async` 並 `await inject(greeterRef)`，外面的 `await testApp.start()` 才會乖乖等到整個啟動流程完成。
+- **用 `provideFor()` 原地抽換任何相依項目：** 在 `{ providers }` 裡傳入 `provideFor(settingsRef, async () => ({ greeting: 'test-hello' }))`，就能替 `testApp` 換掉 `settingsRef`，而且完全不用動到 `greeterRef` 的程式碼。
+- **乾淨收尾不殘留：** 呼叫 `await testApp.stop()` 會立刻關閉注入通道並執行所有註冊過的清除邏輯，確保資源不會外洩到下一個測試案例。
+
+<Code title="step3-async-and-fake.ts" code={step3Code} />
+
+## 值得養成習慣的三個原則
+
+<Callout kind="note" title="天天都會用到的三條核心規則">
+
+- **在 `start()` 之前先掛好監聽器：** 因為 `bootstrapApp()` 當下不會執行任何工廠函式，在任何網路埠或計時器開啟前你就已經拿到 `app` 了，因此可以先安全地綁好關機監聽器，再呼叫 `await app.start()`。
+- **`start()` 具備冪等性：** 重複呼叫多次 `app.start()` 都會拿到完全同一個 `Promise`，入口函式保證只會執行一次。
+- **入口函式固定回傳 `void`：** 請把啟動工作留在 `bootstrapApp()` 的回呼函式裡完成，不要從裡面往外回傳業務資料。
+
+</Callout>
+
+下一章我們會拆解 [Provider 與 Ref 深入解析](/zh-hant-tw/providers/) 以及 [Token 與實作綁定](/zh-hant-tw/tokens/) 的運作細節；如果你想直接看大型專案怎麼分層，也可以先跳到 [MVC 架構實戰](/zh-hant-tw/mvc/) 或 [DDD 與整潔架構實戰](/zh-hant-tw/ddd/)。

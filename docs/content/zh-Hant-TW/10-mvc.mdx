@@ -1,0 +1,105 @@
+---
+title: "MVC 架構實戰"
+slug: "mvc"
+part: patterns
+order: 10
+summary: "用自帶實作的 Ref 打造完整的 Controller-Service-Repository TypeScript 應用程式，妥善共用根層級連線池，徹底告別肥大的中央容器檔案。"
+---
+import userControllerCode from '../../examples/mvc/controllers/user-controller.ts' with { type: 'text' }
+import databaseCode from '../../examples/mvc/db/database.ts' with { type: 'text' }
+import mvcMainCode from '../../examples/mvc/main.ts' with { type: 'text' }
+import userModelCode from '../../examples/mvc/models/user.ts' with { type: 'text' }
+import userRepoCode from '../../examples/mvc/repositories/user-repository.ts' with { type: 'text' }
+import userServiceCode from '../../examples/mvc/services/user-service.ts' with { type: 'text' }
+import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with { type: 'text' }
+
+開發絕大多數 HTTP API、內部管理後台與標準 CRUD 服務時，經典的分層 **MVC**（`Controller → Service → Repository → Database`）依然是最直覺、最好維護的甜蜜點。因為每一層本來就可以直接匯入正下方那一層的具體模組，整個技術堆疊裡的每個模組都能直接寫成自動掛載的 `Ref<T>`——關注點分離得乾乾淨淨，又不用去維護一個動輒幾百行的中央容器註冊檔。
+
+<Code
+  title="mvc-project"
+  lang="text"
+  code={`src/
+├── models/
+│   └── user.ts                # 純 TypeScript 資料結構介面（零執行期程式碼）
+├── db/
+│   └── database.ts            # 具狀態的連線池 Ref + onDispose 關機清理
+├── repositories/
+│   └── user-repository.ts     # 資料存取層 Ref，注入 databaseRef
+├── services/
+│   ├── user-service.ts        # 商業邏輯層 Ref，注入 userRepositoryRef
+│   └── user-service.test.ts   # 單元測試：用 provideFor() 抽換 userRepositoryRef
+├── controllers/
+│   └── user-controller.ts     # 傳輸協定層 Ref，注入 userServiceRef
+└── main.ts                    # 程式進入點：在根作用域固定掛載 [databaseRef]`}
+/>
+
+## 逐層匯入方向規範
+
+在結構健康的 MVC 專案裡，`import` 方向必須嚴格維持自頂向下單向流動——Controller 不會跳過 Service 直接跑去查資料表，Repository 也絕不會反過來匯入 HTTP Controller：
+
+| 分層 | 檔案 | 匯出項目 | 允許匯入的專案目錄 | 職責分工 |
+| --- | --- | --- | --- | --- |
+| **Models** | `models/user.ts` | `type User` | 無 | 共用的純 TypeScript 介面與資料結構。 |
+| **Database** | `db/database.ts` | `databaseRef` | 無 | 持有底層連線池，並就近註冊 `onDispose()` 清理邏輯。 |
+| **Repositories** | `repositories/user-repository.ts` | `userRepositoryRef` | `db/`、`models/` | 將資料表或集合查詢封裝成具完整型別的方法。 |
+| **Services** | `services/user-service.ts` | `userServiceRef` | `repositories/`、`models/` | 把關欄位驗證與商業規則（如 `Invalid email`、信箱重複檢查）。 |
+| **Controllers** | `controllers/user-controller.ts` | `userControllerRef` | `services/`、`models/` | 將 HTTP/RPC 輸入轉換成 Service 呼叫與回應狀態碼。 |
+| **Entrypoint** | `main.ts` | `app` | `controllers/`、`db/` | 將具狀態的共用 `Ref` 固定在根作用域，並啟動整個應用程式。 |
+
+## 由底層往上走讀整張 MVC 依賴圖
+
+由下往上依序點開底下六個檔案分頁，就能清楚追蹤一筆請求是如何走過整張依賴圖：
+
+1. **`db/database.ts`：** `provide(function Database({ onDispose }) { ... })` 刻意寫成具名函式，萬一遇到循環相依時錯誤訊息會清楚印出 `Database` 而非 `<anonymous>`，同時把 `onDispose` 清理掛鉤直接寫在它負責關閉的資源旁邊。
+2. **`models/user.ts`：** 純粹的 TypeScript `interface User`——連半個 DI 匯入都不需要。
+3. **`repositories/user-repository.ts`：** `userRepositoryRef` 在工廠執行期間呼叫一次 `inject(databaseRef)`，取得 `'users'` 集合後回傳 `{ findByEmail, create }`。
+4. **`services/user-service.ts`：** `userServiceRef` 注入 `userRepositoryRef`，把驗證與唯一性檢查留在商業邏輯層，不讓 HTTP 處理函式變得肥大混亂。
+5. **`controllers/user-controller.ts`：** `userControllerRef` 注入 `userServiceRef`，並整理成 `{ status: 201, body }` 格式回傳。
+6. **`main.ts`：** `bootstrapApp()` 在根作用域掛載 `providers: [databaseRef]`，並在啟動回呼函式裡呼叫 `inject(userControllerRef)`。
+
+<CodeTabs
+  files={[
+    { title: 'db/database.ts', code: databaseCode },
+    { title: 'models/user.ts', code: userModelCode },
+    { title: 'repositories/user-repository.ts', code: userRepoCode },
+    { title: 'services/user-service.ts', code: userServiceCode },
+    { title: 'controllers/user-controller.ts', code: userControllerCode },
+    { title: 'main.ts', code: mvcMainCode },
+  ]}
+/>
+
+## 為什麼連線池應該明確列在根層級 providers
+
+你可能會好奇：既然 `databaseRef` 是用 `provide()` 建立的，就算 `main.ts` 省略掉 `providers: [databaseRef]`，`userRepositoryRef` 裡面呼叫 `inject(databaseRef)` 時不也會自動掛載嗎？
+
+在只有單一扁平作用域的小專案裡確實沒錯——第一次在根作用域觸發 `inject(databaseRef)` 時就會快取在那裡。**但在 `main.ts` 裡明確寫出 `providers: [databaseRef]`，能在專案長大之後幫你避開大雷：**
+
+- 還記得在 [Provider 與 Ref 深入解析](/zh-hant-tw/providers/) 與 [作用域與私有子樹](/zh-hant-tw/scopes/) 提過的規則嗎？一個未曾註冊過的 `Ref`，會自動掛載進*第一個呼叫 `inject` 的那個作用域*裡。
+- 如果未來你在專案裡掛了兩棵彼此隔離的 `{ providers }` 子樹——比方說一個管理後台路由與一個背景排程 Worker——而上層父作用域都沒有預先註冊 `databaseRef`，這兩棵子樹就會默默各自建立一個**完全獨立的資料庫連線池**。
+- 把所有具狀態的共享資源（`databaseRef`、Redis 客戶端、流量限制儲存庫）固定列在根層級 `providers` 中，依然保有延遲建立的特性，同時又能保證整個執行程序裡的所有子樹共用同一個連線池，並在 `await app.stop()` 時統一關閉一次。
+
+## 開發工作流程：新增一個業務資源模組
+
+當你要擴充第二個功能模組——例如 `posts` 文章功能——只要照著固定的四個步驟走一輪，原本的使用者模組一行都不用改：
+
+1. **新增資料模型（`models/post.ts`）：** 匯出 `interface Post { id: string; authorId: string; title: string }`。
+2. **新增儲存庫（`repositories/post-repository.ts`）：** 匯出 `postRepositoryRef = provide(function PostRepository({ inject }) { ... })`，直接注入現有的 `databaseRef`。
+3. **新增服務層（`services/post-service.ts`）：** 匯出 `postServiceRef = provide(function PostService({ inject }) { ... })`，注入 `postRepositoryRef`（若需要檢查作者是否存在，順手一起注入 `userRepositoryRef` 即可）。
+4. **掛載控制器（`controllers/post-controller.ts` → `main.ts`）：** 匯出 `postControllerRef`，接著在 `main.ts` 綁定路由時呼叫 `inject(postControllerRef)`。
+
+注意到了嗎？你完全不需要為了每一個新增的 Repository 與 Service 跑去修改某個中央 DI 清單，而且底層的 `databaseRef` 早已在根層級準備好供所有模組共用。
+
+## 在單元測試中抽換 userRepositoryRef
+
+就算 `userServiceRef` 在檔案開頭直接匯入了 `userRepositoryRef`，單獨測試 `UserService` 時也完全不需要動用模組層級的攔截工具（如 `vi.mock` 或 `mock.module`）。只要在測試的 `bootstrapApp()` 裡傳入 `provideFor(userRepositoryRef, fakeUserRepository)` 就搞定了：
+
+- `userServiceRef` 會收到你用記憶體 `Map` 實作的測試替身，而非真實的資料庫儲存庫。
+- 因為 `userRepositoryRef` 的預設工廠函式從頭到尾都沒有執行，連底層的 `databaseRef` 在測試期間也完全不會被建立。
+
+<Callout kind="caution" title="小心單元測試裡忘記抽換的 Ref">
+
+因為每個 `Ref` 都自帶一套能直接運作的預設工廠函式，在 MVC 單元測試裡萬一漏寫了 `provideFor(someOtherRef, fake)`，**核心並不會報錯**——它會直接幫你建立並執行真實實作。如果你的團隊希望核心商業邏輯徹底擺脫資料庫與第三方 SDK 匯入，*同時*確保測試一漏綁測試替身就立刻快速失敗報錯，請接著看下一章 [DDD 與整潔架構實戰](/zh-hant-tw/ddd/)。
+
+</Callout>
+
+<Code title="services/user-service.test.ts" code={mvcTestCode} />

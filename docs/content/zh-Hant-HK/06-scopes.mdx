@@ -1,0 +1,72 @@
+---
+title: "作用域與私有子樹"
+slug: "scopes"
+part: kernel
+order: 6
+summary: "睇清 inject() 點樣沿住 scope 向上搵、私有 { providers } 子樹點樣隔離局部 override，以及點解邊個擁有 consumer 會決定最終攞到邊份依賴。"
+---
+import case1Code from '../../examples/scopes/case1-fallback.ts' with { type: 'text' }
+import case2Code from '../../examples/scopes/case2-local-override.ts' with { type: 'text' }
+import case3Code from '../../examples/scopes/case3-parent-owned.ts' with { type: 'text' }
+import case4Code from '../../examples/scopes/case4-rebind-both.ts' with { type: 'text' }
+
+九成日常應用只需要喺 `bootstrapApp()` 建立嗰個 root scope 入面搞掂晒所有接線。只有當某棵特定子樹——例如主題預覽小元件、內嵌外掛模組或者獨立背景 worker——需要自己一套局部 override，又唔想污染上層 parent 或隔離鄰居子樹嗰陣，先需要喺個別 `provide()` 或 `provideFor()` 上面掛 `{ providers }`。
+
+## Scope 向上查找嘅三條規矩
+
+喺巢狀 scope 入面，`inject(key)` 到底點樣解析出結果，講到底只係靠三條規則：
+
+1. **由下而上逐層搵，撞中第一個即收工：** `inject(key)` 會先檢查當前 scope，搵唔到就一層層向 parent scope 爬上去，直到搵到綁定為止。如果爬到頂都冇，`Ref` 會喺當前 scope 自動安裝自己，而 `Token` 就會即刻拋出 `No provider for token: Name`。
+2. **`{ providers }` 會開一棵私有子樹：** 寫喺某個 provider 嘅 `{ providers }` 選項入面嘅綁定，只有嗰個 provider 自己同埋佢嘅後代先睇得到。每個綁定都會將實例快取喺擁有佢嗰個 scope 入面（如果佢自己都掛咗 `{ providers }`，就會快取喺嗰個附屬嘅私有子 scope 度）。隔離子樹同上層 parent 永遠睇唔到呢啲局部 override。
+3. **Provider 永遠喺「擁有自己嗰個 scope」入面解析依賴：** Consumer 絕對唔會繼承呼叫者嘅局部 override。如果某個 consumer 係綁喺上層 parent scope，咁佢自己入面每次 call `inject()` 都會由嗰個 parent scope 開始搵起。
+
+下面四個場景全部用同一套 `labelToken`、`rendererRef` 同 `previewRef`——逐個對比吓，睇吓搬動一行設定會點樣改變 `previewRef` 讀出嚟嘅結果。
+
+## 1. 冇局部 Override：向上回退去 Parent
+
+喺 `case1-fallback.ts` 入面，`previewRef` 喺自己嘅私有 `{ providers }` 子樹度裝咗 `rendererRef`，而頂層 root app 就將 `labelToken` 綁做 `'app'`。
+
+當 `previewRef` 呼叫 `inject(rendererRef)` 嗰陣，會喺自己個私有 scope 搵到局部嗰份 `rendererRef`。跟住 `rendererRef` 要攞 `labelToken`：因為預覽子樹入面冇綁過 `labelToken`，查找就會向上爬返去 root scope，最後讀到 `'app'`。
+
+<Code title="case1-fallback.ts" code={case1Code} />
+
+## 2. 喺 Consumer 隔離擺多個局部 Override
+
+而家試吓喺 `previewRef` 嘅私有 `{ providers }` 入面，喺 `rendererRef` 隔離加多句 `provideFor(labelToken, () => 'local')`。
+
+因為 `rendererRef` 係歸 `previewRef` 棵私有子樹管嘅，佢搵 `labelToken` 嗰陣會先睇呢個私有 scope，一搵就即刻撞中 `'local'`。與此同時，喺子樹出面嘅 root 呼叫 `inject(rendererRef)`，會喺頂層另外自動安裝一份獨立嘅 `rendererRef`，照舊讀返 `'app'`。兩邊河水不犯井水，完全唔會互相污染。
+
+<Code title="case2-local-override.ts" code={case2Code} />
+
+## 3. 最易中伏位：Consumer 其實歸上層管
+
+睇實呢個最易中伏嘅位：如果你將 `rendererRef` 搬離 `previewRef`，改為註冊喺頂層 root app 上面，而 `previewRef` 入面淨係留返 `provideFor(labelToken, () => 'local')`，會發生咩事？
+
+就算全個程式入面係 `previewRef` 第一個走去 call `inject(rendererRef)`，而且 `previewRef` 自己明明綁咗 `'local'`——**`previewRef` 印出嚟嘅結果依然係 `'app'`！**
+
+點解會咁？因為 `previewRef` 向上搵 `rendererRef` 嗰陣，發現佢係歸頂層 root scope 擁有嘅，於是就會喺 *root scope* 入面執行佢。一個歸上層管嘅 provider，永遠只會喺上層 scope 解析自己嘅依賴，絕對唔會落返去呼叫佢嗰個子 scope 度攞嘢。
+
+<Code title="case3-parent-owned.ts" code={case3Code} />
+
+## 4. 將 Consumer 同依賴一齊重新綁定
+
+既然頂層 root app 已經裝咗 `rendererRef`，咁點先可以令 `previewRef` 用到讀 `'local'` 嘅版本？答案係喺 `previewRef` 嘅 `{ providers }` 入面，**將 `labelToken` 同 `rendererRef` 兩個一齊重新綁定**。
+
+咁樣 `previewRef` 就會喺自己個私有 scope 入面擁有專屬嘅 `rendererRef`，隔離就係 `'local'` 嘅 Token override；於是 `previewRef` 順利讀到 `'local'`，而出面 root app 個 `rendererRef` 亦繼續穩陣讀返 `'app'`。
+
+<Code title="case4-rebind-both.ts" code={case4Code} />
+
+## Scope 解析對照速查表
+
+| 場景 | Root `providers` | `previewRef` 嘅 `providers` | `previewRef` 讀到咩 | 點解 |
+| --- | --- | --- | --- | --- |
+| **1. 向上回退** | `label = 'app'` | `rendererRef` | `'app'` | 局部 `rendererRef` 向上爬返去 root 攞 `labelToken`。 |
+| **2. 局部 Override** | `label = 'app'` | `rendererRef`、`label = 'local'` | `'local'` | 局部 `rendererRef` 喺同一個私有 scope 搵到隔離嘅 `'local'`。 |
+| **3. 上層擁有陷阱** | `label = 'app'`、`rendererRef` | `label = 'local'` | `'app'` | `rendererRef` 住喺 root，所以佢個 `inject(labelToken)` 喺 root 解析。 |
+| **4. 雙雙重綁** | `label = 'app'`、`rendererRef` | `label = 'local'`、`provideFor(rendererRef, ...)` | `'local'` | Consumer 同依賴都歸 `previewRef` 嘅私有 scope 管。 |
+
+<Callout kind="note" title="巢狀 providers 輸入採用懶檢查">
+
+同頂層 `providers`（`bootstrapApp()` 會即場同步驗證）唔同，掛喺個別 provider 上面嘅巢狀 `{ providers }` 陣列，會去到嗰棵子樹第一次真正俾人解析嗰陣先做檢查。如果巢狀陣列混入咗非法項目，嗰次 `inject()` 就會拋出 `Invalid provider input received`。
+
+</Callout>

@@ -1,0 +1,62 @@
+---
+title: "測試與模擬替身"
+slug: "testing"
+part: patterns
+order: 12
+summary: "不必動用模組攔截黑魔法，只要靠 provideFor()、後寫蓋前寫的 bundle 覆寫與 await using，就能同時並行執行完全隔離的單元測試與整合測試。"
+---
+import mvcFakeCode from '../../examples/mvc/user-service-fake-example.ts' with { type: 'text' }
+import testingCode from '../../examples/testing/unit-and-integration.ts' with { type: 'text' }
+
+用 `dn-ioc` 寫測試，完全不需要動用 `vi.mock()`、`mock.module()`，也不用每個測試檔都寫一堆脆弱的 `afterEach(() => container.reset())` 收尾儀式。因為整個函式庫裡**根本沒有全域容器**，每次呼叫 `bootstrapApp()` 都會在記憶體裡建出一張全新且完全隔離的依賴圖——幾十個測試檔案同時並行開跑也絕不會互相污染，而且透過 `provideFor()` 一行就能換掉任何 `Token<T>` 或 `Ref<T>`。
+
+<Code title="order-service.unit.test.ts" code={testingCode} region="unit" />
+
+## 用獨立測試替身撰寫單元測試
+
+在單元測試裡，你只需要建立一個專屬的 `bootstrapApp()`，並且**只掛載**受測對象實際用到的測試替身（例如 `order-service.unit.test.ts` 裡的 `fakeOrders`、固定時間的 `Clock` 與 `fakeMailer`）。
+
+不論目標 `key` 是 `Token<T>` 還是 `Ref<T>`，`provideFor(key, fakeFactory)` 的用法都完全相同；**但萬一你在單元測試裡忘了替換某個相依項目，兩者的行為差異就非常關鍵：**
+
+| Key 種類 | 單元測試忘記寫 `provideFor()` 時 | 實務影響 |
+| --- | --- | --- |
+| **`Token<T>`** | `app.start()` 立刻以 `No provider for token: Name` 拒絕執行。 | **立即快速失敗：** 單元測試絕不可能不小心連上真實網路埠或真的把信寄出去。 |
+| **`Ref<T>`** | 不視為錯誤 —— 自動掛載並執行該 `Ref` 附帶的真實工廠函式。 | **靜默退回真實實作：** 對純記憶體輔助函式很省事，但若漏換的 `Ref` 會觸發外部 I/O 就有踩雷風險。 |
+
+把上方的 DDD 單元測試與下方的 MVC 測試（`services/user-service.test.ts`）對照來看：用 `provideFor(userRepositoryRef, fakeUserRepository)` 抽換 `userRepositoryRef` 一樣乾淨俐落，只要記得把 `userServiceRef` 會碰到的所有外部 I/O `Ref` 都換成測試替身即可。
+
+<Callout kind="tip" title="讓測試失敗時的錯誤追蹤更好讀">
+
+建議直接拿介面名稱為 Token 命名（如 `token<Mailer>('Mailer')`），並替 `provide()` 裡的工廠函式寫上真實函式名稱（如 `provide(function OrderService({ inject }) { ... })`）。當測試漏綁了某個相依項目或不小心寫出循環相依時，錯誤訊息裡就會清楚顯示 `OrderService` 與 `Mailer`，不用對著滿畫面的 `<anonymous>` 猜半天。
+
+</Callout>
+
+<Code title="services/user-service.test.ts" code={mvcFakeCode} />
+
+## 整合測試：在 Bundle 後方局部覆寫單一服務
+
+單元測試用來驗證商業邏輯搭配測試替身時行為正確；整合測試則用來驗證真實的 SQL 儲存庫、資料序列化與領域服務串在一起確實能協同運作，同時只把像 SMTP 寄信或 Stripe 金流這類第三方外部服務換成測試替身。
+
+因為 `dn-ioc` 會按照原始碼順序由左至右攤平陣列與 `ProviderBundle`，而且**同一作用域內後方的綁定會直接覆蓋前方的綁定**，你可以先掛載整包正式環境使用的 `infraProviders`，再緊接著在它後面覆寫單一一個連接埠：
+
+- **正確順序（`[infraProviders, provideFor(mailerToken, fakeMailer)]`）：** 先裝好 `sqlTableRef`、`sqlOrderRepositoryProvider`、`systemClockProvider` 與 `smtpMailerProvider`，接著用 `fakeMailer` 把 `mailerToken` 換掉。
+- **寫反順序（`[provideFor(mailerToken, fakeMailer), infraProviders]`）：** `infraProviders` 在你的測試替身*之後*才攤平展開，結果會默默把 `mailerToken` 又蓋回真實的 `smtpMailerProvider`！這點在寫整合測試時千萬要注意。
+
+<Callout kind="note" title="在巢狀子樹裡進行覆寫">
+
+在根層級 `bootstrapApp(..., { providers })` 設定的覆寫，會自動套用到所有歸根作用域所有的服務上。如果你是在某棵子層級 `{ providers }` 子樹裡覆寫相依項目，而它的使用端早已註冊在根作用域，請記得在子作用域裡把使用端與相依項目一起重新綁定（詳見[作用域與私有子樹](/zh-hant-tw/scopes/)）。
+
+</Callout>
+
+<Code title="order-service.integration.test.ts" code={testingCode} region="integration" />
+
+## 用 await using 替每個測試自動清理資源
+
+留意 `testOrderSubmitUnit()` 與 `testOrderSubmitIntegration()` 裡面的 `await using app = bootstrapApp(...)` 寫法：
+
+- 因為 `App` 實作了 `AsyncDisposable`，當程式執行離開該函式區塊時，TypeScript 就會自動等待 `app.stop()` 跑完——**就算測試跑到一半某行 `expect()` 斷言失敗拋錯也照樣保證執行。**
+- `sqlTableRef` 註冊的 `onDispose` 掛鉤會在測試函式結束前確實執行完畢，乾淨關閉連線池、計時器或臨時測試伺服器，連 `try / finally` 樣板程式碼都省下來了。
+
+如果專案環境暫時還沒啟用 `await using`，改用傳統的 `try { await app.start() } finally { await app.stop() }` 包住測試內容也能達到完全相同的效果——而且因為 `app.stop()` 具備冪等性，就算在測試收尾階段不小心多呼叫一次也完全安全。
+
+想隨時查閱某個 API 的精確型別簽名，或是比對某句錯誤訊息找解法嗎？請翻開最後一個單元的[公開 API 參考手冊](/zh-hant-tw/api/)與[錯誤訊息與除錯指南](/zh-hant-tw/errors/)。

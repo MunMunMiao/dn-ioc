@@ -1,0 +1,121 @@
+---
+title: "公開 API 參考手冊"
+slug: "api"
+part: reference
+order: 13
+summary: "完整列出全部六個執行期函式、十五個公開 TypeScript 型別，以及凍結不透明控柄的參數簽名與行為規範。"
+---
+import signaturesCode from '../../examples/api/signatures.ts' with { type: 'text' }
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+`dn-ioc` 對外提供的所有功能全都直接從 `'dn-ioc'` 主入口匯出——總共包含六個執行期函式與十五個 TypeScript 型別，沒有額外的子路徑匯入，也沒有任何模組層級的全域副作用。寫專案時只要想確認某個參數型別、回傳值或控柄行為限制，隨時翻開這一章核對就對了。
+
+<Code title="functions.ts" code={signaturesCode} region="functions" />
+
+## 執行期函式（Runtime Functions）
+
+### `token<T>(description?)`
+
+**簽名：** `function token<T>(description?: string): Token<T>`
+
+建立一個只攜帶 TypeScript 型別 `T`、不含任何執行期實作邏輯的純相依性識別鍵。
+
+- **`description`** *（選填 `string`）*：供人類閱讀的診斷標籤，會顯示在 `No provider for token: Name` 與 `Circular dependency detected: ...` 錯誤訊息中。若省略或傳入空字串，診斷訊息會印出 `<anonymous>`。請注意，兩次獨立的 `token('Same')` 呼叫永遠會產生兩個截然不同的獨立識別鍵——識別身分絕不會取決於描述字串內容。
+- **非同步契約寫法：** 請把 `Promise` 直接放進型別參數 `T` 裡（例如 `token<Promise<Settings>>('Settings')`），讓呼叫 `inject()` 的一端與綁定 `provideFor()` 的一端對非同步回傳型別達成一致。
+
+### `provide<T>(factory, options?)`
+
+**簽名：** `function provide<T>(factory: Factory<T>, options?: ProviderOptions): Ref<T>`
+
+將 `factory` 包裝成一個具備自動掛載能力的 `Ref<T>` 控柄。
+
+- **`factory`**：`(ctx: Context) => T`。呼叫 `inject()` 時，若當前作用域及其所有上層父作用域都尚未綁定此 `Ref`，它就會把預設工廠掛載進當前作用域、執行一次並快取結果（若為 `async` 工廠，則共用同一個執行中的 `Promise`）。同步拋錯與非同步 reject **不會**被寫入快取，只要應用程式仍在運作中，後續再次呼叫 `inject()` 都能乾淨重試。
+- **診斷名稱：** 直接取自 `factory.name`（例如 `provide(function UserService(ctx) { ... })` 會顯示 `UserService`，而未命名的行內箭頭函式則會顯示 `<anonymous>`）。
+- **`options?.providers`**：選填的私有子作用域樹，僅對此 `factory` 及其後代可見。會在呼叫 `provide()` 當下建立淺層快照，並等到該子樹首次被解析時才進行延遲驗證。
+
+### `provideFor<T>(key, factory, options?)`
+
+**簽名：** `function provideFor<T>(key: InjectKey<T>, factory: Factory<T>, options?: ProviderOptions): ProviderDef<T>`
+
+將具體實作 `factory` 綁定至指定的 `key`——同時接受 `Token<T>` **或** `Ref<T>`——並回傳一個可放入 `{ providers }` 或 `bundleProviders()` 的 `ProviderDef<T>`。
+
+- 呼叫 `provideFor()` 當下就會立即驗證 `key`；若傳入非正牌 `Token` 或 `Ref` 的值，會立刻拋出 `Invalid inject key received`。
+- **`options?.providers`**：選填的私有子作用域樹，僅對此綁定的 `factory` 及其後代可見；建立當下立即建立快照。
+
+### `bundleProviders(...inputs)`
+
+**簽名：** `function bundleProviders(...inputs: ProviderInput[]): ProviderBundle`
+
+將任意組合的 `Ref`、`ProviderDef` 綁定、巢狀陣列與其他 `ProviderBundle` 打包成單一可重用的 `ProviderBundle`。
+
+- 建立當下會立即淺層複製傳入的陣列，後續修改原始陣列不會影響已建好的 bundle。
+- 安裝 bundle 時會依原始碼順序由左至右攤平，直接掛載進接收它的那個作用域中——它本身**不會**建立獨立隔離的子作用域。
+
+### `isProvideRef(value)`
+
+**簽名：** `function isProvideRef(value: unknown): value is Ref<unknown>`
+
+型別守衛（type guard）函式：**唯有**當 `value` 是由 `provide()` 實際建立的正牌 `Ref` 時才會回傳 `true`。傳入 `Token`、`ProviderDef`、`ProviderBundle`、基本型別、`null` 或複製出來的物件（`{ ...someRef }`）時，一律回傳 `false`。
+
+### `bootstrapApp(fn, options?)`
+
+**簽名：** `function bootstrapApp(fn: BootstrapAppFn, options?: BootstrapAppOptions): App`
+
+建立一個獨立隔離的根作用域，同步驗證並安裝 `options?.providers`，接著回傳 `App` 控柄——此時**還不會**執行入口函式 `fn` 或任何一個 provider 工廠函式。
+
+- **`fn`**：`(ctx: Context) => void | Promise<void>`。會在呼叫 `app.start()` 時執行，回傳值型別必須為 `void` 或 `Promise<void>`。
+- **`options?.providers`**：掛載於根層級的綁定、`Ref`、陣列與 bundle。一旦含有不合法的項目，會在回傳 `App` 控柄之前同步拋出 `Invalid provider input received`。
+
+## Context 與 App 生命週期介面
+
+### Context（`InjectFn` 與 `OnDisposeFn`）
+
+每一個 provider 的 `Factory<T>` 與 `BootstrapAppFn` 都會收到一個包含兩個函式的 `Context` 物件：
+
+- **`inject: InjectFn`**（`<T>(key: InjectKey<T>) => T`）—— 從該 provider 所屬的作用域開始往上查找並解析 `key`。同步工廠直接回傳值，非同步工廠則回傳共用的 `Promise`。即使工廠函式本身已執行完畢，只要還沒呼叫 `app.stop()`，在回傳出去的方法裡面依然可以繼續呼叫 `inject()`。
+- **`onDispose: OnDisposeFn`**（`(fn: () => void | Promise<void>) => void`）—— 註冊一個會在 `app.stop()` 期間依 LIFO（後進先出）順序執行的清理掛鉤。**僅限**在所屬工廠函式正在執行期間、且尚未呼叫 `stop()` 前呼叫。回傳 `void` 或 `Promise<void>` 以外的任何型別都會在 TypeScript 編譯期直接報錯——遇到本身有回傳值的關閉呼叫，請外包一層大括號（例如 `onDispose(() => { server.close() })`）。
+
+### App（`start`、`stop` 與 `AsyncDisposable`）
+
+`bootstrapApp()` 回傳的 `App` 控柄公開了三個成員：
+
+- **`start(): Promise<void>`** —— 執行一次根入口回呼函式，並等待它回傳的 `Promise`。同時並行或重複呼叫都會回傳完全同一個 `Promise`。若啟動中途失敗，`start()` 會先自動執行 `stop()` 回滾已取得的資源，接著才向外 reject。一旦呼叫過 `stop()`，再次呼叫 `start()` 就會直接以 `Cannot start an app that has been stopped` 拒絕執行。
+- **`stop(): Promise<void>`** —— 先同步關閉整個應用程式裡所有的 `inject()`，接著依後進先出順序逐一等待已註冊的 `onDispose` 掛鉤執行完畢。同時並行或重複呼叫均具備冪等性。即使其中某個掛鉤失敗，其餘尚未執行的掛鉤仍會全部跑完。
+- **`[Symbol.asyncDispose](): Promise<void>`** —— 指向完全同一個 `stop` 函式，讓 `await using app = bootstrapApp(...)` 能在離開區塊時自動關閉並清理應用程式。當執行環境支援原生 `Symbol.asyncDispose` 時，`App` 會定義 `[Symbol.asyncDispose]`；在尚未支援原生 symbol 的舊版執行環境（例如 Node 18）上，則會自動退回定義 `[Symbol.for('Symbol.asyncDispose')]`，完美對應 TypeScript 降級編譯 `await using` 時的查找邏輯。
+
+<Code title="types.ts" code={signaturesCode} region="types" />
+
+## 控柄與輔助工具型別
+
+| 匯出型別 | 定義 / 結構 | 用途說明 |
+| --- | --- | --- |
+| `Token<T>` | 帶有型別標記（Branded）的不透明介面，攜帶型別 `T` | `token<T>()` 回傳的契約識別鍵型別。 |
+| `Ref<T>` | `extends Token<T>`（帶有 ref 專屬標記） | `provide()` 回傳的自動掛載控柄型別。 |
+| `RefType<T>` | `T extends Ref<infer U> ? U : never` | 從 `typeof someRef` 萃取出解析後的實例型別 `U` —— 非常適合用來標註測試替身的型別，免去重複手寫介面的麻煩。 |
+| `InjectKey<T>` | `Token<T> \| Ref<T>` | `inject()` 與 `provideFor()` 接受的所有合法查找或綁定目標。 |
+| `ProviderDef<T>` | 帶有型別標記的不透明介面，攜帶型別 `T` | `provideFor()` 回傳的明確綁定物件型別。 |
+| `ProviderBundle` | 帶有型別標記的不透明介面 | `bundleProviders()` 回傳的打包控柄型別。 |
+| `ProviderInput` | `Ref<unknown> \| ProviderDef<unknown> \| ProviderBundle \| readonly ProviderInput[]` | `providers` 與 `bundleProviders()` 接受的任何可安裝項目或任意深度巢狀陣列。 |
+| `ProviderOptions` | `{ providers?: readonly ProviderInput[] }` | `provide()` 與 `provideFor()` 用來宣告私有子樹的設定物件型別。 |
+| `BootstrapAppOptions` | `{ providers?: readonly ProviderInput[] }` | `bootstrapApp()` 用來掛載根作用域綁定的設定物件型別。 |
+| `InjectFn` | `<T>(key: InjectKey<T>) => T` | `Context` 內 `ctx.inject` 的函式型別。 |
+| `OnDisposeFn` | `(fn: () => void \| Promise<void>) => void` | `Context` 內 `ctx.onDispose` 的函式型別。 |
+| `Factory<T>` | `(ctx: Context) => T` | Provider 工廠函式簽名。 |
+| `BootstrapAppFn` | `(ctx: Context) => void \| Promise<void>` | `bootstrapApp()` 的根啟動回呼函式簽名。 |
+
+## 凍結不透明控柄的底層語義
+
+由 `token()`、`provide()`、`provideFor()` 與 `bundleProviders()` 回傳的每一個控柄，在執行期都是一個完全凍結的空物件（`Object.freeze({})`），沒有任何自有可列舉屬性，也沒有任何自有 symbol 屬性。所有內部中繼資料皆儲存在核心私有的 `WeakMap` 中：
+
+- **禁止動態修改屬性：** 在嚴格模式下嘗試對控柄新增或覆寫屬性，會直接拋出 `TypeError`。
+- **拒絕複製與偽造物件：** 使用展開運算子或物件複製（例如 `{ ...sampleRef }`、`Object.assign({}, myToken)`）會產生一個不存在於核心 `WeakMap` 裡的新物件參考。將該複製品傳給 `isProvideRef()` 會回傳 `false`；傳給 `inject()` 或 `provideFor()` 會拋出 `Invalid inject key received`；將複製出來的綁定或 bundle 放進 `providers` 則會拋出 `Invalid provider input received`。
+
+<Callout kind="note" title="服務可信賴程式碼的程序內核心，而非安全沙盒">
+
+不透明控柄的設計目的是防止意外修改屬性、誤遭序列化以及跨套件脆弱的鴨子型別（duck-typing）判斷；它**不是**用來在同一個 JavaScript 執行隔離環境中抵禦不可信程式碼的安全邊界。
+
+</Callout>
+
+想查閱核心可能拋出的每一句執行期錯誤訊息原文以及對應修法？請翻到最後一章[錯誤訊息與除錯指南](/zh-hant-tw/errors/)。
+
+<Code title="opaque-handles.ts" code={providersCode} region="isProvideRef" />

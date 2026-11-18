@@ -1,0 +1,61 @@
+---
+title: "概覽與設計理念"
+slug: ""
+part: start
+order: 1
+summary: "建基於普通 factory function 嘅超輕量 TypeScript 依賴注入核心——零 Decorator、零 Reflection、零全域 Container。"
+---
+import minimalCode from '../../examples/overview/minimal.ts' with { type: 'text' }
+
+當個 TypeScript 專案越寫越大，將 config 物件、DB client 同埋各種 service 一層層塞入五六層 function 參數度傳落去，真係寫到人都癲；而且寫單元測試嗰陣明明只係想換走一個依賴，冇理由為咗咁少事去搞 module mock 黑魔法或者成個 repo 掛滿 class Decorator。如果你想單靠最普通嘅 TypeScript function 就將依賴關係駁得清清楚楚，又唔想引入任何隱形 runtime 魔法，`dn-ioc` 就係專門幫你解決呢件事。
+
+<Code title="minimal.ts" code={minimalCode} />
+
+## 講白啲，Provider 即係普通 Function
+
+只要你識寫一個識 return 值嘅普通 function，其實你已經識用 `dn-ioc`。唔使繼承任何 base class，唔使掛 `@Injectable()` Decorator，唔使喺 `tsconfig` 開 `emitDecoratorMetadata`，更加唔使裝 `reflect-metadata` 呢類 polyfill，慳返好多無謂功夫。
+
+每一個 provider 都只係一個再普通不過嘅 `(ctx: Context) => T` 工廠函式（factory function）：
+
+- 喺參數入面拎到 `{ inject, onDispose }`，要用其他依賴就直接 call `inject()` 攞，最後 return **任何 TypeScript 值**都得——普通 object literal、function、primitive 基本型別、class 實例，甚至 `Promise` 都完全冇問題。
+- `bootstrapApp()` 負責幫你砌好一個獨立隔離嘅 root scope，仲會即刻畀返個 `App` handle 你，呢一刻連一行 factory code 都未開始行。
+- 直至你真正 call `await app.start()`，成張依賴圖先會開始執行。好似上面 `minimal.ts` 咁，入面既冇開 socket port、又冇掛 timer 或者 file handle，行完連 `app.stop()` 都唔使 call。
+
+<Callout kind="tip" title="Root factory 負責開工做嘢，唔會向外 return 結果">
+
+交畀 `bootstrapApp()` 嘅入口 function，回傳型別一定要係 `void` 或者 `Promise<void>`。你可以當佢係成個程式嘅 `main()`：喺入面 `inject()` 頂層依賴、撻着業務流程就夠，唔係計個結果出嚟 return 畀出面。
+
+</Callout>
+
+## 六個原語，就係成套 API
+
+成個公開 runtime API 加埋得六個 function。睇明佢哋點樣夾埋一齊用之後，再冇任何隱藏設定層要死記：
+
+| Function | 產生咩出嚟 | 幾時用佢 |
+| --- | --- | --- |
+| `provide(factory, options?)` | `Ref<T>` | 包住一個帶預設實作嘅 factory，第一次 `inject()` 嗰陣自動喺當前 scope 安裝兼快取。 |
+| `token<T>(description?)` | `Token<T>` | 宣告一個純型別契約（contract），本身唔帶任何預設實作。 |
+| `provideFor(key, factory, options?)` | `ProviderDef<T>` | 幫 `Token<T>` 綁上真實實作，或者喺測試同局部 override 嗰陣換走某個 `Ref<T>`。 |
+| `bundleProviders(...inputs)` | `ProviderBundle` | 將一組相關嘅綁定同 `Ref` 打包埋一齊，用家一行就可以裝晒成層依賴。 |
+| `isProvideRef(value)` | `value is Ref<unknown>` | 喺 runtime 檢查一個未知值係咪真係由 `provide()` 產生出嚟嘅正牌 `Ref`。 |
+| `bootstrapApp(fn, options?)` | `App` | 組裝一張獨立嘅 app 依賴圖，支援 `start()`、`stop()` 同埋 `await using` 自動執手尾。 |
+
+## 只要行到 JavaScript 嘅地方就用得
+
+`dn-ioc` 零外部依賴，minify 之後只有 `4.8 kB`（gzip 完得 `1.9 kB`）。
+
+更緊要嘅係，個核心**完全唔掂任何平台專屬 API**——唔讀 `process`、唔掂 DOM 全域變數、亦唔會自己開 timer。同一套依賴圖搬去 Node.js、Bun、Deno、瀏覽器、Web Worker，甚至 Serverless 同 Edge runtime，一行 code 都唔使改就照行如儀。因為每個平台嘅熄機訊號都唔同樣，核心唔會幫你亂估；需要優雅收工嗰陣，由你自己將 `app.stop()` 駁落對應 runtime 嘅 signal 或者元件 unmount hook 就得（詳見[生命週期與資源清理](/zh-hant-hk/lifecycle/)）。
+
+## dn-ioc 刻意唔包啲咩
+
+要令個核心保持細粒又穩陣，就要將「依賴接線」同「應用程式控制流」條界畫得好清。`dn-ioc` 刻意**唔包**下面呢啲嘢：
+
+- **唔搞 Decorator、Reflection 同全域 Container：** 每次 call `bootstrapApp()` 都會起一張完全獨立嘅依賴圖，並行跑單元測試嗰陣絕對唔會因為爭奪全域狀態而互相干擾。
+- **唔搞架構排場：** 冇 Module class、冇內建 HTTP request-scoped 子容器、冇 multi-bindings 陣列注入，亦唔會偷偷地幫個 process 掛 OS signal listener。
+- **唔搞魔法取消或者廢除物件：** Call `stop()` 會即刻封鎖後續嘅 `inject()` 兼執行你登記咗嘅清理 hook，但唔會幫你強行中斷飛緊嘅網路 I/O、唔會死等冇被 `await` 嘅背景 factory 行完，亦唔會廢除你手頭上已經拎住嘅 JS 物件。幾時停收新 request、`AbortController` 點傳落去、熄機排空次序點走，話事權全部留返喺你自己手入面。
+
+<Callout kind="note" title="凍結嘅不透明 Handle，唔係安全沙盒">
+
+`token()`、`provide()`、`provideFor()` 同 `bundleProviders()` 回傳嘅 handle 全部都係凍結咗嘅不透明物件（frozen opaque objects），由核心喺內部追蹤。用 spread 語法複製一個 handle（例如 `{ ...configRef }`）係行唔通嘅——核心會直接拒收複製出嚟嘅冒牌物件。另外記住，`dn-ioc` 係畀同一個 process 入面嘅可信業務 code 用嘅核心，並唔係隔離唔可信腳本嘅安全沙盒。
+
+</Callout>

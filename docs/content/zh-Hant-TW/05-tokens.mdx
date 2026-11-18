@@ -1,0 +1,50 @@
+---
+title: "Token 與實作綁定"
+slug: "tokens"
+part: kernel
+order: 5
+summary: "用 token() 宣告零實作的純型別契約、用 provideFor() 接上具體實作，並讓錯誤除錯訊息保持清晰好讀。"
+---
+import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { type: 'text' }
+
+當需要使用某個相依項目的程式碼「不應該匯入」——或是當下根本還不知道——背後的具體實作是什麼時，就是 `token<T>()` 登場的時候了。像是資料庫連線網址這類執行期機密設定、可抽換的 UI 主題，以及純粹的 DDD 領域連接埠（port）都非常適合這種寫法：先宣告一個帶型別的契約佔位符，稍後再透過 `provideFor()` 把真實的值綁上去。
+
+<Code title="bound-token.ts" code={tokenBindingCode} region="bound" />
+
+## 用 token() 與 provideFor() 宣告契約
+
+`provide()` 會把識別鍵與預設工廠函式綁在一起，而 `token<T>(description?)` 則**只建立識別鍵本身**。它裡面沒有半行執行期實作邏輯，也不會連帶匯入任何外部模組——TypeScript 負責記住型別 `T`，而選填的 `description` 字串則是為了在拋出錯誤時提供人類一眼能看懂的名稱。
+
+想補上對應的實作，只要把 Token 與工廠函式傳進 `provideFor(key, factory, options?)` 即可：
+
+- 在 `bound-token.ts` 中，`prefixToken` 宣告了外部必須提供一個 `string`。
+- `formatterRef` 直接呼叫 `inject(prefixToken)`，完全不需要知道這串前綴究竟來自環境變數、設定檔還是測試替身。
+- `boundApp` 在啟動時掛載了 `provideFor(prefixToken, () => '[app] ')`，因此 `formatterRef` 順利印出 `[app] ready`。
+
+順帶一提，`provideFor()` 接受任何 `InjectKey<T>`——代表 **`Token<T>` 與 `Ref<T>` 都能直接傳進去**。不論是在正式環境替抽象介面綁上真實轉接器，還是在測試裡換掉某個具體的 `Ref`，用的都是完全同一個輔助函式。
+
+## 忘記綁定 Token 時立即快速失敗
+
+由於 `Token<T>` 本身沒有任何預設工廠函式作為後援，一旦注入某個在當前作用域與所有上層父作用域都未曾綁定過的 Token，核心就會立刻拋出錯誤。在 `unbound-token.ts` 裡，`unboundApp.start()` 會直接以 `No provider for token: DatabaseUrl` 拒絕執行——對應格式為 `No provider for token: Name`，其中的 `Name` 就是傳給 `token()` 的描述字串。
+
+<Callout kind="tip" title="在入口工廠裡預先注入頂層相依服務">
+
+建議在 `bootstrapApp()` 的根入口函式裡，主動 `inject` 應用程式進入點會用到的頂層 Controller、路由或背景 Worker。這樣一來，萬一漏寫了某個 `provideFor()` 綁定，`await app.start()` 一啟動就會立刻失敗報錯——不用等到正式上線後第一個真實使用者請求打進來才當場爆炸。
+
+</Callout>
+
+<Code title="unbound-token.ts" code={tokenBindingCode} region="unbound" />
+
+## 替 Token 與工廠函式取好名字，除錯不瞎猜
+
+當某個 Token 忘了綁定，或是兩個 provider 不小心互相依賴形成無窮迴圈（`Circular dependency detected: A -> B -> A`）時，清楚好讀的錯誤訊息能省下大量追查時間。錯誤訊息裡的名稱來源規則如下：
+
+- **Token 使用描述字串：** 建議直接拿對應的介面或設定名稱來命名，例如 `token<OrderRepository>('OrderRepository')` 或 `token<string>('DatabaseUrl')`。若省略不寫（`token<string>()`），錯誤訊息就會顯示 `<anonymous>`。
+- **Ref 讀取 `factory.name`：** `provide()` 沒有額外的名稱參數，而是直接讀取 JavaScript 函式本身的 `.name` 屬性。寫成具名函式 `provide(function Formatter({ inject }) { ... })` 就能讓錯誤訊息清楚顯示 `Formatter`；如果直接寫成匿名箭頭函式（`provide(({ inject }) => ...)`），因為函式本身沒有名字，錯誤訊息就會印出 `<anonymous>`。
+
+<Callout kind="note" title="程式碼壓縮工具與不合法 Key 檢查">
+
+- **壓縮工具小提醒：** 因為 `Ref` 的診斷名稱來自 `factory.name`，若打包或壓縮工具（minifier）改寫或移除了函式名稱（除非開啟 `keepNames`），循環相依錯誤裡顯示的名字也會跟著變動。相對地，傳給 `token('Name')` 的描述是一般字串，壓縮後依然會完整保留。
+- **不透明控柄檢查：** 若把 `null`、基本型別、`ProviderDef`、`ProviderBundle`，或是淺層複製出來的物件（例如 `{ ...prefixToken }`）傳給 `inject()` 或 `provideFor()`，核心會立刻拋出 `Invalid inject key received`。
+
+</Callout>

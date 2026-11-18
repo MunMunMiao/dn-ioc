@@ -1,0 +1,76 @@
+---
+title: "生命週期與資源清理"
+slug: "lifecycle"
+part: kernel
+order: 8
+summary: "透過後進先出的 onDispose() 清理掛鉤、啟動失敗自動回滾、await using 語法與各平台關機訊號，乾淨釋放網路埠、連線池與計時器。"
+---
+import disposeAndUsingCode from '../../examples/lifecycle/dispose-and-using.ts' with { type: 'text' }
+import nodeShutdownCode from '../../examples/lifecycle/node-server-shutdown.ts' with { type: 'text' }
+import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' with { type: 'text' }
+
+當 `app.start()` 成功執行完畢後，核心絕不會擅自幫你把應用程式停掉——到底需不需要呼叫 `app.stop()`，完全由你自己決定。像是一次性的 CLI 小工具，或是關掉瀏覽器分頁就一起結束的整頁前端應用，本來就不需要特別呼叫 `stop()`，作業系統或分頁關閉時自然會回收所有資源。只有當**外部環境比這張依賴圖活得更久**時——例如長時間佔用網路埠與資料庫連線池的後端伺服器、彼此隔離的測試案例，或是在頁面不重新整理的前提下動態卸載的前端元件——才需要派上 `onDispose()` 與 `app.stop()`。
+
+<Code title="dispose.ts" code={disposeAndUsingCode} region="dispose" />
+
+## 關閉注入通道與 LIFO 反序清理
+
+呼叫 `app.stop()` 時，核心會嚴格依照順序執行兩件事：
+
+1. **同步關閉整個應用程式裡所有的 `inject()`：** 在任何微任務（microtask）開始跑之前，整個應用程式裡所有的 `inject()` 控柄都會永久關閉。此後任何 `inject()` 呼叫——就算是讀取已經快取好的實例，或是在私有子樹裡面（例如上面的 `service.read()`）——都會立刻拋出 `Cannot inject after the app has stopped`。
+2. **依後進先出（LIFO）順序逐一執行 `onDispose` 掛鉤：** 越晚註冊的清理函式會越先執行，一個接一個依序跑完。如果你的資料庫連線池先註冊、HTTP 伺服器後註冊，`stop()` 時就會先關掉 HTTP 伺服器停止接客，接著才排空並關閉資料庫連線池。
+
+正因為執行清理掛鉤時 `inject()` 已經關閉了，**請務必在註冊 `onDispose()` 之前，先把需要的相依實例存進區域變數裡**——就像 `dispose.ts` 裡面的 `const store = inject(storeRef)` 一樣。
+
+重複或同時並行呼叫 `app.stop()` 具備冪等性：所有呼叫端都會拿到完全同一個 `Promise`，且每個清理掛鉤保證只會執行一次。一旦應用程式停止後，若再次呼叫 `app.start()`，就會直接以 `Cannot start an app that has been stopped` 拒絕執行。
+
+## 用 await using 自動釋放資源
+
+每一個 `App` 都實作了 `AsyncDisposable`——當執行環境支援原生的 `Symbol.asyncDispose` 時會直接定義 `[Symbol.asyncDispose]`；若在尚未支援原生 symbol 的舊版執行環境上，則會自動退回使用 `[Symbol.for('Symbol.asyncDispose')]`，讓 TypeScript 5.2+ 降級編譯出來的 `await using` 語法照樣能順利找到它。
+
+在測試案例、CLI 批次任務，或是像 `runScopedTask()` 這類單次工作流程裡，只要寫上 `await using app = bootstrapApp(...)`，離開區塊時就會自動等待 `app.stop()` 執行完畢——就算區塊裡中途拋出例外錯誤也一樣保證會清理乾淨。
+
+<Code title="await-using.ts" code={disposeAndUsingCode} region="awaitUsing" />
+
+## 在不同執行環境接上關機訊號
+
+各個 JavaScript 執行環境的關機訊號完全沒有統一標準，因此核心絕不會私下偷掛全域事件監聽器。請針對你實際部署的執行環境，把 `app.stop()` 接到最適合的生命週期觸發點：
+
+| 執行環境 | 觸發時機 | 非同步清理是否可靠 |
+| --- | --- | --- |
+| Node.js、Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | 可等待（只要監聽函式讓執行程序維持存活到清理完成） |
+| Deno | `Deno.addSignalListener('SIGINT', handler)` | 可等待 |
+| 瀏覽器局部子應用 | 前端自己的卸載呼叫（React `useEffect`、Vue `onScopeDispose`、路由離開） | 可等待 |
+| 瀏覽器整頁關閉 | `addEventListener('pagehide', handler)` | 不可靠 —— 請維持純同步清理邏輯 |
+| Web Worker | 主執行緒呼叫 `worker.terminate()` 前先傳送通知訊息 | 僅在主執行緒願意等待回覆後才終止時可靠 |
+| Serverless、邊緣運算 | 綁定該次請求或呼叫結束的當下 | 視平台提供的背景保活（如 `waitUntil`）API 而定 |
+
+實際串接時，有幾個環境細節特別值得留意：
+
+- **Node.js 與 Bun（`node-server.ts`）：** 請在呼叫 `await app.start()` *之前* 先註冊好 `SIGINT` / `SIGTERM` 監聽器。因為 `bootstrapApp()` 還不會執行任何 provider，在 `3000` 埠開啟之前你就已經拿到 `app` 了。換到 Deno 環境時，同一張依賴圖只要把監聽器改成 `Deno.addSignalListener('SIGINT', () => void app.stop())` 就能直接運作。
+- **瀏覽器局部元件（`browser-unmount.ts`）：** 在前端盡可能把依賴圖綁定在由你自己控制卸載時機的元件或路由上（`await ready; await app.stop()`），因為只要頁面還活著，非同步清理掛鉤就能完整被 `await` 執行完畢。
+- **瀏覽器分頁關閉（`browser-pagehide.ts`）：** 請優先使用 `pagehide` 而不要用 `beforeunload`（後者會破壞瀏覽器的往返快取 bfcache，甚至直接被略過）。即便改用 `pagehide`，瀏覽器通常也不會等 `async` Promise 解析完就把頁面銷毀了——因此分頁關閉時的清理邏輯請務必保持純同步，例如直接呼叫 `navigator.sendBeacon()`。
+
+<CodeTabs
+  files={[
+    { title: 'node-server.ts', code: nodeShutdownCode },
+    { title: 'browser-unmount.ts', code: browserUnmountCode, region: 'unmount' },
+    { title: 'browser-pagehide.ts', code: browserUnmountCode, region: 'pagehide' },
+  ]}
+/>
+
+## 掛鉤規則、啟動失敗自動回滾與限制
+
+撰寫 `onDispose` 清理掛鉤時，請記住以下幾條不變的行為準則：
+
+- **合法註冊時間窗：** 你只能在所屬工廠函式「正在執行期間」、且應用程式還沒開始 `stop()` 之前呼叫 `onDispose()`。同步工廠在回傳或拋錯的瞬間就會關閉這個時間窗；非同步工廠則會在它回傳的 `Promise` 敲定（settle）時關閉。一旦工廠結束後才呼叫 `onDispose()`，會拋出 `onDispose can only be called while the factory is running`；若在關機啟動後才呼叫，則會拋出 `Cannot register cleanup after the app has stopped`。
+- **只能回傳 `void` 或 `Promise<void>`：** 清理掛鉤必須回傳 `void` 或 `Promise<void>`——若回傳任何其他值（或是解析出非 `void` 值的 `Promise`），TypeScript 在編譯期就會直接報錯，避免不小心漏看非預期的回傳值。遇到本身帶有回傳值的關閉方法（例如 Node 的 `http.Server.close()` 會回傳 `Server` 實例），請用大括號包起來：`onDispose(() => { server.close() })`。
+- **千萬別在掛鉤裡 `await app.stop()`：** 清理掛鉤本身就是 `stop()` 執行過程的一部分——在 `onDispose()` 裡面反過來 `await app.stop()` 會造成自己等自己的永久死結（deadlock）。
+- **掛鉤拋錯與 `AggregateError`：** 就算其中一個掛鉤拋錯或 reject，`stop()` 依然會把剩下的所有掛鉤全部執行完。若只有單一錯誤會原封不動往外拋出；若有兩個以上錯誤，則會合併成一個 `AggregateError`（訊息為 `App stop failed`）。
+- **`start()` 中途失敗自動回滾：** 如果 `app.start()` 在啟動到一半時失敗，核心會自動呼叫 `stop()` 把前面已經建立的資源清理乾淨，接著才向外 reject。單一錯誤會原樣拋出；若啟動與清理雙雙失敗，`start()` 就會 reject 一個 `AggregateError`（訊息為 `App startup and stop failed`）。請注意，一旦 `start()` 成功完成，後續應用程式運作期間發生的執行期錯誤**不會**自動停止依賴圖。
+
+<Callout kind="caution" title="stop() 不會替你做的事">
+
+`stop()` 只負責關閉後續的 `inject()` 呼叫並執行已註冊的 `onDispose` 掛鉤——僅此而已。它**不會**等待未掛入啟動鏈的背景工廠、不會強制中斷執行中的網路 I/O，也不會撤銷你變數裡已經持有的 JavaScript 物件。停止接收新請求、觸發 `AbortController.abort()` 以及安排優雅排空順序，都由你自己的應用程式邏輯掌控。
+
+</Callout>

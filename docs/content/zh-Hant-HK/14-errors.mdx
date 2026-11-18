@@ -1,0 +1,67 @@
+---
+title: "錯誤訊息與排錯指南"
+slug: "errors"
+part: reference
+order: 14
+summary: "收錄晒 dn-ioc 每一條原裝 runtime Error 與 AggregateError 訊息、檢查優先次序，以及最快手嘅修復方法。"
+---
+import disposeCode from '../../examples/lifecycle/dispose-and-using.ts' with { type: 'text' }
+import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { type: 'text' }
+
+每當依賴接線出咗亂子，`dn-ioc` 都會即刻 fail fast 拋出清清楚楚、可預期嘅 `Error` 訊息，絕對唔會留低難明嘅內部 stack trace 或者靜靜雞塞個 `undefined` 跣你一鑊。下面完整列晒核心可能會產生嘅每一條原裝英文 runtime 錯誤訊息，連埋檢查先後次序、錯誤傳播規則同具體修復方法。
+
+<Code title="unbound-token.ts" code={tokenBindingCode} region="unbound" />
+
+## 原裝錯誤訊息總覽
+
+`dn-ioc` 一共會拋出八種標準 `Error` 訊息，另外當收工清理階段撞正多個錯誤同時發生嗰陣，仲會有兩種 `AggregateError` 包裝訊息：
+
+| 原裝 `Error.message` | 由邊個拋出 / Reject | 觸發原因 |
+| --- | --- | --- |
+| `No provider for token: Name` | `inject()` | 注入咗 `token('Name')`，但當前 scope 同所有上層 parent scope 都未用 `provideFor()` 綁過佢。如果個 Token 冇寫描述名，就會印出 `<anonymous>`。 |
+| `Circular dependency detected: A -> B -> A` | `inject()` | 同步或者飛緊嘅非同步 provider 互相依賴兜成死圈。路徑會由形成閉環嗰個 key 開始印起（自己 inject 自己會印 `A -> A`），冇名嘅 key 會印 `<anonymous>`。 |
+| `Invalid inject key received` | `inject()`、`provideFor()` | 傳入去嘅 key 唔係正牌 `Token` 或 `Ref` —— 例如傳咗 `null`、基本型別、`ProviderDef`、`ProviderBundle`，或者淺複製出嚟嘅 `{ ...myToken }`。 |
+| `Invalid provider input received` | `bootstrapApp()`（頂層）或 `inject()`（巢狀） | `providers` 或安裝落去嘅 `bundleProviders()` 入面混入咗唔係 `Ref`、`ProviderDef`、`ProviderBundle` 或其陣列嘅項目（例如漏寫 `provideFor()` 就直接將裸 `Token` 塞咗入去）。 |
+| `Cannot inject after the app has stopped` | `inject()` | 喺 `app.stop()` 執行期間或者停機之後再呼叫 `inject()` —— 包括喺 `onDispose` hook 入面、未收工嘅背景非同步後續邏輯入面，甚至係攞一個一早快取咗嘅 key。 |
+| `onDispose can only be called while the factory is running` | `onDispose()` | 喺所屬 factory 已經同步 return、拋錯，或者佢回傳嘅 `Promise` 已經 settle 之後先至呼叫 `onDispose()`（例如擺咗喺 `setTimeout`、request handler 或者另一個清理 hook 入面）。 |
+| `Cannot register cleanup after the app has stopped` | `onDispose()` | 某個 `async` factory 卡喺 `await` 半路嗰陣出面已經行咗 `app.stop()`，等佢醒返之後再嘗試呼叫 `onDispose()`。 |
+| `Cannot start an app that has been stopped` | `app.start()`（reject） | 喺 `app.stop()` 已經開始或者完成之後，再走去呼叫 `app.start()`。 |
+| `App stop failed`（`AggregateError`） | `app.stop()`（reject） | 收工清理期間有兩個或以上嘅 `onDispose` hook 拋錯或 reject（`error.errors` 會按 LIFO 執行次序裝住每一個錯誤）。 |
+| `App startup and stop failed`（`AggregateError`） | `app.start()`（reject） | `app.start()` 開機失敗，*而且*連自動觸發嘅 `stop()` 回滾清理都失敗埋（`error.errors` 入面會係 `[startupError, cleanupError]`）。 |
+
+## 檢查優先次序與時機細節
+
+查一啲刁鑽邊界問題嗰陣，識得核心內部嘅四條檢查優先次序會好幫到手：
+
+1. **`inject()` 入面永遠先檢查停咗機未：** `Cannot inject after the app has stopped` 嘅檢查排喺 key 真偽驗證、循環偵測、scope 查找同快取命中*之前*。就算個實例一早已經喺快取入面，甚至你傳個非法 key 入去，只要喺 `app.stop()` 之後 call，一律優先拋出 `Cannot inject after the app has stopped`。
+2. **頂層 vs 巢狀 `Invalid provider input received`：** 傳畀 `bootstrapApp()` 嘅頂層 `providers` 會喺 `App` handle 建立之前**同步**攤平兼驗證。而掛喺 `provide()` 或 `provideFor()` 上面嘅巢狀 `{ providers }`，就會去到嗰個 provider 棵私有子樹第一次俾人解析嗰陣，先喺 `inject()` 入面**懶驗證**。
+3. **`onDispose()` 入面有效窗口檢查優先過停機檢查：** 一旦某個 factory 已經行完（無論係正常 return、拋錯定係 Promise settle），佢專屬嗰個 `onDispose` handle 就會永久失效，之後幾時再 call（就算個 app 事後停埋機）都一律拋出 `onDispose can only be called while the factory is running`。
+4. **停機檢查優先過 `start()` 嘅冪等快取：** 當個 app 未開機或者行緊嗰陣，重複 call `app.start()` 會回傳快取住嘅同一個 `Promise`。但只要一呼叫過 `app.stop()`，`app.start()` 就會喺讀取快取*之前*攔截停機狀態，直接 reject `Cannot start an app that has been stopped`，唔會重播舊嗰次成功紀錄。
+
+<Code title="dispose.ts" code={disposeCode} region="dispose" />
+
+## 失敗傳播與狀態對照表
+
+錯誤最終喺邊度爆出嚟，以及快取實例同已開資源之後變成點，完全取決於爆錯發生喺邊個階段：
+
+| 失敗場景 | 點樣向外呈現 | 事後快取與 App 狀態 |
+| --- | --- | --- |
+| 頂層 `bootstrapApp(..., { providers })` 混入非法項目 | 由 `bootstrapApp()` 即場同步拋錯 | 唔會產生 `App` handle。 |
+| 巢狀 `{ providers }` 混入非法項目 | 第一次解析該子樹時由 `inject()` 同步拋錯 | 唔會建立子樹；錯誤向上傳畀呼叫方（如果係開機期間就會觸發 `start()` 回滾）。 |
+| 同步 factory 喺 `inject()` 期間拋錯 | 由 `inject()` 同步拋錯 | 唔會寫入快取；只要個 app 仲行緊，之後再 `inject()` 會重新行過個 factory。 |
+| 非同步 factory 喺 `inject()` 期間 reject | 回傳嗰個共用 `Promise` reject | 失敗嘅 pending 快取紀錄會即刻剔走；app 行緊期間之後再 `inject()` 會重新重試。 |
+| 入口 callback（或啟動時有 `await` 嘅 `Promise`）失敗 | `app.start()` 先自動行 `await app.stop()`，再 reject | App 永久進入已停機狀態；單一錯誤原樣拋出，如果連清理都失敗就拋 `AggregateError`。 |
+| 冇被 `await` 嘅背景 `Promise` reject | 直接喺嗰個背景 `Promise` 上面 reject（`start()` 唔會理佢） | App 繼續正常運行；失敗咗嘅非同步 provider 會由快取剔走。 |
+| `app.stop()` 期間有單一個 `onDispose` hook 失敗 | 淨低嘅 hook 照樣行晒；最後 `app.stop()` 原樣 reject 該錯誤 | App 維持永久已停機狀態。 |
+| `app.stop()` 期間有多個 `onDispose` hook 失敗 | 所有 hook 照樣行晒；最後 `app.stop()` reject `AggregateError`（`App stop failed`） | App 維持永久已停機狀態。 |
+
+## 常見報錯急救包
+
+- **`No provider for token: Name`：** 喺頂層 `providers` 或者 `infraProviders` bundle 入面用 `provideFor(myToken, ...)` 補返個綁定。如果係喺整合測試撞正，檢查吓係咪漏裝咗 `infraProviders`；如果係喺局部子樹撞正，去睇返[作用域與私有子樹](/zh-hant-hk/scopes/)確認個 consumer 係咪其實歸上層 parent scope 管（而上層冇綁呢個 Token）。
+- **`Circular dependency detected: A -> B -> A`：** 將 `A` 同 `B` 共同需要用到嘅狀態或邏輯抽離成第三個 provider `C`（改成 `A -> C` 同 `B -> C`）。如果條鏈入面見到 `<anonymous>`，將 `provide(({ inject }) => ...)` 改成具名函式 `provide(function MyService({ inject }) { ... })` 就即刻捉到邊個出事。
+- **`Invalid provider input received`：** 檢查你個 `providers: [...]` 陣列同 `bundleProviders(...)`，睇吓係咪漏寫 `provideFor(myToken, factory)` 直接塞咗個裸 `token()` 入去、因為 ES 模組循環引用搞到 import 咗個 `undefined` 入嚟，或者傳咗個淺複製過嘅物件。
+- **`Invalid inject key received`：** 確認傳入 `inject()` 或 `provideFor()` 嘅真係 `Token` 或 `Ref`，千祈唔好錯手將 `provideFor()` 回傳嘅 `ProviderDef` 或者 `bundleProviders()` 回傳嘅 `ProviderBundle` 當成 key 傳入去。
+- **`Cannot inject after the app has stopped`：** 將 `const dep = inject(depRef)` 搬返上 factory 開頭、寫喺 `onDispose(() => { ... })` *之前*，等清理 hook 直接閉包拎住解析好嘅變數，唔好等到熄機嗰陣先喺入面 call `inject()`（詳見[生命週期與資源清理](/zh-hant-hk/lifecycle/)）。如果係 HTTP handler 喺優雅熄機期間撞正呢個錯，記得先閂閘停收新 request，然後先至 call `app.stop()`。
+- **`onDispose can only be called while the factory is running`：** 請喺 factory 開頭同步登記清理邏輯，或者確保喺 `async` factory 回傳嘅 `Promise` resolve 之前登記好——千祈唔好擺入 `setTimeout`、事件 listener 或者業務方法入面遲啲先 call。
+- **`Cannot register cleanup after the app has stopped`：** 個 app 喺某個 `async` factory 仲卡緊喺 `await` 半路嗰陣就呼叫咗 `stop()`。盡量將 `onDispose()` 擺喺第一個 `await` *之前* 提早登記，或者傳入 `AbortSignal` 令半路嘅初始化喺開始熄機嗰陣識得主動收手（詳見[非同步 Provider](/zh-hant-hk/async/)）。
+- **`Cannot start an app that has been stopped`：** 已停機嘅 `App` 實例係一次性嘅，事關佢啲清理 hook 已經放走晒啲底層資源。需要再開多次嘅話，直接再 call 一次 `bootstrapApp(...)` 起個全新嘅 `App` 實例就得——就好似[測試與替身模擬](/zh-hant-hk/testing/)入面每個 test case 嘅寫法一樣。
