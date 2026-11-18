@@ -8,7 +8,7 @@ summary: "Complete signature, parameter, and behavioral reference for all six ru
 import signaturesCode from '../../examples/api/signatures.ts' with { type: 'text' }
 import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
 
-Everything `dn-ioc` exports comes from `'dn-ioc'`—six runtime functions and sixteen TypeScript types, with zero sub-path imports or global side effects. Use this chapter whenever you want to double-check an exact parameter type, return value, or handle invariant.
+Everything `dn-ioc` exports comes from `'dn-ioc'`—six runtime functions and fifteen TypeScript types, with zero sub-path imports or global side effects. Use this chapter whenever you want to double-check an exact parameter type, return value, or handle invariant.
 
 <Code title="functions.ts" code={signaturesCode} region="functions" />
 
@@ -72,8 +72,8 @@ Creates an isolated root scope, validates and installs `options?.providers` sync
 
 Every provider `Factory<T>` and `BootstrapAppFn` receives a `Context` object with two functions:
 
-- **`inject: <T>(key: InjectKey<T>) => T`** — Resolves `key` starting from the provider's owning scope upward. Returns synchronous values directly and shared `Promise`s for async factories. Remains callable inside returned methods after the factory finishes, up until `app.stop()` is called.
-- **`onDispose: (fn: () => void | Promise<void>) => void`** — Registers a cleanup hook run in LIFO (newest-first) order during `app.stop()`. Callable **only** while its own factory is actively running and before `stop()`. Returning anything other than `void` or `Promise<void>` is a TypeScript compile error—wrap non-`void` teardown expressions in braces (`onDispose(() => { server.close() })`).
+- **`inject: InjectFn`** (`<T>(key: InjectKey<T>) => T`) — Resolves `key` starting from the provider's owning scope upward. Returns synchronous values directly and shared `Promise`s for async factories. Remains callable inside returned methods after the factory finishes, up until `app.stop()` is called.
+- **`onDispose: OnDisposeFn`** (`(fn: () => void | Promise<void>) => void`) — Registers a cleanup hook run in LIFO (newest-first) order during `app.stop()`. Callable **only** while its own factory is actively running and before `stop()`. Returning anything other than `void` or `Promise<void>` is a TypeScript compile error—wrap non-`void` teardown expressions in braces (`onDispose(() => { server.close() })`).
 
 ### App (`start`, `stop` & `AsyncDisposable`)
 
@@ -98,6 +98,8 @@ The handle returned by `bootstrapApp()` exposes three members:
 | `ProviderInput` | `Ref<unknown> \| ProviderDef<unknown> \| ProviderBundle \| readonly ProviderInput[]` | Any installable item or arbitrarily nested array accepted by `providers` and `bundleProviders()`. |
 | `ProviderOptions` | `{ providers?: readonly ProviderInput[] }` | Options object for `provide()` and `provideFor()` declaring a private child subtree. |
 | `BootstrapAppOptions` | `{ providers?: readonly ProviderInput[] }` | Options object for `bootstrapApp()` installing root-scope bindings. |
+| `InjectFn` | `<T>(key: InjectKey<T>) => T` | Type of `ctx.inject` passed inside `Context`. |
+| `OnDisposeFn` | `(fn: () => void \| Promise<void>) => void` | Type of `ctx.onDispose` passed inside `Context`. |
 | `Factory<T>` | `(ctx: Context) => T` | Provider factory function signature. |
 | `BootstrapAppFn` | `(ctx: Context) => void \| Promise<void>` | Root startup callback signature for `bootstrapApp()`. |
 
