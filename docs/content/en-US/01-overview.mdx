@@ -1,0 +1,61 @@
+---
+title: "Overview"
+slug: ""
+part: start
+order: 1
+summary: "A tiny TypeScript dependency-injection kernel built around plain factory functions—no decorators, reflection, or global container."
+---
+import minimalCode from '../../examples/overview/minimal.ts' with { type: 'text' }
+
+As a TypeScript project grows, threading config objects, database clients, and services through five layers of function arguments gets old fast—and swapping one dependency in a test shouldn't force you into module-mocking hacks or class decorators. Reach for `dn-ioc` when you want clean, type-safe dependency wiring using plain functions, with zero hidden runtime magic.
+
+<Code title="minimal.ts" code={minimalCode} />
+
+## Providers Are Just Functions
+
+If you know how to write a function that returns a value, you already know `dn-ioc`. There's no base class to extend, no `@Injectable()` decorator, no `emitDecoratorMetadata` compiler flag, and no `reflect-metadata` polyfill.
+
+Every provider is an ordinary `(ctx: Context) => T` factory function:
+
+- It receives `{ inject, onDispose }`, pulls in other dependencies with `inject()`, and returns **any TypeScript value**—an object literal, a function, a primitive, a class instance, or a `Promise`.
+- `bootstrapApp()` wires up an isolated root scope and gives you back an `App` handle without running a single factory yet.
+- Nothing executes until you call `await app.start()`. Because `minimal.ts` holds no open sockets, timers, or file handles, it doesn't even need `app.stop()`.
+
+<Callout kind="tip" title="Root factories do the work, not produce a return value">
+
+The function you pass to `bootstrapApp()` must return `void` or `Promise<void>`. Think of it as your `main()` entrypoint: it injects what the app needs and kicks off execution rather than computing a value to hand back.
+
+</Callout>
+
+## Six Primitives, Whole Surface
+
+The entire public runtime API fits in six functions. Once you've seen how they fit together, there are no hidden configuration layers left to learn:
+
+| Function | What it creates | When you use it |
+| --- | --- | --- |
+| `provide(factory, options?)` | `Ref<T>` | Wrap a concrete factory that self-installs on first `inject()`. |
+| `token<T>(description?)` | `Token<T>` | Declare a pure type contract with no default implementation. |
+| `provideFor(key, factory, options?)` | `ProviderDef<T>` | Bind an implementation to a `Token<T>`, or swap a `Ref<T>` in tests and overrides. |
+| `bundleProviders(...inputs)` | `ProviderBundle` | Group related bindings and refs so callers can install a whole layer in one line. |
+| `isProvideRef(value)` | `value is Ref<unknown>` | Check at runtime whether an unknown value is a genuine `Ref` from `provide()`. |
+| `bootstrapApp(fn, options?)` | `App` | Assemble an isolated app graph with `start()`, `stop()`, and `await using` support. |
+
+## Runs Everywhere JavaScript Runs
+
+`dn-ioc` has zero runtime dependencies and weighs `4.8 kB` minified (`1.9 kB` gzipped).
+
+More importantly, the kernel touches **zero platform APIs**—no `process`, no DOM globals, and no timers. The exact same dependency graph runs unchanged on Node.js, Bun, Deno, browsers, Web Workers, and serverless or edge runtimes. Since shutdown signals look different on every platform, the kernel doesn't guess; you wire `app.stop()` to your runtime's own signal or unmount hook when needed (see [Lifecycle & Cleanup](/lifecycle/)).
+
+## What dn-ioc Deliberately Leaves Out
+
+Keeping the kernel small means drawing a clear line between dependency wiring and application control flow. `dn-ioc` intentionally does **not** include:
+
+- **Decorators, reflection, or a global container:** Every `bootstrapApp()` call builds an independent graph, so parallel tests never fight over global state.
+- **Framework ceremony:** There are no module classes, built-in HTTP request-scoped containers, multi-bindings, or automatic OS signal listeners.
+- **Magic cancellation or object revocation:** Calling `stop()` closes future `inject()` calls and runs your cleanup hooks, but it won't abort in-flight I/O, wait on detached unfinished factories, or revoke JavaScript objects your code already holds. Request admission, `AbortController` plumbing, and shutdown drain order stay in your hands.
+
+<Callout kind="note" title="Frozen opaque handles, not a sandbox">
+
+Handles returned by `token()`, `provide()`, `provideFor()`, and `bundleProviders()` are frozen opaque objects tracked internally. Spreading or cloning a handle (`{ ...configRef }`) won't work—the kernel rejects copied objects. `dn-ioc` is an in-process kernel for trusted application code, not an isolation sandbox.
+
+</Callout>

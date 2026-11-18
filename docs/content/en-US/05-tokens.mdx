@@ -1,0 +1,50 @@
+---
+title: "Tokens & Binding"
+slug: "tokens"
+part: kernel
+order: 5
+summary: "Declare zero-implementation contracts with token(), wire concrete implementations with provideFor(), and keep error diagnostics readable."
+---
+import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { type: 'text' }
+
+Reach for `token<T>()` when the code asking for a dependency shouldn't import—or doesn't yet know—the concrete implementation behind it. Runtime secrets like database URLs, pluggable UI themes, and pure DDD domain ports all fit here: you define a typed placeholder up front and wire the real value later with `provideFor()`.
+
+<Code title="bound-token.ts" code={tokenBindingCode} region="bound" />
+
+## Declaring Contracts with token() and provideFor()
+
+Where `provide()` bundles a key and its default factory together, `token<T>(description?)` creates **only the key**. It holds zero runtime logic and pulls in zero implementation imports—TypeScript carries the type `T`, and the optional `description` string gives humans a clear label in error messages.
+
+To supply an implementation, pass the token and a factory to `provideFor(key, factory, options?)`:
+
+- In `bound-token.ts`, `prefixToken` declares that someone must supply a `string`.
+- `formatterRef` injects `prefixToken` without knowing whether that prefix comes from an environment variable, a config file, or a test stub.
+- `boundApp` installs `provideFor(prefixToken, () => '[app] ')` at bootstrap, so `formatterRef` prints `[app] ready`.
+
+Notice that `provideFor()` accepts any `InjectKey<T>`—meaning **both** a `Token<T>` and a `Ref<T>`. You use the exact same helper to bind an abstract port in production or swap out a concrete `Ref` in a test.
+
+## Failing Fast When a Token Is Unbound
+
+Because a `Token<T>` has no fallback factory, injecting one that hasn't been bound in the active scope or any parent scope throws immediately. In `unbound-token.ts`, `unboundApp.start()` rejects with `No provider for token: DatabaseUrl`—matching `No provider for token: Name`, where `Name` is the description passed to `token()`.
+
+<Callout kind="tip" title="Inject entry dependencies inside your root factory">
+
+Make sure your `bootstrapApp()` root factory injects the top-level controllers, routes, or workers your entrypoint relies on. That way, a forgotten `provideFor()` binding rejects `await app.start()` immediately on boot—instead of waiting to blow up on the first live request that hits a handler.
+
+</Callout>
+
+<Code title="unbound-token.ts" code={tokenBindingCode} region="unbound" />
+
+## Naming Tokens & Factories for Clear Diagnostics
+
+Readable error messages save real debugging time when a token goes unbound or two providers accidentally form a loop (`Circular dependency detected: A -> B -> A`). Here's where those names come from:
+
+- **Tokens use their description string:** Name a token after the type or setting it represents—for example, `token<OrderRepository>('OrderRepository')` or `token<string>('DatabaseUrl')`. If you omit the description (`token<string>()`), errors report `<anonymous>`.
+- **Refs use `factory.name`:** `provide()` doesn't take a separate label argument—it reads the JavaScript function's `.name` property. Writing `provide(function Formatter({ inject }) { ... })` gives the ref the diagnostic name `Formatter`, whereas an inline arrow (`provide(({ inject }) => ...)`) has no name of its own and reports `<anonymous>`.
+
+<Callout kind="note" title="Minifiers and invalid keys">
+
+- **Minifier heads-up:** Because a `Ref` takes its diagnostic label from `factory.name`, a bundler or minifier that renames or strips function names will change that name in cycle errors (unless `keepNames` is enabled). Token descriptions passed to `token('Name')` are plain strings, so minifiers leave them intact.
+- **Opaque key check:** Passing `null`, a primitive, a `ProviderDef`, a `ProviderBundle`, or a shallow copy (`{ ...prefixToken }`) to `inject()` or `provideFor()` throws `Invalid inject key received`.
+
+</Callout>

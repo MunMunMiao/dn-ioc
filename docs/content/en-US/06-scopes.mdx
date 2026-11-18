@@ -1,0 +1,72 @@
+---
+title: "Scopes & Subtrees"
+slug: "scopes"
+part: kernel
+order: 6
+summary: "See how inject() walks upward through scopes, how private { providers } subtrees isolate overrides, and why consumer ownership decides what gets resolved."
+---
+import case1Code from '../../examples/scopes/case1-fallback.ts' with { type: 'text' }
+import case2Code from '../../examples/scopes/case2-local-override.ts' with { type: 'text' }
+import case3Code from '../../examples/scopes/case3-parent-owned.ts' with { type: 'text' }
+import case4Code from '../../examples/scopes/case4-rebind-both.ts' with { type: 'text' }
+
+Most apps do all their wiring in the single root scope created by `bootstrapApp()`. Reach for `{ providers }` on an individual `provide()` or `provideFor()` when a specific subtree—like a theme preview widget, an embedded plugin, or an isolated worker—needs local overrides without leaking them to parents or siblings.
+
+## How Scope Lookup Works
+
+How `inject(key)` resolves inside nested scopes comes down to three rules:
+
+1. **Walk upward, first match wins:** `inject(key)` checks the current scope first, then walks up through parent scopes until it finds a binding. If none exists, a `Ref` self-installs in the active scope while a `Token` throws `No provider for token: Name`.
+2. **`{ providers }` creates a private child subtree:** Bindings listed inside a provider's `{ providers }` option are visible only to that provider and its descendants. Each binding caches its instance in its owning scope—or inside its attached private child scope when it declares `{ providers }`. Sibling subtrees and parents never see local overrides.
+3. **A provider resolves inside its own owning scope:** A consumer never inherits its caller's local overrides. If a consumer is bound in a parent scope, its own `inject()` calls start from that parent scope.
+
+The four scenarios below use the exact same `labelToken`, `rendererRef`, and `previewRef` setup—flip through them to watch how moving one line changes what `previewRef` reads.
+
+## 1. No Local Override: Fall Back to Parent
+
+In `case1-fallback.ts`, `previewRef` installs `rendererRef` inside its private `{ providers }` subtree, while the root app binds `labelToken` to `'app'`.
+
+When `previewRef` injects `rendererRef`, it finds the local `rendererRef` binding in its private scope. `rendererRef` then asks for `labelToken`: there's no local `labelToken` binding in the preview subtree, so the lookup walks up to the root scope and reads `'app'`.
+
+<Code title="case1-fallback.ts" code={case1Code} />
+
+## 2. Add a Local Override Beside the Consumer
+
+Now add `provideFor(labelToken, () => 'local')` right alongside `rendererRef` inside `previewRef`'s private `{ providers }`.
+
+Because `rendererRef` is owned by `previewRef`'s private subtree, its lookup for `labelToken` checks that private scope first and hits `'local'`. Meanwhile, outside the subtree, `inject(rendererRef)` at the root self-installs a separate root `rendererRef` that still reads `'app'`. Neither side leaks into the other.
+
+<Code title="case2-local-override.ts" code={case2Code} />
+
+## 3. The Parent-Owned Consumer Trap
+
+Watch what happens if you move `rendererRef` out of `previewRef` and register it on the root app instead—leaving only `provideFor(labelToken, () => 'local')` inside `previewRef`.
+
+Even though `previewRef` is the very first thing to call `inject(rendererRef)`—and even though `previewRef` has a local `'local'` binding—**`previewRef` still prints `'app'`!**
+
+Why? Because `previewRef` searches upward for `rendererRef`, finds it owned by the root scope, and runs it *there*. A parent-owned provider resolves its dependencies in the parent scope, never in the child scope that happened to call it.
+
+<Code title="case3-parent-owned.ts" code={case3Code} />
+
+## 4. Rebind Consumer and Dependency Together
+
+When the root app already owns `rendererRef`, how do you give `previewRef` a version that sees `'local'`? Rebind **both** `labelToken` and `rendererRef` together inside `previewRef`'s `{ providers }`.
+
+Now `previewRef` owns its own local `rendererRef` binding right next to its `'local'` token override, so `previewRef` reads `'local'` while the root app's `rendererRef` keeps reading `'app'`.
+
+<Code title="case4-rebind-both.ts" code={case4Code} />
+
+## Scope Comparison Cheat Sheet
+
+| Scenario | Root `providers` | `previewRef` `providers` | `previewRef` reads | Why |
+| --- | --- | --- | --- | --- |
+| **1. Fallback** | `label = 'app'` | `rendererRef` | `'app'` | Local `rendererRef` walks up to root for `labelToken`. |
+| **2. Local override** | `label = 'app'` | `rendererRef`, `label = 'local'` | `'local'` | Local `rendererRef` finds sibling `'local'` in the same private scope. |
+| **3. Parent-owned** | `label = 'app'`, `rendererRef` | `label = 'local'` | `'app'` | `rendererRef` lives at root, so its `inject(labelToken)` resolves at root. |
+| **4. Rebind both** | `label = 'app'`, `rendererRef` | `label = 'local'`, `provideFor(rendererRef, ...)` | `'local'` | Both consumer and dependency are owned by `previewRef`'s private scope. |
+
+<Callout kind="note" title="Nested provider inputs validate lazily">
+
+Unlike root `providers` (which `bootstrapApp()` validates immediately), a provider's nested `{ providers }` array is validated the first time that subtree is actually resolved. If a nested array contains an invalid entry, that `inject()` call throws `Invalid provider input received`.
+
+</Callout>

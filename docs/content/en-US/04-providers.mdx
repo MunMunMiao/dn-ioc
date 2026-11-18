@@ -1,0 +1,50 @@
+---
+title: "Providers & Refs"
+slug: "providers"
+part: kernel
+order: 4
+summary: "Understand how provide() self-installs and caches instances per scope, how bundleProviders() groups bindings, and how installation order works."
+---
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+Reach for `provide()` whenever a dependency has one clear default implementation that callers are allowed to import directly—like a config helper, an MVC repository, or an application service. It returns a `Ref<T>` that knows how to build itself on demand and caches its result inside the scope that owns it.
+
+<Code title="caching.ts" code={providersCode} region="caching" />
+
+## Self-Installing Refs vs Root Registration
+
+In a lot of DI libraries, forgetting to list a class in a central container throws a runtime error. A `Ref<T>` from `provide()` skips that boilerplate: if the active scope (and its parents) haven't bound `configRef` yet, the first `inject(configRef)` installs its default factory right there, runs it once, and caches the instance (`first === second` is `true`, and `created` stays `1`).
+
+That convenience comes with one important nuance: **a `Ref` is scoped, not a global singleton.**
+
+- Two separate `bootstrapApp()` calls never share instances.
+- If two sibling `{ providers }` subtrees each inject an unregistered `Ref` for the first time, each subtree self-installs and caches its own separate copy.
+
+When a `Ref` holds shared state or a scarce resource—like a database connection pool, an in-memory cache, or `configRef` above—list it explicitly in `bootstrapApp(..., { providers: [configRef] })`. Installing it at the root scope still keeps creation lazy (the factory won't run until something calls `inject()`), while guaranteeing the entire app shares that single instance.
+
+## Grouping Related Wiring with bundleProviders()
+
+Sometimes a feature needs to ship several bindings together—for instance, a public token alongside the internal options token its factory reads, or a whole `infra/` folder of database and email adapters.
+
+`bundleProviders(...inputs)` packs any combination of refs, `provideFor()` bindings, arrays, or nested bundles into a single `ProviderBundle`. Callers drop `provideTheme({ palette: 'ocean' })` into `{ providers }` in one line without needing to know its internal wiring.
+
+Keep in mind that a bundle is purely a flat packaging helper—it does **not** create an isolated scope of its own. Every item inside it installs directly into whichever scope receives the bundle (for private scopes, see [Scopes & Subtrees](/scopes/)).
+
+<Code title="bundle.ts" code={providersCode} region="bundle" />
+
+## Checking Handles with isProvideRef()
+
+If you're writing thin framework glue or a test helper that inspects unknown values at runtime, use `isProvideRef(value)` to narrow a value to `Ref<unknown>`.
+
+`isProvideRef()` returns `true` **only** for a real `Ref` created by `provide()`. It returns `false` for `token()` keys, `provideFor()` bindings, `bundleProviders()` bundles, plain values, and shallow clones like `{ ...sampleRef }`.
+
+<Code title="is-provide-ref.ts" code={providersCode} region="isProvideRef" />
+
+## Installation Rules & Edge Cases
+
+Whenever the kernel installs a `providers` list—whether at `bootstrapApp()` or inside a nested `{ providers }` option—four predictable rules apply:
+
+1. **Snapshotting on creation:** Arrays and bundles passed to `provide()`, `provideFor()`, `bundleProviders()`, or `bootstrapApp()` are shallow-copied immediately. Mutating your original array later won't alter an already-created ref, binding, or bundle.
+2. **Source-order flattening:** Nested arrays and `ProviderBundle`s are flattened left-to-right in exact source order.
+3. **Last-write-wins per scope:** Installing the same key twice in one scope silently replaces the earlier binding—including any nested `{ providers }` attached to that earlier binding. That's what lets integration tests list `[infraProviders, provideFor(repoToken, fakeRepo)]` and cleanly override one adapter.
+4. **Validation timing:** Root `providers` passed to `bootstrapApp()` are validated up front; a bogus value throws `Invalid provider input received` before an `App` handle even exists. Nested `{ providers }` on a ref or binding are validated lazily the first time that subtree is resolved, throwing `Invalid provider input received` from that `inject()` call.

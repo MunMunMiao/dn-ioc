@@ -1,0 +1,64 @@
+---
+title: "Five-Minute Quickstart"
+slug: "quickstart"
+part: start
+order: 3
+summary: "Go from zero to a working graph in three small steps: define providers, start the app, and swap an async dependency in tests."
+---
+import step1Code from '../../examples/quickstart/step1-provide.ts' with { type: 'text' }
+import step2Code from '../../examples/quickstart/step2-compose.ts' with { type: 'text' }
+import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with { type: 'text' }
+
+You don't need to sketch out a folder hierarchy or register classes in a central file just to get moving. Let's build a working graph in three quick steps: wrap plain functions with `provide()`, boot them with `bootstrapApp()`, and swap an async dependency for a fake in a test.
+
+## 1. Define Providers with provide()
+
+Pass any factory function to `provide()` and you get back a typed `Ref<T>` handle. In `step1-provide.ts`, `configRef` returns a plain object, and `greeterRef` pulls it in via `{ inject }` to build a `greet()` helper.
+
+Notice two things right away:
+
+- **Zero manual type annotations:** TypeScript infers `config` inside `greeterRef` straight from `configRef`'s return type.
+- **Nothing has executed yet:** Calling `provide()` only records *how* to construct the value when an app eventually asks for it.
+
+<Code title="step1-provide.ts" code={step1Code} />
+
+## 2. Boot the Graph with bootstrapApp()
+
+Next, hand a root function to `bootstrapApp()` and call `await app.start()`. `bootstrapApp()` creates an isolated app scope and returns the `app` handle immediately—still without running any factory.
+
+When `await app.start()` runs:
+
+1. Your root function asks for `inject(greeterRef)`.
+2. `greeterRef` self-installs in the app scope and asks for `inject(configRef)`.
+3. `configRef` runs once, caches `{ greeting: 'hello' }`, and `greeterRef` caches its `{ greet }` object and logs `hello, world`.
+
+Because this little graph holds no open sockets, timers, or database pools, you don't need `app.stop()`—once `start()` finishes, normal garbage collection cleans everything up.
+
+<CodeTabs
+  files={[
+    { title: 'step2-compose.ts', code: step2Code },
+    { title: 'step1-provide.ts', code: step1Code },
+  ]}
+/>
+
+## 3. Go Async and Swap a Test Fake
+
+Real services usually load settings over the network or talk to a database, and tests need to swap those out cleanly. Both take a single line of wiring:
+
+- **Async providers use regular `async` functions:** Make `settingsRef` `async` and `inject(settingsRef)` returns a shared `Promise` that `greeterRef` awaits. Marking `bootstrapApp`'s root function `async` and awaiting `inject(greeterRef)` ensures `await testApp.start()` waits until startup settles.
+- **`provideFor()` swaps any dependency in place:** Passing `provideFor(settingsRef, async () => ({ greeting: 'test-hello' }))` in `{ providers }` replaces `settingsRef` for `testApp` without touching `greeterRef`'s code.
+- **Clean test teardown:** Calling `await testApp.stop()` closes injection and runs any registered cleanup hooks so resources don't bleed into the next test.
+
+<Code title="step3-async-and-fake.ts" code={step3Code} />
+
+## Habits Worth Remembering
+
+<Callout kind="note" title="Three rules you'll rely on every day">
+
+- **Register listeners before `start()`:** Since `bootstrapApp()` runs nothing yet, `app` exists before any socket or timer opens—making it safe to wire shutdown listeners before calling `await app.start()`.
+- **`start()` is idempotent:** Calling `app.start()` multiple times returns the exact same `Promise` and runs the root factory once.
+- **Root factories return `void`:** Keep your startup work inside the `bootstrapApp()` callback rather than returning a value from it.
+
+</Callout>
+
+Next up, we'll look under the hood at [Providers & Refs](/providers/) and [Tokens & Binding](/tokens/)—or if you're eager to structure a full codebase, jump straight to the [MVC](/mvc/) or [DDD & Clean Architecture](/ddd/) guides.

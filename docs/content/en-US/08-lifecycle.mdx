@@ -1,0 +1,76 @@
+---
+title: "Lifecycle & Cleanup"
+slug: "lifecycle"
+part: kernel
+order: 8
+summary: "Release sockets, pools, and timers cleanly with LIFO onDispose() hooks, startup rollback, await using, and runtime shutdown signals."
+---
+import disposeAndUsingCode from '../../examples/lifecycle/dispose-and-using.ts' with { type: 'text' }
+import nodeShutdownCode from '../../examples/lifecycle/node-server-shutdown.ts' with { type: 'text' }
+import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' with { type: 'text' }
+
+A successful `app.start()` never stops the app on its own—you decide whether `app.stop()` is needed at all. A quick CLI script or a page-wide browser graph that dies when the tab closes doesn't need `stop()`, because the OS or tab reclaims everything anyway. Reach for `onDispose()` and `app.stop()` whenever **something outlives the graph**: a long-running server holding ports or DB pools, an isolated test case, or a UI widget that unmounts while the page lives on.
+
+<Code title="dispose.ts" code={disposeAndUsingCode} region="dispose" />
+
+## Closing Injection & LIFO Teardown
+
+Calling `app.stop()` does two things in strict order:
+
+1. **Closes `inject()` synchronously across the whole app:** Before a single microtask runs, every `inject()` handle in the app is permanently shut. Any later `inject()` call—even for an already-cached instance or inside a private subtree, like `service.read()` above—immediately throws `Cannot inject after the app has stopped`.
+2. **Runs `onDispose` hooks newest-first (LIFO):** Hooks run one after another in reverse registration order. If your database pool registers first and your HTTP server registers second, `stop()` closes the HTTP server before draining the database pool.
+
+Because `inject()` is already closed by the time cleanup hooks run, **always capture dependencies into local variables before registering `onDispose()`**—just like `const store = inject(storeRef)` in `dispose.ts`.
+
+Repeated or concurrent `app.stop()` calls are idempotent: they return the exact same `Promise` and run each hook once. Once an app has stopped, calling `app.start()` again rejects with `Cannot start an app that has been stopped`.
+
+## Automatic Teardown with await using
+
+Every `App` implements `AsyncDisposable`—defining both native `Symbol.asyncDispose` and `Symbol.for('Symbol.asyncDispose')` so TypeScript 5.2+'s downlevel `await using` emit works even on runtimes without the native symbol.
+
+In tests, CLI jobs, or request-scoped workers like `runScopedTask()`, `await using app = bootstrapApp(...)` guarantees `app.stop()` is awaited automatically when the block exits—even if code inside the block throws an error.
+
+<Code title="await-using.ts" code={disposeAndUsingCode} region="awaitUsing" />
+
+## Wiring Shutdown Across Runtimes
+
+Shutdown signals have no common denominator across JavaScript runtimes, so the kernel never attaches hidden global listeners. Wire `app.stop()` to whichever lifecycle trigger fits your platform:
+
+| Runtime | Trigger | Async cleanup |
+| --- | --- | --- |
+| Node.js, Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | Awaited, if the handler keeps the process alive |
+| Deno | `Deno.addSignalListener('SIGINT', handler)` | Awaited |
+| Browser sub-app | Your own unmount call (React `useEffect`, Vue `onScopeDispose`, router leave) | Awaited |
+| Browser page | `addEventListener('pagehide', handler)` | Not reliable — keep hooks synchronous |
+| Web Worker | A message from the host before `worker.terminate()` | Only if the host waits before terminating |
+| Serverless, edge | End of the request or invocation you scoped the app to | Depends on the platform's keep-alive API |
+
+A few practical details to watch for in each environment:
+
+- **Node.js & Bun (`node-server.ts`):** Register `SIGINT` / `SIGTERM` listeners *before* `await app.start()`. Because `bootstrapApp()` doesn't run any provider yet, `app` already exists before port `3000` opens. On Deno, the exact same graph just swaps the listener to `Deno.addSignalListener('SIGINT', () => void app.stop())`.
+- **Browser widgets (`browser-unmount.ts`):** Whenever possible, scope browser graphs to a component or route you unmount yourself (`await ready; await app.stop()`), where async cleanup hooks are properly awaited while the page stays open.
+- **Browser tab unload (`browser-pagehide.ts`):** Prefer `pagehide` over `beforeunload` (which breaks or gets skipped by the back/forward cache). Even with `pagehide`, browsers routinely discard the page before an `async` Promise settles—so keep unload hooks strictly synchronous, like `navigator.sendBeacon()`.
+
+<CodeTabs
+  files={[
+    { title: 'node-server.ts', code: nodeShutdownCode },
+    { title: 'browser-unmount.ts', code: browserUnmountCode, region: 'unmount' },
+    { title: 'browser-pagehide.ts', code: browserUnmountCode, region: 'pagehide' },
+  ]}
+/>
+
+## Hook Rules, Startup Rollback & Limits
+
+Keep these invariants in mind when writing `onDispose` hooks:
+
+- **Registration window:** You can only call `onDispose()` while its own factory is actively running, and before `stop()` is called. A sync factory closes that window the moment it returns or throws; an async factory closes it when its returned `Promise` settles. Calling `onDispose()` after the factory finishes throws `onDispose can only be called while the factory is running`; calling it after shutdown starts throws `Cannot register cleanup after the app has stopped`.
+- **Return `void` or `Promise<void>`:** Returning any non-`undefined` value from a cleanup hook is a TypeScript compile error, so accidental return values don't slip through unnoticed. Wrap non-void teardown one-liners in braces: `onDispose(() => { socket.close() })`.
+- **Never `await app.stop()` inside a hook:** A cleanup hook is part of `stop()`'s own completion—awaiting `app.stop()` inside `onDispose()` will deadlock forever.
+- **Hook errors & `AggregateError`:** If one hook throws or rejects, `stop()` still executes all remaining hooks. A single failure is rethrown unchanged; multiple failures are combined into an `AggregateError` (`App stop failed`).
+- **Automatic rollback on `start()` failure:** If `app.start()` fails partway through booting, it automatically calls `stop()` to clean up resources registered so far before rejecting. One error is rethrown unchanged; if startup and cleanup both fail, `start()` rejects with an `AggregateError` (`App startup and stop failed`). Once `start()` succeeds, later runtime errors in your app do **not** automatically stop the graph.
+
+<Callout kind="caution" title="What stop() does not do">
+
+`stop()` closes future `inject()` calls and runs registered `onDispose` hooks—nothing more. It does **not** wait for unfinished detached factories, cancel their in-flight I/O, or revoke JavaScript objects you already hold in variables. Stopping request admission, triggering `AbortController.abort()`, and sequencing graceful drain stay in your application code.
+
+</Callout>

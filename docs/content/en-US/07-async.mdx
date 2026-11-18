@@ -1,0 +1,50 @@
+---
+title: "Async Providers"
+slug: "async"
+part: kernel
+order: 7
+summary: "Write async factories without special APIs: share in-flight Promises, retry after transient failures, separate startup from background tasks, and type async tokens."
+---
+import asyncCode from '../../examples/async/shared-and-background.ts' with { type: 'text' }
+
+Opening a database pool, fetching remote secrets, or warming an in-memory cache shouldn't force you onto a separate `provideAsync()` / `injectAsync()` API track. In `dn-ioc`, you just write an `async` factory: `inject()` returns a standard `Promise<T>` and shares that single in-flight `Promise` across every caller in the same scope.
+
+<Code title="shared-promise.ts" code={asyncCode} region="shared" />
+
+## Shared Promise Identity & Retry on Failure
+
+`inject()` never wraps synchronous values in Promises—sync factories return `T` directly, and async factories return `Promise<T>`.
+
+When `sharedApp` calls `inject(settingsRef)` twice back-to-back in the same resolution scope, the factory runs only once and both callers receive the exact same `Promise` instance (`first === second` is `true`). You don't have to write manual memoization guards to stop five services from opening five duplicate database handshakes at boot.
+
+What if an async provider rejects—say, a transient network hiccup times out?
+
+- **Automatic cache eviction on rejection:** As soon as the factory's `Promise` rejects, the kernel removes that failed pending entry from the scope's cache before propagating the error.
+- **Clean retries while running:** As long as the app hasn't been stopped, a later `inject()` call in that scope will run the factory fresh instead of replaying a permanently poisoned rejection.
+
+## Awaited Startup vs Background Work
+
+`app.start()` follows a simple rule: it waits **only** for your root factory and whatever `Promise`s your root factory actually `await`s or returns. That gives you crisp control over what blocks startup and what doesn't:
+
+- **Block `start()` on critical dependencies:** `await inject(settingsRef)` inside `bootstrapApp(async ({ inject }) => { ... })` when the app shouldn't report ready until that resource settles. If it rejects, `start()` automatically runs cleanup and rejects.
+- **Kick off non-blocking background work:** Trigger `inject(warmupRef)` *without* `await`ing it inside the root factory, and `app.start()` resolves right away while `warmupRef` keeps running. Always assign that unawaited `Promise` to an owner outside the root factory (like `warmupTask` in `background-task.ts`) so you can still observe its result or catch errors—detached Promises aren't tracked by `start()`.
+
+<Code title="background-task.ts" code={asyncCode} region="background" />
+
+## Typing Async Tokens
+
+With `provide(async () => ...)`, TypeScript sees the `async` function return type and infers `Ref<Promise<T>>` automatically. A `token()`, on the other hand, has no factory function to infer from—so for an async token, put `Promise<...>` directly inside the type parameter.
+
+Writing `token<Promise<Settings>>('Settings')` makes the contract unambiguous on both ends: consumers see right away that `inject(settingsToken)` returns a `Promise` they need to `await`, and `provideFor(settingsToken, ...)` type-checks that the bound adapter returns `Promise<Settings>`.
+
+<Code title="async-token.ts" code={asyncCode} region="asyncToken" />
+
+## Async Cycles & Shutdown Boundaries
+
+- **Deadlock-free cycle detection:** The kernel tracks in-flight async dependency edges across `await` boundaries. If pending provider `A` awaits `B` while `B` circles back to await `A`, `inject()` throws `Circular dependency detected: A -> B -> A` immediately instead of hanging your process forever.
+
+<Callout kind="caution" title="stop() won't cancel in-flight Promises">
+
+Calling `app.stop()` immediately blocks *new* `inject()` calls, including inside async factories that wake up after an `await`. However, `stop()` doesn't wait for detached unfinished factories to settle or abort their underlying `fetch()` / socket I/O. Wire an `AbortController` into `onDispose()` when background work needs explicit cancellation—let's look at [Lifecycle & Cleanup](/lifecycle/) next.
+
+</Callout>
