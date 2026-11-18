@@ -243,4 +243,161 @@ describe('buildDocsSite', () => {
     expect(js).toContain('data-raw')
     expect(js).toContain('data-search-url')
   })
+
+  test('keeps .spread-left/.spread-right out of grid-item stacking contexts and guards IME composition in search keydown', async () => {
+    const repoRoot = join(import.meta.dir, '../..')
+    const css = await readFile(join(repoRoot, 'docs/assets/notebook.css'), 'utf8')
+    const js = await readFile(join(repoRoot, 'docs/assets/notebook.js'), 'utf8')
+
+    const extractBlocks = (selector: string): string[] => {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const re = new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]*)\\}`, 'g')
+      return Array.from(css.matchAll(re), m => m[1] ?? '')
+    }
+
+    const notebookOpenCss = extractBlocks('.notebook-open').join('\n')
+    expect(notebookOpenCss).toMatch(/position:\s*relative/)
+    expect(notebookOpenCss).toMatch(/isolation:\s*isolate/)
+
+    for (const gridPageSelector of ['.spread-left', '.spread-right']) {
+      const blocks = extractBlocks(gridPageSelector)
+      expect(blocks.length).toBeGreaterThan(0)
+      for (const decls of blocks) {
+        expect(decls).not.toMatch(/(?:^|[\s;{])z-index\s*:/)
+        expect(decls).not.toMatch(/(?:^|[\s;{])position\s*:/)
+        expect(decls).not.toMatch(/(?:^|[\s;{])isolation\s*:/)
+      }
+    }
+
+    const grainZ = Number(extractBlocks('.notebook-open::after')[0]?.match(/z-index:\s*(\d+)/)?.[1] ?? '0')
+    const drawerZ = Number(extractBlocks('.contents-drawer')[0]?.match(/z-index:\s*(\d+)/)?.[1] ?? '0')
+    expect(drawerZ).toBeGreaterThan(grainZ)
+
+    const noop = () => undefined
+
+    class MockElement {
+      attrs = new Map<string, string>()
+      listeners = new Map<string, ((event: Record<string, unknown>) => void)[]>()
+      addEventListener(type: string, handler: (event: Record<string, unknown>) => void) {
+        const list = this.listeners.get(type) ?? []
+        list.push(handler)
+        this.listeners.set(type, list)
+      }
+      getAttribute(name: string) {
+        return this.attrs.get(name) ?? null
+      }
+      setAttribute(name: string, value: string) {
+        this.attrs.set(name, value)
+      }
+      hasAttribute(name: string) {
+        return this.attrs.has(name)
+      }
+      removeAttribute(name: string) {
+        this.attrs.delete(name)
+      }
+    }
+    class MockHTMLElement extends MockElement {
+      isContentEditable = false
+    }
+    class MockHTMLInputElement extends MockHTMLElement {
+      value = ''
+      focus = noop
+      select = noop
+    }
+    class MockHTMLTextAreaElement extends MockHTMLElement {}
+    class MockHTMLSelectElement extends MockHTMLElement {}
+    class MockHTMLDialogElement extends MockHTMLElement {
+      open = false
+      showModal() {
+        this.open = true
+      }
+      close() {
+        this.open = false
+      }
+    }
+
+    const mockSearchInput = new MockHTMLInputElement()
+    const mockDialog = new MockHTMLDialogElement()
+    const mockDoc = {
+      documentElement: new MockHTMLElement(),
+      activeElement: mockSearchInput,
+      querySelectorAll: () => [],
+      querySelector: () => null,
+      getElementById: (id: string) => {
+        if (id === 'search-input') {
+          return mockSearchInput
+        }
+        if (id === 'search-modal') {
+          return mockDialog
+        }
+        return null
+      },
+      addEventListener: noop,
+    }
+    const mockWin = {
+      location: { hash: '', href: '/' },
+      addEventListener: noop,
+      setTimeout,
+      clearTimeout,
+    }
+
+    const runner = new Function(
+      'window',
+      'document',
+      'Element',
+      'HTMLElement',
+      'HTMLInputElement',
+      'HTMLTextAreaElement',
+      'HTMLSelectElement',
+      'HTMLDialogElement',
+      js,
+    )
+    runner(
+      mockWin,
+      mockDoc,
+      MockElement,
+      MockHTMLElement,
+      MockHTMLInputElement,
+      MockHTMLTextAreaElement,
+      MockHTMLSelectElement,
+      MockHTMLDialogElement,
+    )
+
+    const keydownHandlers = mockSearchInput.listeners.get('keydown') ?? []
+    expect(keydownHandlers.length).toBe(1)
+    const onKeydown = keydownHandlers[0]!
+
+    let preventedDuringComposing = false
+    onKeydown({
+      key: 'ArrowDown',
+      isComposing: true,
+      keyCode: 40,
+      preventDefault() {
+        preventedDuringComposing = true
+      },
+    })
+    expect(preventedDuringComposing).toBe(false)
+
+    let preventedDuring229 = false
+    onKeydown({
+      key: 'Enter',
+      isComposing: false,
+      keyCode: 229,
+      preventDefault() {
+        preventedDuring229 = true
+      },
+    })
+    expect(preventedDuring229).toBe(false)
+
+    let preventedNormal = false
+    onKeydown({
+      key: 'ArrowDown',
+      isComposing: false,
+      keyCode: 40,
+      preventDefault() {
+        preventedNormal = true
+      },
+    })
+    expect(preventedNormal).toBe(true)
+  })
 })

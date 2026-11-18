@@ -509,6 +509,9 @@
       renderSearchResults(searchInput.value)
     })
     searchInput.addEventListener('keydown', event => {
+      if (event.isComposing || event.keyCode === 229) {
+        return
+      }
       if (event.key === 'ArrowDown') {
         event.preventDefault()
         updateSelectedResult(selectedMatchIdx + 1)
@@ -527,6 +530,9 @@
   }
 
   document.addEventListener('keydown', event => {
+    if (event.isComposing || event.keyCode === 229) {
+      return
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault()
       if (searchModal instanceof HTMLDialogElement && searchModal.open) {

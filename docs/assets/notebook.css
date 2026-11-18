@@ -147,6 +147,7 @@ body {
 
 .notebook-open {
   position: relative;
+  isolation: isolate;
   max-width: 1440px;
   min-height: calc(100vh - 80px);
   margin: 0 auto;
@@ -165,7 +166,7 @@ body {
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  z-index: 2;
+  z-index: 1;
   opacity: var(--grain-opacity);
   mix-blend-mode: var(--grain-blend);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
@@ -177,7 +178,6 @@ body {
   flex-direction: column;
   min-width: 0;
   padding: 24px 48px 32px;
-  z-index: 3;
 }
 
 .spread-right {
@@ -189,7 +189,6 @@ body {
   background-image: radial-gradient(circle, var(--dot-grid) 1px, transparent 1px);
   background-size: 20px 20px;
   background-position: 10px 10px;
-  z-index: 3;
 }
 
 /* Folio Top & Bottom Chrome */
