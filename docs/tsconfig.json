@@ -1,6 +1,7 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": {
+    "lib": ["ESNext", "DOM"],
     "types": ["bun"],
     "paths": {
       "dn-ioc": ["./../src/index.ts"]

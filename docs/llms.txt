@@ -6,7 +6,7 @@ Version 0.3.1. ESM only. TypeScript consumers need `moduleResolution: "bundler"`
 
 Install: `npm install dn-ioc` (also pnpm, yarn, bun, `deno add npm:dn-ioc`). Deno may import `npm:dn-ioc` directly. Browser CDN, pin the version: `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1` serves `index.min.js` (4.8 kB, 1.9 kB gzipped). unpkg serves the same file. esm.sh serves its own build. Dropping the version pin serves whatever is newest.
 
-Human reference: [index.html](index.html). Repository: https://github.com/MunMunMiao/dn-ioc
+Human reference: https://dn-ioc.lyz.cloud/ — Repository: https://github.com/MunMunMiao/dn-ioc
 
 ## Do not invent these
 
