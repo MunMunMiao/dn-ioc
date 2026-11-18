@@ -11,7 +11,7 @@ const srcDir = join(root, 'src')
 
 await rm(coverageDir, { recursive: true, force: true })
 
-const proc = Bun.spawn(['bun', 'test', '--coverage', '--coverage-reporter=lcov', `--coverage-dir=${coverageDir}`], {
+const proc = Bun.spawn(['bun', 'test', 'src', '--coverage', '--coverage-reporter=lcov', `--coverage-dir=${coverageDir}`], {
   cwd: root,
   stderr: 'inherit',
   stdout: 'inherit',

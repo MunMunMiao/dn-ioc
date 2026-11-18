@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["bun"],
+    "paths": {
+      "dn-ioc": ["./../src/index.ts"]
+    },
+    "jsx": "react-jsx",
+    "jsxImportSource": "../scripts/docs"
+  },
+  "include": ["raw.d.ts", "locales.ts", "examples/**/*.ts", "../scripts/docs/**/*.ts"]
+}

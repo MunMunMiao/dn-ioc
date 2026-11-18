@@ -23,15 +23,18 @@
   },
   "scripts": {
     "build": "tsdown --config-loader native --config tsdown.config.ts",
-    "test": "bun run scripts/check-coverage.ts",
+    "test": "bun run scripts/check-coverage.ts && bun test scripts/docs",
     "lint": "biome check --write --error-on-warnings .",
     "lint:check": "biome check --error-on-warnings .",
     "lint:fix": "biome check --write --unsafe --error-on-warnings .",
-    "type-check": "bun check"
+    "type-check": "bun check && bun x tsc -p docs/tsconfig.json"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
+    "@mdx-js/mdx": "^3.1.1",
     "@types/bun": "^1.2.23",
+    "remark-frontmatter": "^5.0.0",
+    "remark-gfm": "^4.0.1",
     "tsdown": "^0.23.0",
     "typescript": "^7.0.2"
   },
