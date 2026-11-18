@@ -1,0 +1,119 @@
+---
+title: "Public API Reference"
+slug: "api"
+part: reference
+order: 13
+summary: "Complete signature, parameter, and behavioral reference for all six runtime functions, public TypeScript types, and frozen opaque handles."
+---
+import signaturesCode from '../../examples/api/signatures.ts' with { type: 'text' }
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+Everything `dn-ioc` exports comes from `'dn-ioc'`—six runtime functions and sixteen TypeScript types, with zero sub-path imports or global side effects. Use this chapter whenever you want to double-check an exact parameter type, return value, or handle invariant.
+
+<Code title="functions.ts" code={signaturesCode} region="functions" />
+
+## Runtime Functions
+
+### `token<T>(description?)`
+
+**Signature:** `function token<T>(description?: string): Token<T>`
+
+Creates a pure dependency key carrying the TypeScript type `T` and zero runtime implementation.
+
+- **`description`** *(optional `string`)*: Human-readable label shown in `No provider for token: Name` and `Circular dependency detected: ...`. When omitted or empty, diagnostics print `<anonymous>`. Two separate `token('Same')` calls always produce distinct keys—identity never comes from the description string.
+- **Async contracts:** Put `Promise` inside `T` (`token<Promise<Settings>>('Settings')`) so both `inject()` callers and `provideFor()` implementations agree on the async return type.
+
+### `provide<T>(factory, options?)`
+
+**Signature:** `function provide<T>(factory: Factory<T>, options?: ProviderOptions): Ref<T>`
+
+Wraps `factory` in a self-providing `Ref<T>` handle.
+
+- **`factory`**: `(ctx: Context) => T`. If no binding for this `Ref` exists in the active scope or its ancestors when `inject()` is called, the `Ref` installs its default factory into the active scope, runs it once, and caches the result (or shares the in-flight `Promise` for an async factory). Sync throws and async rejections are **not** cached, allowing retries while the app is running.
+- **Diagnostic name:** Taken from `factory.name` (for example, `provide(function UserService(ctx) { ... })` reports `UserService`, whereas an unnamed inline arrow reports `<anonymous>`).
+- **`options?.providers`**: Optional private child subtree visible only to `factory` and its descendants. Snapshotted when `provide()` is called and validated lazily when that subtree is first resolved.
+
+### `provideFor<T>(key, factory, options?)`
+
+**Signature:** `function provideFor<T>(key: InjectKey<T>, factory: Factory<T>, options?: ProviderOptions): ProviderDef<T>`
+
+Binds an implementation `factory` to `key`—accepting **either** a `Token<T>` or a `Ref<T>`—and returns a `ProviderDef<T>` ready to install in `{ providers }` or `bundleProviders()`.
+
+- Validates `key` immediately when `provideFor()` is called; passing anything other than a real `Token` or `Ref` throws `Invalid inject key received`.
+- **`options?.providers`**: Optional private child subtree visible to this bound `factory` and its descendants; snapshotted on creation.
+
+### `bundleProviders(...inputs)`
+
+**Signature:** `function bundleProviders(...inputs: ProviderInput[]): ProviderBundle`
+
+Packs any mix of `Ref`s, `ProviderDef` bindings, nested arrays, and other `ProviderBundle`s into one reusable `ProviderBundle`.
+
+- Shallow-copies input arrays at creation time so later array mutations cannot alter the bundle.
+- Installing a bundle flattens its items left-to-right in source order directly into the receiving scope—it does **not** create an isolated child scope of its own.
+
+### `isProvideRef(value)`
+
+**Signature:** `function isProvideRef(value: unknown): value is Ref<unknown>`
+
+Type guard returning `true` **only** when `value` is a genuine `Ref` returned by `provide()`. Returns `false` for `Token`, `ProviderDef`, `ProviderBundle`, primitives, `null`, and cloned objects (`{ ...someRef }`).
+
+### `bootstrapApp(fn, options?)`
+
+**Signature:** `function bootstrapApp(fn: BootstrapAppFn, options?: BootstrapAppOptions): App`
+
+Creates an isolated root scope, validates and installs `options?.providers` synchronously, and returns an `App` handle **without** executing `fn` or any provider factory yet.
+
+- **`fn`**: `(ctx: Context) => void | Promise<void>`. Runs when `app.start()` is called. Must return `void` or `Promise<void>`.
+- **`options?.providers`**: Root-level bindings, refs, arrays, and bundles. Invalid entries throw `Invalid provider input received` synchronously before an `App` handle is returned.
+
+## Context & App Lifecycle Interfaces
+
+### Context (`InjectFn` & `OnDisposeFn`)
+
+Every provider `Factory<T>` and `BootstrapAppFn` receives a `Context` object with two functions:
+
+- **`inject: <T>(key: InjectKey<T>) => T`** — Resolves `key` starting from the provider's owning scope upward. Returns synchronous values directly and shared `Promise`s for async factories. Remains callable inside returned methods after the factory finishes, up until `app.stop()` is called.
+- **`onDispose: (fn: () => void | Promise<void>) => void`** — Registers a cleanup hook run in LIFO (newest-first) order during `app.stop()`. Callable **only** while its own factory is actively running and before `stop()`. Returning anything other than `void` or `Promise<void>` is a TypeScript compile error—wrap non-`void` teardown expressions in braces (`onDispose(() => { server.close() })`).
+
+### App (`start`, `stop` & `AsyncDisposable`)
+
+The handle returned by `bootstrapApp()` exposes three members:
+
+- **`start(): Promise<void>`** — Runs the root callback once and awaits any `Promise` it returns. Concurrent or repeated calls return the exact same `Promise`. If startup fails, `start()` automatically runs `stop()` to roll back already-acquired resources before rejecting. Once `stop()` has been called, `start()` rejects with `Cannot start an app that has been stopped`.
+- **`stop(): Promise<void>`** — Synchronously closes `inject()` across the entire app, then awaits registered `onDispose` hooks newest-first. Idempotent across concurrent or repeated calls. Even if a hook fails, all remaining hooks still run.
+- **`[Symbol.asyncDispose](): Promise<void>`** — Points to the exact same `stop` function so `await using app = bootstrapApp(...)` tears the app down automatically at block exit. When native `Symbol.asyncDispose` exists on the runtime, `App` defines `[Symbol.asyncDispose]`; on older runtimes without the native symbol (such as Node 18), it falls back to `[Symbol.for('Symbol.asyncDispose')]` to match TypeScript's downlevel `await using` lookup.
+
+<Code title="types.ts" code={signaturesCode} region="types" />
+
+## Handle & Utility Types
+
+| Exported type | Definition / shape | Purpose |
+| --- | --- | --- |
+| `Token<T>` | Branded opaque interface carrying `T` | Contract key returned by `token<T>()`. |
+| `Ref<T>` | `extends Token<T>` (branded as a ref) | Self-providing handle returned by `provide()`. |
+| `RefType<T>` | `T extends Ref<infer U> ? U : never` | Extracts the resolved type `U` from `typeof someRef`—great for typing test fakes without writing duplicate interfaces. |
+| `InjectKey<T>` | `Token<T> \| Ref<T>` | Any valid lookup or binding target accepted by `inject()` and `provideFor()`. |
+| `ProviderDef<T>` | Branded opaque interface carrying `T` | Explicit binding returned by `provideFor()`. |
+| `ProviderBundle` | Branded opaque interface | Grouped wiring handle returned by `bundleProviders()`. |
+| `ProviderInput` | `Ref<unknown> \| ProviderDef<unknown> \| ProviderBundle \| readonly ProviderInput[]` | Any installable item or arbitrarily nested array accepted by `providers` and `bundleProviders()`. |
+| `ProviderOptions` | `{ providers?: readonly ProviderInput[] }` | Options object for `provide()` and `provideFor()` declaring a private child subtree. |
+| `BootstrapAppOptions` | `{ providers?: readonly ProviderInput[] }` | Options object for `bootstrapApp()` installing root-scope bindings. |
+| `Factory<T>` | `(ctx: Context) => T` | Provider factory function signature. |
+| `BootstrapAppFn` | `(ctx: Context) => void \| Promise<void>` | Root startup callback signature for `bootstrapApp()`. |
+
+## Frozen Opaque Handle Semantics
+
+Every handle returned by `token()`, `provide()`, `provideFor()`, and `bundleProviders()` is an empty frozen object (`Object.freeze({})`) with zero own enumerable properties and zero own symbol keys. All internal metadata is stored inside a private `WeakMap` inside the kernel:
+
+- **Mutation fails:** Attempting to attach or overwrite properties on a handle throws a `TypeError` in strict mode.
+- **Clones and forgeries are rejected:** Spreading or copying a handle (`{ ...sampleRef }`, `Object.assign({}, myToken)`) creates a brand-new object reference absent from the kernel's `WeakMap`. Passing that copy to `isProvideRef()` returns `false`; passing it to `inject()` or `provideFor()` throws `Invalid inject key received`; passing a copied binding or bundle in `providers` throws `Invalid provider input received`.
+
+<Callout kind="note" title="Trusted in-process kernel, not a sandbox">
+
+Opaque handles prevent accidental mutation, serialization bugs, and fragile duck-typing across packages. They are **not** a security boundary against untrusted code running in the same JavaScript isolate.
+
+</Callout>
+
+For every runtime error message the kernel can throw—and how to fix each one—flip to [Errors & Diagnostics](/errors/).
+
+<Code title="opaque-handles.ts" code={providersCode} region="isProvideRef" />

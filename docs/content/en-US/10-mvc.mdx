@@ -1,0 +1,105 @@
+---
+title: "MVC Pattern in Practice"
+slug: "mvc"
+part: patterns
+order: 10
+summary: "Structure a full Controller-Service-Repository TypeScript app with self-providing Refs, shared root connection pools, and zero container ceremony."
+---
+import userControllerCode from '../../examples/mvc/controllers/user-controller.ts' with { type: 'text' }
+import databaseCode from '../../examples/mvc/db/database.ts' with { type: 'text' }
+import mvcMainCode from '../../examples/mvc/main.ts' with { type: 'text' }
+import userModelCode from '../../examples/mvc/models/user.ts' with { type: 'text' }
+import userRepoCode from '../../examples/mvc/repositories/user-repository.ts' with { type: 'text' }
+import userServiceCode from '../../examples/mvc/services/user-service.ts' with { type: 'text' }
+import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with { type: 'text' }
+
+For most HTTP APIs, internal tools, and CRUD backends, classic layered **MVC** (`Controller → Service → Repository → Database`) hits the sweet spot. Because each layer is allowed to import the concrete layer directly underneath it, every module in the stack can be a self-providing `Ref<T>`—giving you clean separation of concerns without maintaining a giant central container file.
+
+<Code
+  title="mvc-project"
+  lang="text"
+  code={`src/
+├── models/
+│   └── user.ts                # Plain TypeScript data shapes (zero runtime code)
+├── db/
+│   └── database.ts            # Stateful connection pool Ref + onDispose teardown
+├── repositories/
+│   └── user-repository.ts     # Data-access Ref injecting databaseRef
+├── services/
+│   ├── user-service.ts        # Business-rule Ref injecting userRepositoryRef
+│   └── user-service.test.ts   # Unit test swapping userRepositoryRef via provideFor()
+├── controllers/
+│   └── user-controller.ts     # Transport Ref injecting userServiceRef
+└── main.ts                    # Entrypoint registering [databaseRef] at root`}
+/>
+
+## Layer-by-Layer Import Rules
+
+In a healthy MVC codebase, imports flow strictly top-down—controllers never skip services to query tables directly, and repositories never import HTTP controllers:
+
+| Layer | File | Exports | Allowed project imports | Responsibility |
+| --- | --- | --- | --- | --- |
+| **Models** | `models/user.ts` | `type User` | None | Shared TypeScript interfaces and value shapes. |
+| **Database** | `db/database.ts` | `databaseRef` | None | Owns the connection pool and registers `onDispose()` cleanup. |
+| **Repositories** | `repositories/user-repository.ts` | `userRepositoryRef` | `db/`, `models/` | Encapsulates collection/SQL queries behind typed methods. |
+| **Services** | `services/user-service.ts` | `userServiceRef` | `repositories/`, `models/` | Enforces validation and domain rules (`Invalid email`, duplicates). |
+| **Controllers** | `controllers/user-controller.ts` | `userControllerRef` | `services/`, `models/` | Translates HTTP/RPC inputs into service calls and status codes. |
+| **Entrypoint** | `main.ts` | `app` | `controllers/`, `db/` | Pins shared stateful refs at the root and boots the app. |
+
+## Walking the Full MVC Graph
+
+Flip through the six file tabs from bottom to top to trace how a request travels through the graph:
+
+1. **`db/database.ts`:** `provide(function Database({ onDispose }) { ... })` uses a named function so cycle diagnostics show `Database` instead of `<anonymous>`, and registers an `onDispose` hook right next to the state it closes.
+2. **`models/user.ts`:** Pure TypeScript `interface User`—zero DI imports needed.
+3. **`repositories/user-repository.ts`:** `userRepositoryRef` calls `inject(databaseRef)` once while its factory runs, grabs the `'users'` collection, and returns `{ findByEmail, create }`.
+4. **`services/user-service.ts`:** `userServiceRef` injects `userRepositoryRef` and keeps validation and uniqueness checks out of HTTP handlers.
+5. **`controllers/user-controller.ts`:** `userControllerRef` injects `userServiceRef` and formats the `{ status: 201, body }` response.
+6. **`main.ts`:** `bootstrapApp()` installs `providers: [databaseRef]` at the root scope and injects `userControllerRef` inside the startup callback.
+
+<CodeTabs
+  files={[
+    { title: 'db/database.ts', code: databaseCode },
+    { title: 'models/user.ts', code: userModelCode },
+    { title: 'repositories/user-repository.ts', code: userRepoCode },
+    { title: 'services/user-service.ts', code: userServiceCode },
+    { title: 'controllers/user-controller.ts', code: userControllerCode },
+    { title: 'main.ts', code: mvcMainCode },
+  ]}
+/>
+
+## Why Connection Pools Belong in Root providers
+
+You might wonder: since `databaseRef` is created with `provide()`, wouldn't `inject(databaseRef)` inside `userRepositoryRef` self-install it automatically even if `main.ts` omitted `providers: [databaseRef]`?
+
+In a flat single-scope app, yes—the first `inject(databaseRef)` at the root scope would cache it there. **Listing `providers: [databaseRef]` explicitly in `main.ts` protects you as the app grows:**
+
+- Remember from [Providers & Refs](/providers/) and [Scopes & Subtrees](/scopes/) that an unregistered `Ref` self-installs into *whichever scope injects it first*.
+- If you later mount two isolated `{ providers }` subtrees—say, an admin router and a background job worker—and neither parent registered `databaseRef`, each subtree would quietly spin up its **own separate connection pool**.
+- Pinning stateful resources (`databaseRef`, Redis clients, rate-limit stores) in root `providers` keeps instantiation lazy while guaranteeing every subtree in the process shares that single pool and closes it once on `await app.stop()`.
+
+## Workflow: Adding a New Resource Module
+
+Adding a second feature—say, `posts`—follows a predictable four-step loop without touching existing user modules:
+
+1. **Add the model (`models/post.ts`):** Export `interface Post { id: string; authorId: string; title: string }`.
+2. **Add the repository (`repositories/post-repository.ts`):** Export `postRepositoryRef = provide(function PostRepository({ inject }) { ... })` injecting the existing `databaseRef`.
+3. **Add the service (`services/post-service.ts`):** Export `postServiceRef = provide(function PostService({ inject }) { ... })` injecting `postRepositoryRef` (and `userRepositoryRef` if it needs to check that the author exists).
+4. **Mount the controller (`controllers/post-controller.ts` → `main.ts`):** Export `postControllerRef` and `inject(postControllerRef)` inside `main.ts` when wiring routes.
+
+Notice what you *didn't* have to touch: there's no central DI manifest to edit for every repository and service, and `databaseRef` is already shared at the root.
+
+## Swapping userRepositoryRef in Unit Tests
+
+Even though `userServiceRef` imports `userRepositoryRef` directly, you don't need module-level mocks (`vi.mock` or `mock.module`) to test `UserService` in isolation. Pass `provideFor(userRepositoryRef, fakeUserRepository)` to `bootstrapApp()` in your test:
+
+- `userServiceRef` receives your in-memory `Map` fake instead of the real repository.
+- Because `userRepositoryRef`'s default factory never runs, `databaseRef` is never even instantiated during the test.
+
+<Callout kind="caution" title="Watch out for unmocked Refs in unit tests">
+
+Because every `Ref` carries a working default factory, forgetting `provideFor(someOtherRef, fake)` in an MVC unit test **won't throw an error**—the kernel will happily build the real implementation. If your team wants core business logic separated from database/SDK imports *and* guaranteed to fail fast whenever a test forgets a fake, check out [DDD & Clean Architecture](/ddd/) next.
+
+</Callout>
+
+<Code title="services/user-service.test.ts" code={mvcTestCode} />

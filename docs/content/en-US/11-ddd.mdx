@@ -1,0 +1,199 @@
+---
+title: "DDD & Clean Architecture"
+slug: "ddd"
+part: patterns
+order: 11
+summary: "Keep domain and application layers free of SQL, HTTP, and SDK imports using pure token() ports, infrastructure adapter bundles, and lint-enforced boundaries."
+---
+import orderServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
+import domainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
+import domainPortsCode from '../../examples/ddd/domain/ports.ts' with { type: 'text' }
+import infraProvidersCode from '../../examples/ddd/infra/providers.ts' with { type: 'text' }
+import sqlOrderRepoCode from '../../examples/ddd/infra/sql-order-repository.ts' with { type: 'text' }
+import systemAdaptersCode from '../../examples/ddd/infra/system-adapters.ts' with { type: 'text' }
+import dddMainCode from '../../examples/ddd/main.ts' with { type: 'text' }
+import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' with { type: 'text' }
+
+When business rules outlive your current SQL driver, email vendor, or HTTP framework, **DDD / Clean (Hexagonal) Architecture** keeps external plumbing out of your core model. In `dn-ioc`, you don't need abstract base classes or container modules to invert dependencies: your inner `domain/` declares interfaces and `token()` ports, `application/` orchestrates use cases with `provide()`, and `infra/` binds real adapters into a single `bundleProviders()` export.
+
+<Code
+  title="ddd-project"
+  lang="text"
+  code={`src/
+├── domain/                        # Imports NO other project layer
+│   ├── order.ts                   # Order entity + OrderRepository port & token
+│   └── ports.ts                   # Cross-cutting Clock & Mailer ports & tokens
+├── application/                   # Imports domain/ only
+│   ├── order-service.ts           # OrderService use-case Ref injecting domain tokens
+│   └── order-service.test.ts      # Pure unit test binding lightweight fakes
+├── infra/                         # Imports domain/ only
+│   ├── sql-order-repository.ts    # Private sqlTableRef + sqlOrderRepositoryProvider
+│   ├── system-adapters.ts         # systemClockProvider + smtpMailerProvider
+│   └── providers.ts               # infraProviders = bundleProviders(...)
+└── main.ts                        # Composition Root: imports application/ + infra/`}
+/>
+
+## 1. Pure Domain Entities & Port Tokens (domain/)
+
+Your `domain/` folder sits at the center of the graph and imports **zero** other layers in your project. Alongside entities like `Order`, it defines the **ports** the outside world must satisfy—both persistence (`OrderRepository`) and cross-cutting side effects like system time (`Clock`) and email (`Mailer`).
+
+Each port pairs a TypeScript `interface` with a `token<T>('Name')` named directly after that interface. Putting `Clock` behind `clockToken` means business rules never call `new Date()` directly, so time-sensitive transitions stay 100% deterministic in tests.
+
+<CodeTabs
+  files={[
+    { title: 'domain/order.ts', code: domainOrderCode },
+    { title: 'domain/ports.ts', code: domainPortsCode },
+  ]}
+/>
+
+## 2. Application Use Cases (application/)
+
+The `application/` layer coordinates domain entities and ports to fulfill a use case like `OrderService.submit(id)`. Notice an intentional hybrid here:
+
+- `OrderService` pulls in external capabilities exclusively through **domain tokens** (`orderRepositoryToken`, `clockToken`, `mailerToken`)—it has no idea whether orders live in Postgres, SQLite, or a `Map`.
+- Yet `orderServiceRef` itself is exported as a **`Ref`** via `provide(function OrderService({ inject }) { ... })`! Why? Because callers of `application/`—HTTP controllers, CLI commands, queue workers, and tests—live in *outer* layers that are supposed to import use cases directly. You don't need redundant tokens for services whose import arrow already points inward.
+
+<Code title="application/order-service.ts" code={orderServiceCode} />
+
+## 3. Infrastructure Adapters & Bundle (infra/)
+
+The `infra/` folder imports `domain/` contracts and implements them against real drivers, SDKs, and databases:
+
+- **Keep driver handles private to `infra/`:** In `sql-order-repository.ts`, `sqlTableRef` is an internal `Ref` that owns the underlying table/pool state and registers an `onDispose` hook. `sqlOrderRepositoryProvider` injects `sqlTableRef` behind the scenes, while `domain/` and `application/` never know `sqlTableRef` exists.
+- **Pack the whole layer into `infraProviders`:** `infra/providers.ts` collects `sqlTableRef` (so every adapter in the root scope shares one underlying client) plus every `provideFor()` binding into a single `bundleProviders(...)` handle.
+- **Two-edit rule for new adapters:** Adding a new infrastructure adapter takes just two edits inside `infra/`—write its `provideFor()` binding and add one line to `infraProviders`. None of your entrypoints have to change.
+
+<Callout kind="caution" title="Never export a DDD adapter as a Ref for domain or application to import">
+
+Don't be tempted to write `export const sqlOrderRepositoryRef = provide(...)` in `infra/` and import it inside `domain/` or `application/`. Not only does that couple core logic straight to your SQL driver, it points the import arrow **outward**: `infra/sql-order-repository.ts` already imports `Order` from `domain/order.ts`, so importing `infra/` back into `domain/` immediately creates a circular module dependency. Keep ports as `token()`s in `domain/` and bind them with `provideFor()` in `infra/`.
+
+</Callout>
+
+<CodeTabs
+  files={[
+    { title: 'infra/sql-order-repository.ts', code: sqlOrderRepoCode },
+    { title: 'infra/system-adapters.ts', code: systemAdaptersCode },
+    { title: 'infra/providers.ts', code: infraProvidersCode },
+  ]}
+/>
+
+## 4. Composition Root & Multi-Entrypoint Reuse
+
+`main.ts` is the **Composition Root**—the single place in the codebase that imports both `application/` and `infra/` and snaps them together with `providers: [infraProviders]`.
+
+Because `infraProviders` is a reusable value and `orderServiceRef` is decoupled from transport code, spinning up multiple entrypoints over the same domain takes a handful of lines each:
+
+- **HTTP API server (`main.ts`):** Installs `[infraProviders]`, injects `orderServiceRef` inside `bootstrapApp()` (so any missing token binding fails immediately on `await app.start()`, not halfway through a live customer request), and hands it to your router.
+- **Queue worker or CLI job (`worker.ts`):** Calls `bootstrapApp(..., { providers: [infraProviders] })` in its own entrypoint and injects the exact same `orderServiceRef`—or tucks a `provideFor(mailerToken, dryRunMailer)` *after* `infraProviders` for a backfill script that shouldn't email customers.
+- **Unit test (`application/order-service.test.ts`):** Skips `infraProviders` altogether and installs lightweight `provideFor()` fakes. Forgetting even one port fake immediately rejects `unitTestApp.start()` with `No provider for token: Mailer`.
+
+<CodeTabs
+  files={[
+    { title: 'main.ts', code: dddMainCode },
+    { title: 'application/order-service.test.ts', code: dddUnitTestCode },
+  ]}
+/>
+
+## 5. Enforcing Layer Direction with Biome or ESLint
+
+Because `dn-ioc` only sees runtime handles, nothing in the kernel itself stops a teammate's editor auto-import from pulling `../infra/sql-order-repository` into `application/order-service.ts`. Lock the import arrows in place with a linter rule so architecture drift breaks `lint:check` automatically:
+
+| Layer | Allowed project imports | Forbidden project imports |
+| --- | --- | --- |
+| **`domain/`** | None (`'dn-ioc'` `token` only) | `application/`, `infra/`, `main.ts` |
+| **`application/`** | `domain/` | `infra/`, `main.ts` |
+| **`infra/`** | `domain/` | `application/`, `main.ts` |
+| **`main.ts` (Entrypoints)** | `application/`, `infra/`, `domain/` | — |
+
+<CodeTabs
+  files={[
+    {
+      title: 'biome.json',
+      lang: 'json',
+      code: `{
+  "overrides": [
+    {
+      "includes": ["src/domain/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../application/**", "../infra/**", "**/application/**", "**/infra/**"],
+                    "message": "domain/ must stay pure and cannot import application/ or infra/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/application/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../infra/**", "**/infra/**"],
+                    "message": "application/ must depend on domain/ tokens, not infra/ adapters."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}`,
+    },
+    {
+      title: 'eslint.config.js',
+      lang: 'js',
+      code: `export default [
+  {
+    files: ['src/domain/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../application/*', '../application/**', '../infra/*', '../infra/**'],
+              message: 'domain/ must stay pure and cannot import application/ or infra/.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/application/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../infra/*', '../infra/**'],
+              message: 'application/ must depend on domain/ tokens, not infra/ adapters.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+]`,
+    },
+  ]}
+/>
+
+Now let's put both unit and integration testing patterns side by side in [Testing & Mocking](/testing/).

@@ -1,0 +1,67 @@
+---
+title: "Errors & Diagnostics"
+slug: "errors"
+part: reference
+order: 14
+summary: "Look up every verbatim dn-ioc runtime Error and AggregateError message, check evaluation precedence, and jump straight to the fix."
+---
+import disposeCode from '../../examples/lifecycle/dispose-and-using.ts' with { type: 'text' }
+import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { type: 'text' }
+
+When wiring goes sideways, `dn-ioc` fails fast with plain, predictable `Error` messages rather than cryptic internal stack frames or silent `undefined` values. Every verbatim runtime message the kernel can produce is cataloged below, along with evaluation order, propagation rules, and concrete fixes.
+
+<Code title="unbound-token.ts" code={tokenBindingCode} region="unbound" />
+
+## Verbatim Error Message Catalog
+
+`dn-ioc` throws eight standard `Error` messages plus two `AggregateError` wrappers when multiple failures collide during teardown:
+
+| Verbatim `Error.message` | Thrown / rejected by | Cause |
+| --- | --- | --- |
+| `No provider for token: Name` | `inject()` | `token('Name')` was injected, but neither the active scope nor any ancestor scope bound it via `provideFor()`. Prints `<anonymous>` if the token has no description. |
+| `Circular dependency detected: A -> B -> A` | `inject()` | Sync or pending async providers depend on each other in a loop. The path starts at the key closing the cycle (`A -> A` for self-injection) and prints `<anonymous>` for unnamed keys. |
+| `Invalid inject key received` | `inject()`, `provideFor()` | Key is not a genuine `Token` or `Ref`—for example `null`, a primitive, a `ProviderDef`, a `ProviderBundle`, or a shallow clone (`{ ...myToken }`). |
+| `Invalid provider input received` | `bootstrapApp()` (root) or `inject()` (nested) | An entry in `providers` or `bundleProviders()` (once installed) is not a `Ref`, `ProviderDef`, `ProviderBundle`, or array of them (for example, passing a bare `Token` without `provideFor()`). |
+| `Cannot inject after the app has stopped` | `inject()` | `inject()` was called during or after `app.stop()`—including inside an `onDispose` hook, a detached async continuation, or against an already-cached key. |
+| `onDispose can only be called while the factory is running` | `onDispose()` | `onDispose()` was called after its factory returned synchronously, threw, or settled its returned `Promise` (for example inside `setTimeout`, a request handler, or another cleanup hook). |
+| `Cannot register cleanup after the app has stopped` | `onDispose()` | An `async` factory was still suspended across an `await` when `app.stop()` ran, then woke up and called `onDispose()`. |
+| `Cannot start an app that has been stopped` | `app.start()` (rejects) | `app.start()` was called after `app.stop()` had already started or completed. |
+| `App stop failed` (`AggregateError`) | `app.stop()` (rejects) | Two or more `onDispose` hooks threw or rejected during teardown (`error.errors` holds each failure in LIFO execution order). |
+| `App startup and stop failed` (`AggregateError`) | `app.start()` (rejects) | `app.start()` failed *and* its automatic `stop()` rollback also failed (`error.errors` holds `[startupError, cleanupError]`). |
+
+## Precedence & Timing Nuances
+
+A few subtle ordering guarantees in the kernel are worth knowing when debugging edge cases:
+
+1. **Stopped check runs first in `inject()`:** `Cannot inject after the app has stopped` is checked *before* key validation, cycle detection, scope lookup, or cache hits. Even injecting an already-cached instance or an invalid key after `app.stop()` throws `Cannot inject after the app has stopped`.
+2. **Root vs nested `Invalid provider input received`:** Root `providers` passed to `bootstrapApp()` are flattened and validated **synchronously** before an `App` handle exists. Nested `{ providers }` on `provide()` or `provideFor()` are validated **lazily** inside `inject()` the first time that provider's private child subtree is resolved.
+3. **Active-window check precedes stopped check in `onDispose()`:** Once a factory finishes (returns, throws, or settles its Promise), its `onDispose` handle is permanently deactivated and always throws `onDispose can only be called while the factory is running`—even if the app stops afterward.
+4. **Stopped check precedes `start()` idempotence:** While an app is unstarted or running, `app.start()` caches and returns the same `Promise`. Once `app.stop()` is called, `app.start()` checks the stopped state *ahead* of that cache and rejects with `Cannot start an app that has been stopped` instead of replaying a stale resolved run.
+
+<Code title="dispose.ts" code={disposeCode} region="dispose" />
+
+## Failure Propagation Matrix
+
+Where an error lands—and what happens to cached instances and open resources—depends on which phase threw it:
+
+| Failure scenario | How it surfaces | Cache & app state afterward |
+| --- | --- | --- |
+| Invalid entry in root `bootstrapApp(..., { providers })` | Throws synchronously from `bootstrapApp()` | No `App` handle is created. |
+| Invalid entry in nested `{ providers }` | Throws synchronously from `inject()` on first subtree resolution | Subtree is not created; propagates to caller (rolls back `start()` if during boot). |
+| Sync factory throws inside `inject()` | Throws synchronously from `inject()` | Nothing is cached; a later `inject()` while running re-runs the factory. |
+| Async factory rejects inside `inject()` | Returned shared `Promise` rejects | Pending cache entry is evicted; a later `inject()` while running retries fresh. |
+| Root callback (or an awaited startup `Promise`) fails | `app.start()` runs `await app.stop()`, then rejects | App is permanently stopped; single error rethrown unchanged, or `AggregateError` if cleanup also failed. |
+| Unawaited background `Promise` rejects | Rejects on that `Promise` directly (`start()` ignores it) | App stays running; failed async provider is evicted from cache. |
+| One `onDispose` hook fails during `app.stop()` | Remaining hooks still run; `app.stop()` rejects with that error unchanged | App stays permanently stopped. |
+| Multiple `onDispose` hooks fail during `app.stop()` | All hooks run; `app.stop()` rejects with `AggregateError` (`App stop failed`) | App stays permanently stopped. |
+
+## Quick Fix Recipes
+
+- **`No provider for token: Name`:** Bind the token with `provideFor(myToken, ...)` in your root `providers` or `infraProviders` bundle. If this happened in an integration test, check that you didn't forget `infraProviders`; if in a child subtree, check [Scopes & Subtrees](/scopes/) to verify the consumer isn't owned by a parent scope that lacks the binding.
+- **`Circular dependency detected: A -> B -> A`:** Extract the shared state or helper that both `A` and `B` need into a third provider `C` (`A -> C` and `B -> C`). If `<anonymous>` appears in the chain, change `provide(({ inject }) => ...)` to `provide(function MyService({ inject }) { ... })` to pinpoint the exact culprit.
+- **`Invalid provider input received`:** Check your `providers: [...]` arrays and `bundleProviders(...)` calls for a bare `token()` passed directly instead of `provideFor(myToken, factory)`, an `undefined` import from a circular ES module, or a cloned object.
+- **`Invalid inject key received`:** Make sure you passed a `Token` or `Ref`—not a `ProviderDef` returned by `provideFor()` or a `ProviderBundle` returned by `bundleProviders()`—into `inject()` or `provideFor()`.
+- **`Cannot inject after the app has stopped`:** Move `const dep = inject(depRef)` to the top of your factory *before* `onDispose(() => { ... })` so teardown hooks close over resolved values instead of calling `inject()` during shutdown (see [Lifecycle & Cleanup](/lifecycle/)). If a request handler threw this during graceful drain, stop accepting incoming requests before calling `app.stop()`.
+- **`onDispose can only be called while the factory is running`:** Register cleanup synchronously at the top of your factory—or before your `async` factory's returned `Promise` resolves—never inside a timer callback, event listener, or lazy method.
+- **`Cannot register cleanup after the app has stopped`:** Your app called `stop()` while an `async` factory was still mid-flight across an `await`. Register `onDispose()` *before* yielding when possible, or pass an `AbortSignal` so in-flight setup aborts cleanly when shutdown starts (see [Async Providers](/async/)).
+- **`Cannot start an app that has been stopped`:** A stopped `App` is single-use because its cleanup hooks have already released its resources. Call `bootstrapApp(...)` again to construct a fresh `App` instance—just like per-test setups do in [Testing & Mocking](/testing/).

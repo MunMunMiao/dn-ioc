@@ -1,0 +1,62 @@
+---
+title: "Testing & Mocking"
+slug: "testing"
+part: patterns
+order: 12
+summary: "Run isolated unit and integration tests in parallel without module-mocking hacks using provideFor(), last-write-wins bundle overrides, and await using."
+---
+import mvcFakeCode from '../../examples/mvc/user-service-fake-example.ts' with { type: 'text' }
+import testingCode from '../../examples/testing/unit-and-integration.ts' with { type: 'text' }
+
+Testing with `dn-ioc` doesn't require `vi.mock()`, `mock.module()`, or brittle `afterEach(() => container.reset())` rituals. Because there's **no global container**, every `bootstrapApp()` call builds a fresh, isolated dependency graph in memory—so dozens of test files can run concurrently without stepping on each other, and `provideFor()` swaps any `Token<T>` or `Ref<T>` in one line.
+
+<Code title="order-service.unit.test.ts" code={testingCode} region="unit" />
+
+## Unit Testing with Isolated Fakes
+
+In a unit test, you instantiate a dedicated `bootstrapApp()` and install **only** the fakes the system under test needs (`fakeOrders`, a fixed `Clock`, and `fakeMailer` in `order-service.unit.test.ts`).
+
+`provideFor(key, fakeFactory)` works identically whether `key` is a `Token<T>` or a `Ref<T>`, **but what happens when you forget to mock a dependency depends on which kind of key you used:**
+
+| Key kind | If you forget `provideFor()` in a unit test | Practical impact |
+| --- | --- | --- |
+| **`Token<T>`** | Rejects `app.start()` immediately with `No provider for token: Name`. | **Fails fast:** a unit test can never accidentally open a real socket or send a real email. |
+| **`Ref<T>`** | Not an error—self-installs and runs the `Ref`'s real factory. | **Silent fallback:** handy for pure in-memory helpers, risky if the unmocked `Ref` talks to external I/O. |
+
+Compare the DDD unit test above with the MVC test (`services/user-service.test.ts`): swapping `userRepositoryRef` via `provideFor(userRepositoryRef, fakeUserRepository)` is just as clean, as long as you remember to override every I/O-touching `Ref` that `userServiceRef` reaches.
+
+<Callout kind="tip" title="Keep error traces readable in test failures">
+
+Name tokens after their interface (`token<Mailer>('Mailer')`) and give `provide()` factories a real function name (`provide(function OrderService({ inject }) { ... })`). When a test forgets a binding or introduces a cycle, you'll see `OrderService` and `Mailer` in the error message instead of `<anonymous>`.
+
+</Callout>
+
+<Code title="services/user-service.test.ts" code={mvcFakeCode} />
+
+## Integration Testing with Bundle Overrides
+
+Unit tests prove your business logic works with fakes; integration tests prove your real SQL repositories, serialization, and domain services work together while stubbing out external third parties like SMTP or Stripe.
+
+Because `dn-ioc` flattens arrays and `ProviderBundle`s in source order—and **later bindings in the same scope silently replace earlier ones**—you can install your entire production `infraProviders` bundle first and override a single port right after it:
+
+- **Correct order (`[infraProviders, provideFor(mailerToken, fakeMailer)]`):** Installs `sqlTableRef`, `sqlOrderRepositoryProvider`, `systemClockProvider`, and `smtpMailerProvider`, then replaces `mailerToken` with `fakeMailer`.
+- **Wrong order (`[provideFor(mailerToken, fakeMailer), infraProviders]`):** `infraProviders` flattens *after* your fake and silently overwrites `mailerToken` back to the real `smtpMailerProvider`!
+
+<Callout kind="note" title="Overriding inside nested subtrees">
+
+Root overrides in `bootstrapApp(..., { providers })` apply to every root-owned service automatically. If you ever override a dependency inside a child `{ providers }` subtree while its consumer is already installed at the root scope, remember to rebind both consumer and dependency in that child scope (see [Scopes & Subtrees](/scopes/)).
+
+</Callout>
+
+<Code title="order-service.integration.test.ts" code={testingCode} region="integration" />
+
+## Per-Test Cleanup with await using
+
+Notice `await using app = bootstrapApp(...)` in both `testOrderSubmitUnit()` and `testOrderSubmitIntegration()`:
+
+- Because `App` implements `AsyncDisposable`, TypeScript automatically awaits `app.stop()` when execution leaves the function block—**even if an `expect()` assertion throws halfway through the test.**
+- `sqlTableRef`'s `onDispose` hook runs before the test returns, closing pools, timers, or temporary servers cleanly with zero `try / finally` boilerplate.
+
+If a codebase doesn't use `await using` yet, wrapping the test body in `try { await app.start() } finally { await app.stop() }` does the exact same job—and because `app.stop()` is idempotent, calling it twice in teardown hooks is always safe.
+
+Need to check an exact type signature or look up an error message? Head into Part IV with the [Public API Reference](/api/) and [Errors & Diagnostics](/errors/).
