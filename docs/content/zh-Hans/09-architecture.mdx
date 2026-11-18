@@ -1,0 +1,59 @@
+---
+title: "如何选择 Ref 与 Token"
+slug: "architecture"
+part: patterns
+order: 9
+summary: "不用凭感觉纠结：顺着模块 import 的箭头方向，一秒决定该用自带实现的 Ref 还是零实现的 Token。"
+---
+import dddAppServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
+import dddDomainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
+import mvcUserRepoCode from '../../examples/mvc/repositories/user-repository.ts' with { type: 'text' }
+import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' with { type: 'text' }
+
+真正在业务仓库里铺开用 `dn-ioc` 时，你碰到的第一个设计问题肯定是：某个依赖到底该写成 `provide()` 产出的 `Ref<T>`，还是 `token()` 产出的 `Token<T>`？其实完全不用凭个人喜好拍脑袋——**看一眼模块的 `import` 方向，答案当场就定了。**
+
+<CodeTabs
+  files={[
+    { title: 'mvc/services/user-service.ts', code: mvcUserServiceCode },
+    { title: 'mvc/repositories/user-repository.ts', code: mvcUserRepoCode },
+    { title: 'ddd/application/order-service.ts', code: dddAppServiceCode },
+    { title: 'ddd/domain/order.ts', code: dddDomainOrderCode },
+  ]}
+/>
+
+## 模块导入方向就是唯一的判断标准
+
+对着调用 `inject()` 的那个文件，只问一个问题：**这个文件在架构上允不允许直接 `import` 具体的实现模块？**
+
+- **允许 → 直接用 `provide()`（`Ref<T>`）：** `Ref` 把键和默认工厂绑在了一起。在 `user-service.ts` 里引 `userRepositoryRef`，就会顺着把 `user-repository.ts` 以及它底下引的 `databaseRef` 一并拉进模块图里。在经典的 **MVC** 分层服务里，Controller 引 Service、Service 引 Repository 本来就是天经地义的事——用 `Ref` 零额外文件、零中心容器注册样板，类型推导还一步到位。
+- **不允许 → 用 `token<T>()`（`Token<T>`）：** `Token` 只带一个 TypeScript 类型和一个可选的报错名字，运行时代码是零。在 **DDD / 整洁架构**里，最里层的 `domain/` 定义 `OrderRepository` 接口并导出 `orderRepositoryToken`，最外层的 `infra/` 反过来 `import` `domain/` 并用 `provideFor()` 绑上 SQL 实现。这样核心业务逻辑永远不会沾到数据库驱动、HTTP SDK 或 `infra/` 目录。
+
+另外，凡是那些只有启动那一刻才拿得到的值——比如环境变量里的数据库地址、第三方密钥、局部子树的动态配置——本来就写不出合理的默认工厂，用 `token<T>()` 也是最顺手的。
+
+## 两者的实际取舍对比
+
+把右边四个文件标签页（`mvc/` 对比 `ddd/`）翻着看一遍，再对照下面这张表就一目了然了：
+
+| 对比维度 | `Ref<T>`（`provide()`） | `Token<T>`（`token()` + `provideFor()`） |
+| --- | --- | --- |
+| **编译期耦合** | 消费方直接 `import` 具体实现模块。 | 消费方只引契约；由外层模块引契约并绑上实现。 |
+| **组装样板代码** | 零样板——首次 `inject()` 时在当前作用域自动挂载。 | 显式绑定——必须在 `{ providers }` 或 bundle 里通过 `provideFor()` 绑好。 |
+| **测试里怎么换实现** | `provideFor(ref, fakeFactory)` | `provideFor(token, fakeFactory)` —— 用的是同一个函数。 |
+| **单测里忘了塞假实现** | **静默兜底：** 直接跑真实实现。 | **立刻报错：** `start()` 当场 reject `No provider for token: Name`。 |
+| **报错里的诊断名** | 函数名（`provide(function UserService(...) {})`），匿名则显示 `<anonymous>`。 | 描述字符串（`token('OrderRepository')`），不传则显示 `<anonymous>`。 |
+| **最适合什么** | MVC 的 Controller、Service、Repository、应用层用例、内部工具。 | DDD 领域端口、横切外部能力（`Clock`、`Mailer`）、运行时配置与密钥。 |
+
+## 同一个项目里完全可以混着用
+
+选 `Ref` 还是选 `Token` 不是非黑即白的教条——绝大多数生产项目都是把两者搭在一起用的：
+
+- 就算在最严格的 DDD 服务里，**应用层用例**（`orderServiceRef`）和 **`infra/` 内部的私有底层客户端**（`sqlTableRef`）照样写成普通 `Ref`，因为调用它们的人本来就处在外层或同层，本来就该直接 `import` 它们。只有从内层跨越边界指向外层适配器的端口，才需要动用 `token()`。
+- 就算在最直白的 MVC 项目里，碰到 `DatabaseUrl` 连接串，或者单测里绝对不想误调扣钱的第三方支付网关，也完全可以单拎出来用 `token()` 锁死。
+
+<Callout kind="note" title="别忘了用 Linter 守住架构边界">
+
+`dn-ioc` 只在运行时解析句柄，管不到你源码顶部的 TypeScript `import` 语句。如果你选了 `Token` 来保证 `domain/` 不去碰 `infra/`，记得顺手配一条 Biome 或 ESLint 的 `noRestrictedImports` 规则，谁在编辑器里手滑自动导入了外层目录，CI 直接挂红拦住。
+
+</Callout>
+
+接下来我们直接拆两个完整的多文件实战项目：想看自顶向下清爽直连的写法，先看 [MVC 工程实战指南](/zh-hans/mvc/)；想看端口与适配器依赖倒置的写法，直接翻到 [DDD 与整洁架构实战](/zh-hans/ddd/)。

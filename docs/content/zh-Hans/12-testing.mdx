@@ -1,0 +1,62 @@
+---
+title: "测试与依赖替换"
+slug: "testing"
+part: patterns
+order: 12
+summary: "告别模块劫持黑魔法：利用 provideFor()、后写覆盖先写的 bundle 局部替换以及 await using，并行跑通互不干扰的单元测试与集成测试。"
+---
+import mvcFakeCode from '../../examples/mvc/user-service-fake-example.ts' with { type: 'text' }
+import testingCode from '../../examples/testing/unit-and-integration.ts' with { type: 'text' }
+
+用 `dn-ioc` 写测试，彻底用不着 `vi.mock()`、`mock.module()`，也不用每个用例跑完提心吊胆地写 `afterEach(() => container.reset())`。因为压根**没有全局容器**，每次调 `bootstrapApp()` 都会在内存里建一张干干净净的新图——几十个测试文件全开并发跑也绝不会串状态，想换掉任何 `Token<T>` 或 `Ref<T>`，一行 `provideFor()` 就完事。
+
+<Code title="order-service.unit.test.ts" code={testingCode} region="unit" />
+
+## 用隔离的假实现跑单元测试
+
+写单测时，直接起一个专属的 `bootstrapApp()`，只把被测服务用得上的那几个假实现塞进去就行（比如 `order-service.unit.test.ts` 里的 `fakeOrders`、固定时间的 `Clock` 和 `fakeMailer`）。
+
+不管 `key` 是 `Token<T>` 还是 `Ref<T>`，`provideFor(key, fakeFactory)` 的写法完全一模一样；**但万一你在单测里漏绑了某个依赖，这两种 Key 的脾气截然不同：**
+
+| Key 类型 | 单测里忘了写 `provideFor()` 会怎样 | 实际影响 |
+| --- | --- | --- |
+| **`Token<T>`** | `app.start()` 当场 reject `No provider for token: Name`。 | **立刻暴露问题：** 单测绝对不可能误连真实数据库或真把邮件发出去。 |
+| **`Ref<T>`** | 不报错——自动挂载并直接跑 `Ref` 自带的真实工厂。 | **静默兜底：** 纯内存工具函数很省事，但要是漏换的 `Ref` 底下连着外部 I/O 就会踩坑。 |
+
+你可以对比一下上面的 DDD 单测和下面这个 MVC 单测（`services/user-service.test.ts`）：用 `provideFor(userRepositoryRef, fakeUserRepository)` 换掉 `userRepositoryRef` 同样清爽利落，只要记得把 `userServiceRef` 链路底下会碰外部 I/O 的 `Ref` 都替掉就行。
+
+<Callout kind="tip" title="给 Token 和工厂起好名字，单测挂了一秒定位">
+
+平时写代码顺手把 Token 按接口名命名（`token<Mailer>('Mailer')`），给 `provide()` 传具名函数（`provide(function OrderService({ inject }) { ... })`）。测试里一旦漏绑依赖或者不小心写出循环引用，报错里直接就能看到 `OrderService` 和 `Mailer`，不用对着一堆 `<anonymous>` 抓瞎。
+
+</Callout>
+
+<Code title="services/user-service.test.ts" code={mvcFakeCode} />
+
+## 集成测试：整包挂载再局部覆盖
+
+单测负责验证业务逻辑配假实现跑得通；集成测试则要让真实的 SQL Repository、序列化逻辑和领域服务真刀真枪配合跑一遍，只把发邮件（SMTP）或第三方支付（Stripe）这类外部接口挡掉。
+
+因为 `dn-ioc` 按源码顺序从左往右拍平数组和 `ProviderBundle`，而且**同一作用域内后写的绑定会直接覆盖前面的绑定**，你可以先把生产环境的整包 `infraProviders` 装上去，紧接着在后面单独覆盖某一个端口：
+
+- **正确顺序（`[infraProviders, provideFor(mailerToken, fakeMailer)]`）：** 先装好 `sqlTableRef`、`sqlOrderRepositoryProvider`、`systemClockProvider` 和 `smtpMailerProvider`，紧接着把 `mailerToken` 替换成 `fakeMailer`。
+- **写反了的顺序（`[provideFor(mailerToken, fakeMailer), infraProviders]`）：** `infraProviders` 在你的假实现**之后**展开，反手就把 `mailerToken` 又改回真实的 `smtpMailerProvider` 了！
+
+<Callout kind="note" title="在嵌套私有子树里做覆盖时的提醒">
+
+写在 `bootstrapApp(..., { providers })` 根级的覆盖，天然对所有归根作用域管的服务生效。如果你是在某个局部的 `{ providers }` 子树里做覆盖，而消费它的服务本身已经挂在根作用域上了，别忘了在子作用域里把消费方和依赖一块儿重绑（详见[作用域与私有子树](/zh-hans/scopes/)）。
+
+</Callout>
+
+<Code title="order-service.integration.test.ts" code={testingCode} region="integration" />
+
+## 用 await using 给每个用例自动收尾
+
+留意看 `testOrderSubmitUnit()` 和 `testOrderSubmitIntegration()` 开头那句 `await using app = bootstrapApp(...)`：
+
+- 因为 `App` 实现了 `AsyncDisposable`，代码离开测试函数块时 TypeScript 会自动补上 `await app.stop()`——**就算跑到一半 `expect()` 断言失败抛错，清理逻辑照样一分不落地执行。**
+- `sqlTableRef` 里注册的 `onDispose` 钩子会在测试结束前自动跑完，把连接池、定时器或临时端口关得干干净净，半行 `try / finally` 样板都不用写。
+
+如果你的项目暂时还没开 `await using` 语法，用传统的 `try { await app.start() } finally { await app.stop() }` 效果完全一样；而且 `app.stop()` 本身是幂等的，就算在清理钩子里多调了一次也绝对安全。
+
+想查某个函数的精确类型签名，或者碰到报错想看怎么修？直接往后翻到第四部分的 [公共 API 手册](/zh-hans/api/) 和 [错误字典与排错指南](/zh-hans/errors/)。

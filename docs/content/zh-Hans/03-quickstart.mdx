@@ -1,0 +1,64 @@
+---
+title: "五分钟快速上手"
+slug: "quickstart"
+part: start
+order: 3
+summary: "三步跑通完整流程：定义 provider、启动依赖图，再在测试里一行换掉异步依赖。"
+---
+import step1Code from '../../examples/quickstart/step1-provide.ts' with { type: 'text' }
+import step2Code from '../../examples/quickstart/step2-compose.ts' with { type: 'text' }
+import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with { type: 'text' }
+
+上手不用先规划一大套目录结构，也不用建个全局容器文件挨个注册类。我们分三小步直接跑通：先用 `provide()` 包普通函数，再用 `bootstrapApp()` 启动，最后在测试里把异步依赖换成假实现（fake）。
+
+## 1. 用 provide() 定义依赖
+
+随便传个工厂函数给 `provide()`，就能拿到一个带完整类型的 `Ref<T>` 句柄。看右边的 `step1-provide.ts`：`configRef` 直接返回一个普通配置对象，`greeterRef` 从参数里解构出 `{ inject }` 把配置取出来，拼好 `{ greet }` 返回。
+
+这里有两个细节一眼就能看出来：
+
+- **不用手写类型标注：** `greeterRef` 里的 `config` 类型，TypeScript 直接顺着 `configRef` 的返回值自动推出来了。
+- **此刻一行逻辑都没执行：** 调 `provide()` 只是记下“将来有人要这个值的时候该怎么造”，不会在模块加载时提前跑代码。
+
+<Code title="step1-provide.ts" code={step1Code} />
+
+## 2. 用 bootstrapApp() 启动依赖图
+
+接着把入口函数传给 `bootstrapApp()`，再调 `await app.start()`。注意 `bootstrapApp()` 只负责建好隔离的根作用域并立刻把 `app` 句柄交给你——这时候工厂函数照样还没跑。
+
+等你调 `await app.start()` 时，事情按顺序发生：
+
+1. 入口函数调用 `inject(greeterRef)`。
+2. `greeterRef` 在当前应用作用域自动挂载，接着往下请求 `inject(configRef)`。
+3. `configRef` 执行一次并缓存 `{ greeting: 'hello' }`，`greeterRef` 拿到后缓存 `{ greet }`，最后打出 `hello, world`。
+
+因为这个小例子没开网络连接、没挂定时器也没连数据库池，跑完压根不需要调 `app.stop()`——`start()` 结束后交给正常的垃圾回收就行。
+
+<CodeTabs
+  files={[
+    { title: 'step2-compose.ts', code: step2Code },
+    { title: 'step1-provide.ts', code: step1Code },
+  ]}
+/>
+
+## 3. 接入异步依赖，并在测试里替换假实现
+
+真实项目里经常要从远端拉配置或者连数据库，写单测时又得把它们干净地换掉。在 `dn-ioc` 里，这两件事都是一行搞定：
+
+- **异步依赖直接写普通 `async` 函数：** 把 `settingsRef` 写成 `async` 后，`inject(settingsRef)` 返回的就是一个同作用域共享的 `Promise`，在 `greeterRef` 里直接 `await` 就行。同时把 `bootstrapApp` 的入口函数也标成 `async` 并 `await inject(greeterRef)`，这样 `await testApp.start()` 就会等整个异步启动链彻底跑完再返回。
+- **用 `provideFor()` 原地替换依赖：** 在 `{ providers }` 里塞一句 `provideFor(settingsRef, async () => ({ greeting: 'test-hello' }))`，就能在 `testApp` 里换掉 `settingsRef`，`greeterRef` 的源码一行都不用动。
+- **测试收尾干净利落：** 跑完调一句 `await testApp.stop()`，立刻关掉注入并执行清理钩子，绝不把资源泄漏到下一个测试用例。
+
+<Code title="step3-async-and-fake.ts" code={step3Code} />
+
+## 平时最常用的三条规矩
+
+<Callout kind="note" title="写业务时天天会用到的三个细节">
+
+- **先挂信号监听，再调 `start()`：** 因为 `bootstrapApp()` 当下不执行任何代码，在端口或定时器打开之前你就已经拿到 `app` 了，先把退出清理监听挂好再调 `await app.start()` 最稳妥。
+- **`start()` 是幂等的：** 重复调多少次 `app.start()` 都会返回同一个 `Promise`，入口工厂只会执行一次。
+- **入口工厂只管干活不返回值：** 启动逻辑全写在 `bootstrapApp()` 的回调里就行，别从它往外 return 业务数据。
+
+</Callout>
+
+接下来我们拆开细看底层的 [Provider 与 Ref](/zh-hans/providers/) 和 [Token 与依赖绑定](/zh-hans/tokens/)；如果你想直接看完整项目怎么分层，也可以跳去 [MVC 工程实战指南](/zh-hans/mvc/) 或 [DDD 与整洁架构实战](/zh-hans/ddd/)。

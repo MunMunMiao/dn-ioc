@@ -1,0 +1,50 @@
+---
+title: "Provider 与 Ref"
+slug: "providers"
+part: kernel
+order: 4
+summary: "搞懂 provide() 如何按作用域自动挂载并缓存实例、bundleProviders() 如何打包一组绑定，以及挂载顺序与覆盖规则。"
+---
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+只要某个依赖有明确的默认实现，而且调用方本来就可以直接 `import` 它——比如配置工具、MVC 里的 Repository 或应用层 Service——直接用 `provide()` 就行。它返回的 `Ref<T>` 自带默认工厂，按需构建，并把结果缓存在归属的作用域里。
+
+<Code title="caching.ts" code={providersCode} region="caching" />
+
+## 自动挂载的 Ref 与根作用域显式注册
+
+很多 DI 库一旦忘了在中心容器里登记某个类，运行时直接就炸了。`provide()` 产出的 `Ref<T>` 省掉了这套样板代码：如果当前作用域（以及所有父作用域）还没绑定过 `configRef`，第一次调 `inject(configRef)` 时就会当场把默认工厂装进当前作用域、执行一次并缓存结果（所以 `first === second` 是 `true`，`created` 也只会停在 `1`）。
+
+省事归省事，这里有个很关键的细节要留心：**`Ref` 是按作用域缓存的，不是全局单例。**
+
+- 两次独立的 `bootstrapApp()` 调用之间，绝对不会共享任何实例。
+- 如果两个并列的 `{ providers }` 私有子树各自第一次 `inject` 同一个没在父级注册过的 `Ref`，这两个子树会各自挂载、各自缓存一份独立副本。
+
+所以，凡是手里攥着共享状态或稀缺资源的 `Ref`——比如数据库连接池、内存缓存，或者上面的 `configRef`——最好显式写进 `bootstrapApp(..., { providers: [configRef] })` 里。挂在根作用域照样是懒加载的（没人 `inject()` 就不跑工厂），但能稳稳保证整个应用共用同一个实例。
+
+## 用 bundleProviders() 打包一组绑定
+
+有时候一个功能模块对外不止一个绑定——比如既要导出公开的 Token，又要顺带装上内部读取的配置 Token；又或者你想把 `infra/` 目录下一整套数据库、邮件适配器一次性交出去。
+
+`bundleProviders(...inputs)` 可以把任意 `Ref`、`provideFor()` 绑定、数组乃至嵌套的 bundle 拢成一个 `ProviderBundle`。调用方只要往 `{ providers }` 里丢一句 `provideTheme({ palette: 'ocean' })`，不用关心里面到底拼了几个内部依赖。
+
+注意，bundle 纯粹是个“拍平打包”的语法糖，**不会**自己创建隔离的子作用域。包里的每一项都会原封不动地装进接收它的那个作用域里（如果你需要隔离的私有作用域，请看[作用域与私有子树](/zh-hans/scopes/)）。
+
+<Code title="bundle.ts" code={providersCode} region="bundle" />
+
+## 用 isProvideRef() 在运行时识别句柄
+
+如果你在写薄薄的框架胶水层或者测试辅助工具，需要在运行时判断某个未知值是不是 `Ref`，用 `isProvideRef(value)` 就能把类型收窄成 `Ref<unknown>`。
+
+`isProvideRef()` **只**对 `provide()` 真正创建出来的 `Ref` 返回 `true`。遇到 `token()` 键、`provideFor()` 绑定、`bundleProviders()` 包、普通值，或者像 `{ ...sampleRef }` 这样浅拷贝出来的对象，一律返回 `false`。
+
+<Code title="is-provide-ref.ts" code={providersCode} region="isProvideRef" />
+
+## 挂载规则与边界细节
+
+不管是传给 `bootstrapApp()` 还是嵌在局部 `{ providers }` 里，内核安装 `providers` 列表时都严格按下面四条规矩走：
+
+1. **创建时立刻快照（Snapshotting）：** 传给 `provide()`、`provideFor()`、`bundleProviders()` 或 `bootstrapApp()` 的数组和 bundle 会当场做浅拷贝。事后再去改原数组，不会影响已经建好的句柄。
+2. **按源码顺序从左到右拍平：** 嵌套数组和 `ProviderBundle` 会严格按你写的先后顺序从左往右展开。
+3. **同一作用域内后写覆盖先写（Last-write-wins）：** 在同一个作用域里把同一个 key 装两次，后面的绑定会直接顶掉前面的——连同前面那个绑定附带的私有 `{ providers }` 子树一起替换掉。集成测试里写 `[infraProviders, provideFor(repoToken, fakeRepo)]` 能轻松换掉单个适配器，靠的就是这条规则。
+4. **校验时机：** 传给 `bootstrapApp()` 的根级 `providers` 会同步当场校验，传错东西在拿到 `App` 之前就会直接抛 `Invalid provider input received`。而挂在单个 `Ref` 或绑定上的嵌套 `{ providers }` 则是懒校验的——等第一次真正解析那棵子树时才检查，有问题就在那次 `inject()` 调用处抛出 `Invalid provider input received`。

@@ -1,0 +1,122 @@
+---
+title: "安装与运行环境"
+slug: "installation"
+part: start
+order: 2
+summary: "用常用包管理器安装 dn-ioc，在 Deno 或浏览器 CDN 中直接加载，并配好 TypeScript 的 bundler 模块解析。"
+---
+
+`dn-ioc` 发布的是零依赖纯 ESM 包（压缩后 `4.8 kB`，gzip 后 `1.9 kB`），一行命令装完，不会往你的 `node_modules` 里塞任何传递依赖。平时项目里用什么包管理器就用什么装；如果在写 Deno 脚本或纯静态网页，直接走 `npm:` 协议或浏览器 CDN 拉下来就能跑。
+
+<CodeTabs
+  files={[
+    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
+    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
+    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
+    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
+    { title: 'deno', lang: 'bash', code: 'deno add npm:dn-ioc' },
+  ]}
+/>
+
+## 在 Deno 里免安装直接用
+
+临时写个单文件 Deno 脚本，懒得先建 `deno.json`？直接用 Deno 的 `npm:` 前缀引就行——记得带上 `@0.3.1` 锁死版本号，省得以后重跑脚本时拉到别的版本踩坑。
+
+<Code
+  title="deno-import.ts"
+  lang="ts"
+  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc@0.3.1'`}
+/>
+
+## 浏览器 CDN 与 Import Map
+
+在网页里用 `dn-ioc` 也不非得配打包器。现代浏览器可以直接从 CDN 加载压缩好的 ESM 产物：
+
+| CDN | 锁版本的 URL | 实际返回的文件 |
+| --- | --- | --- |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1` | `index.min.js`（`4.8 kB`，gzip 后 `1.9 kB`） |
+| unpkg | `https://unpkg.com/dn-ioc@0.3.1` | `index.min.js` —— 跟上面是同一个文件 |
+| esm.sh | `https://esm.sh/dn-ioc@0.3.1` | esm.sh 自己转译打包的产物 |
+
+在浏览器里引 CDN 地址，一定记得把 `@0.3.1` 这样的版本号写死——不写版本号的话，CDN 默认给你发最新版，线上页面哪天突然变了都不知道。
+
+再配一段 `<script type="importmap">`，你的业务模块里就能继续写干净的裸导入 `'dn-ioc'`，以后加不加打包器代码都不用改。
+
+<CodeTabs
+  files={[
+    {
+      title: 'importmap.html',
+      lang: 'html',
+      code: `<!doctype html>
+<html lang="en">
+  <head>
+    <script type="importmap">
+      {
+        "imports": {
+          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module">
+      import { bootstrapApp, provide } from 'dn-ioc'
+
+      const greetingRef = provide(() => 'hello, browser')
+      const app = bootstrapApp(({ inject }) => {
+        document.body.textContent = inject(greetingRef)
+      })
+
+      await app.start()
+    </script>
+  </body>
+</html>`,
+    },
+    {
+      title: 'direct-cdn.html',
+      lang: 'html',
+      code: `<!doctype html>
+<html lang="en">
+  <body>
+    <script type="module">
+      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1'
+
+      const greetingRef = provide(() => 'hello, browser')
+      const app = bootstrapApp(({ inject }) => {
+        document.body.textContent = inject(greetingRef)
+      })
+
+      await app.start()
+    </script>
+  </body>
+</html>`,
+    },
+  ]}
+/>
+
+## ESM 与 TypeScript 配置
+
+`dn-ioc` **只提供 ESM 产物**——一律用 `import` 导入，不支持 CommonJS 的 `require()`。
+
+在 TypeScript 项目里，把 `tsconfig.json` 中的 `"moduleResolution"` 设成 `"bundler"` 即可。现在主流的 Vite、Bun、Deno、Next.js、Astro 和 `tsdown` 脚手架默认就是这个配置。
+
+<Code
+  title="tsconfig.json"
+  lang="json"
+  code={`{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true
+  }
+}`}
+/>
+
+<Callout kind="caution" title="不支持 NodeNext 和 Node16 类型解析">
+
+`dn-ioc` 的类型声明**不支持** `NodeNext` 和 `Node16` 解析模式。凡是需要检查 `dn-ioc` 类型的 `tsconfig.json`，请保持 `"moduleResolution": "bundler"`。
+
+</Callout>
+
+因为内核完全不碰 `process`、DOM API 和定时器，你写的 provider 在 Node.js、Bun、Deno、浏览器、Web Worker 和边缘运行时之间可以 100% 原样复用。准备好了？翻到下一章[五分钟快速上手](/zh-hans/quickstart/)，动手搭第一个应用。

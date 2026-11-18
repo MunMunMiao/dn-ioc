@@ -1,0 +1,121 @@
+---
+title: "公共 API 手册"
+slug: "api"
+part: reference
+order: 13
+summary: "完整列出六个运行时函数、十五个公开 TypeScript 类型，以及冻结不透明句柄的参数签名与行为契约。"
+---
+import signaturesCode from '../../examples/api/signatures.ts' with { type: 'text' }
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+`dn-ioc` 对外暴露的所有东西都直接从 `'dn-ioc'` 根入口导出——一共六个运行时函数、十五个 TypeScript 类型，没有子路径导入，也没有任何模块级全局副作用。写代码时想核对某个参数类型、返回值或句柄约束，随时翻这一章查就行。
+
+<Code title="functions.ts" code={signaturesCode} region="functions" />
+
+## 运行时函数
+
+### `token<T>(description?)`
+
+**签名：** `function token<T>(description?: string): Token<T>`
+
+创建一个只带 TypeScript 类型 `T`、不含任何运行时实现代码的纯依赖键。
+
+- **`description`** *(可选 `string`)*：报错信息里给人看的名字，会出现在 `No provider for token: Name` 和 `Circular dependency detected: ...` 里。如果不传或传空字符串，报错时显示 `<anonymous>`。注意每次调 `token('Same')` 产出的都是全新的独立键——哪怕描述字符串一模一样，也绝不会当成同一个 Token。
+- **异步契约写法：** 直接把 `Promise` 放进泛型参数里（`token<Promise<Settings>>('Settings')`），这样调用 `inject()` 的一方和写 `provideFor()` 的一方在类型上就能严丝合缝对上。
+
+### `provide<T>(factory, options?)`
+
+**签名：** `function provide<T>(factory: Factory<T>, options?: ProviderOptions): Ref<T>`
+
+把 `factory` 包装成一个自带默认实现的 `Ref<T>` 句柄。
+
+- **`factory`**：`(ctx: Context) => T`。调 `inject()` 时，如果当前激活作用域和所有父作用域里都没绑过这个 `Ref`，它就会把自己的默认工厂装进当前作用域，跑一次并缓存结果（如果是 `async` 工厂，则共享同一个在途 `Promise`）。同步抛错和异步 reject **不会**留在缓存里，应用运行期间后续再调 `inject()` 可以干净重试。
+- **报错诊断名：** 直接取 `factory.name`（比如写 `provide(function UserService(ctx) { ... })` 报错就会显示 `UserService`，写匿名箭头函数则显示 `<anonymous>`）。
+- **`options?.providers`**：可选的私有子作用域树，只对当前 `factory` 及其后代可见。在调 `provide()` 时当场做浅拷贝快照，等这棵子树第一次真正被解析时才做懒校验。
+
+### `provideFor<T>(key, factory, options?)`
+
+**签名：** `function provideFor<T>(key: InjectKey<T>, factory: Factory<T>, options?: ProviderOptions): ProviderDef<T>`
+
+给指定的 `key` 绑上具体实现 `factory`——`key` 既可以是 `Token<T>` 也可以是 `Ref<T>`——返回一个可放进 `{ providers }` 或 `bundleProviders()` 的 `ProviderDef<T>`。
+
+- 在调用 `provideFor()` 当场就会校验 `key`；如果传进来的不是真 `Token` 或真 `Ref`，立刻抛 `Invalid inject key received`。
+- **`options?.providers`**：可选的私有子作用域树，只对当前绑定的 `factory` 及其后代可见；创建时当场做快照。
+
+### `bundleProviders(...inputs)`
+
+**签名：** `function bundleProviders(...inputs: ProviderInput[]): ProviderBundle`
+
+把任意组合的 `Ref`、`ProviderDef` 绑定、嵌套数组和其他 `ProviderBundle` 打包成一个可复用的 `ProviderBundle`。
+
+- 创建时立刻浅拷贝传入的数组，后续再去改原数组不会影响已建好的 bundle。
+- 挂载 bundle 时，会按源码顺序从左到右拍平，直接装进接收它的那个作用域里——它本身**不会**创建隔离的子作用域。
+
+### `isProvideRef(value)`
+
+**签名：** `function isProvideRef(value: unknown): value is Ref<unknown>`
+
+类型守卫函数：**只有**当 `value` 是由 `provide()` 真正创建出来的 `Ref` 时才返回 `true`。传入 `Token`、`ProviderDef`、`ProviderBundle`、基础类型、`null` 或浅拷贝出来的对象（`{ ...someRef }`），一律返回 `false`。
+
+### `bootstrapApp(fn, options?)`
+
+**签名：** `function bootstrapApp(fn: BootstrapAppFn, options?: BootstrapAppOptions): App`
+
+创建一个隔离的根作用域，同步校验并装好 `options?.providers`，然后立刻返回 `App` 句柄——此时**不会**执行入口函数 `fn`，也不会跑任何 provider 工厂。
+
+- **`fn`**：`(ctx: Context) => void | Promise<void>`。等调 `app.start()` 时才执行，返回值必须是 `void` 或 `Promise<void>`。
+- **`options?.providers`**：根作用域要挂载的绑定、`Ref`、数组或 bundle。一旦混入非法项，会在返回 `App` 句柄之前同步抛出 `Invalid provider input received`。
+
+## Context 与 App 生命周期接口
+
+### Context（`InjectFn` 与 `OnDisposeFn`）
+
+每个 provider 的 `Factory<T>` 和 `bootstrapApp()` 的入口回调都会收到一个包含两个方法的 `Context` 对象：
+
+- **`inject: InjectFn`**（`<T>(key: InjectKey<T>) => T`）—— 从当前 provider 归属的作用域开始往上查找并解析 `key`。同步工厂直接返回值，异步工厂返回共享的 `Promise`。哪怕工厂函数本身已经执行完毕，只要还没调 `app.stop()`，返回出去的业务方法里依然可以继续调 `inject()`。
+- **`onDispose: OnDisposeFn`**（`(fn: () => void | Promise<void>) => void`）—— 注册一个在 `app.stop()` 期间按 LIFO（后进先出）顺序执行的清理钩子。**只允许**在所属工厂函数正在运行、且还没调 `stop()` 的窗口期内调用。钩子如果返回了除 `void` 和 `Promise<void>` 之外的任何类型，TypeScript 编译期就会直接报错——遇到有返回值的清理方法，记得套一层花括号（如 `onDispose(() => { server.close() })`）。
+
+### App（`start`、`stop` 与 `AsyncDisposable`）
+
+`bootstrapApp()` 返回的 `App` 句柄包含三个成员：
+
+- **`start(): Promise<void>`** —— 执行一次根入口回调，并等待它返回的 `Promise`。并发或重复调用会拿到完全同一个 `Promise`。如果启动中途失败，`start()` 会先自动调 `stop()` 回滚已创建的资源，然后再往外 reject。一旦调过 `stop()`，再调 `start()` 会直接 reject `Cannot start an app that has been stopped`。
+- **`stop(): Promise<void>`** —— 先同步封死全应用的所有 `inject()`，再按后进先出顺序串行等待所有已注册的 `onDispose` 钩子跑完。并发或重复调用均幂等。哪怕中途有钩子报错，剩下的钩子也一定会全部跑完。
+- **`[Symbol.asyncDispose](): Promise<void>`** —— 指向同一个 `stop` 方法，配合 `await using app = bootstrapApp(...)` 在离开代码块时自动停机清理。当前运行时存在原生 `Symbol.asyncDispose` 时直接挂在 `[Symbol.asyncDispose]` 上；跑在没有原生 symbol 的旧运行时（如 Node 18）上时，自动回退到 `[Symbol.for('Symbol.asyncDispose')]`，兼容 TypeScript 降级编译出的 `await using` 查找逻辑。
+
+<Code title="types.ts" code={signaturesCode} region="types" />
+
+## 句柄与辅助工具类型
+
+| 导出类型 | 定义 / 形态 | 用途 |
+| --- | --- | --- |
+| `Token<T>` | 带类型标记（Branded）的不透明接口，保存类型 `T` | `token<T>()` 返回的契约键类型。 |
+| `Ref<T>` | `extends Token<T>`（带 ref 专属类型标记） | `provide()` 返回的自挂载句柄类型。 |
+| `RefType<T>` | `T extends Ref<infer U> ? U : never` | 从 `typeof someRef` 里提取解析后的值类型 `U`——写测试假实现时直接拿它标类型，不用重复手抄接口。 |
+| `InjectKey<T>` | `Token<T> \| Ref<T>` | `inject()` 和 `provideFor()` 接收的合法键联合类型。 |
+| `ProviderDef<T>` | 带类型标记（Branded）的不透明接口，保存类型 `T` | `provideFor()` 返回的显式绑定对象类型。 |
+| `ProviderBundle` | 带类型标记（Branded）的不透明接口 | `bundleProviders()` 返回的打包句柄类型。 |
+| `ProviderInput` | `Ref<unknown> \| ProviderDef<unknown> \| ProviderBundle \| readonly ProviderInput[]` | `providers` 数组和 `bundleProviders()` 接收的任意合法项或任意层嵌套数组。 |
+| `ProviderOptions` | `{ providers?: readonly ProviderInput[] }` | `provide()` 与 `provideFor()` 的配置项，用于声明私有子树。 |
+| `BootstrapAppOptions` | `{ providers?: readonly ProviderInput[] }` | `bootstrapApp()` 的配置项，用于挂载根作用域绑定。 |
+| `InjectFn` | `<T>(key: InjectKey<T>) => T` | `Context` 中 `ctx.inject` 的函数类型。 |
+| `OnDisposeFn` | `(fn: () => void \| Promise<void>) => void` | `Context` 中 `ctx.onDispose` 的函数类型。 |
+| `Factory<T>` | `(ctx: Context) => T` | Provider 工厂函数签名。 |
+| `BootstrapAppFn` | `(ctx: Context) => void \| Promise<void>` | `bootstrapApp()` 根启动回调签名。 |
+
+## 冻结的不透明句柄语义
+
+`token()`、`provide()`、`provideFor()` 和 `bundleProviders()` 返回的每一个句柄，在运行时都是一个彻底冻结的空对象（`Object.freeze({})`），没有任何自有可枚举属性，也没有任何自有 symbol 键。所有内部元数据全部存放在内核私有的 `WeakMap` 里：
+
+- **禁止篡改属性：** 在严格模式下往句柄上挂属性或改属性会直接抛 `TypeError`。
+- **拷贝或伪造一律拒收：** 用对象展开或拷贝（比如 `{ ...sampleRef }`、`Object.assign({}, myToken)`）造出来的是一个不在内核 `WeakMap` 名单里的新对象引用。把它传给 `isProvideRef()` 会返回 `false`；传给 `inject()` 或 `provideFor()` 会抛 `Invalid inject key received`；把拷贝出来的绑定或 bundle 塞进 `providers` 则会抛 `Invalid provider input received`。
+
+<Callout kind="note" title="服务于可信代码的进程内内核，不是安全沙箱">
+
+设计成不透明句柄，是为了防住无意间的属性篡改、意外的 JSON 序列化以及跨包脆弱的鸭子类型判断；它**不是**用来在同一个 JS 隔离环境里防御恶意不可信代码的安全边界。
+
+</Callout>
+
+想查内核可能抛出的每一条报错原文以及具体怎么修？翻到最后一章[错误字典与排错指南](/zh-hans/errors/)。
+
+<Code title="opaque-handles.ts" code={providersCode} region="isProvideRef" />

@@ -1,0 +1,72 @@
+---
+title: "作用域与私有子树"
+slug: "scopes"
+part: kernel
+order: 6
+summary: "看清 inject() 怎么顺着作用域往上找、{ providers } 私有子树怎么隔离局部覆盖，以及为什么“消费方归谁管”决定了最终拿到哪个值。"
+---
+import case1Code from '../../examples/scopes/case1-fallback.ts' with { type: 'text' }
+import case2Code from '../../examples/scopes/case2-local-override.ts' with { type: 'text' }
+import case3Code from '../../examples/scopes/case3-parent-owned.ts' with { type: 'text' }
+import case4Code from '../../examples/scopes/case4-rebind-both.ts' with { type: 'text' }
+
+绝大多数项目只用 `bootstrapApp()` 创建出来的那一个根作用域就够了。只有当某块局部功能——比如主题预览组件、内嵌插件，或者需要独立配置的后台任务——想临时覆盖几个依赖，又不想污染父级或隔壁模块时，才需要在单个 `provide()` 或 `provideFor()` 上挂 `{ providers }`。
+
+## 作用域查找的三条铁律
+
+嵌套作用域下 `inject(key)` 到底拿到谁，归根结底就看三条规则：
+
+1. **顺着作用域往上找，先撞见谁就用谁：** `inject(key)` 先查当前作用域，找不到就一路往父作用域翻，直到命中绑定为止。要是翻到顶还没找到，`Ref` 就在当前激活的作用域自动挂载默认工厂，而 `Token` 直接抛 `No provider for token: Name`。
+2. **`{ providers }` 会开辟一棵私有子作用域树：** 写在某个 provider `{ providers }` 选项里的绑定，只有这个 provider 自己和它的后代看得到。每个绑定都把实例缓存在自己归属的作用域里（如果它自己又带了 `{ providers }`，就缓存在那棵私有子作用域里）。隔壁子树和外层父作用域完全看不到里面的局部覆盖。
+3. **Provider 永远在“自己归属的作用域”里解析依赖：** 消费方绝对不会继承调用方手里的局部覆盖。如果某个消费方是挂在父作用域上的，那它内部调用 `inject()` 时，起点就是那个父作用域。
+
+下面四个例子用的是同一套 `labelToken`、`rendererRef` 和 `previewRef`——你可以挨个切过去对比，看看只挪动一行代码，`previewRef` 读出来的值会怎么变。
+
+## 1. 没有局部覆盖：顺着父作用域往上兜底
+
+在 `case1-fallback.ts` 里，`previewRef` 在自己的私有 `{ providers }` 子树里装了 `rendererRef`，而根应用把 `labelToken` 绑成了 `'app'`。
+
+当 `previewRef` 调用 `inject(rendererRef)` 时，命中的是私有作用域里那个本地 `rendererRef`。接着 `rendererRef` 去要 `labelToken`：预览子树里没绑过这个 token，于是查找顺着往上走到根作用域，读到了 `'app'`。
+
+<Code title="case1-fallback.ts" code={case1Code} />
+
+## 2. 在消费方旁边加上局部覆盖
+
+现在，我们在 `previewRef` 的私有 `{ providers }` 里，紧挨着 `rendererRef` 补上一句 `provideFor(labelToken, () => 'local')`。
+
+因为 `rendererRef` 就归 `previewRef` 的私有子树管，它查 `labelToken` 时先看这层私有作用域，当场命中 `'local'`。与此同时，在子树外面的根作用域调 `inject(rendererRef)`，会在根上另外自动挂载一个根级 `rendererRef`，读到的依然是 `'app'`。两边井水不犯河水。
+
+<Code title="case2-local-override.ts" code={case2Code} />
+
+## 3. 最容易踩的坑：消费方归父作用域管
+
+仔细看这一步：假如你把 `rendererRef` 从 `previewRef` 里拿出来，改挂到根应用上，只在 `previewRef` 里留一句 `provideFor(labelToken, () => 'local')`，会发生什么？
+
+哪怕 `previewRef` 是全程序第一个调 `inject(rendererRef)` 的地方，哪怕它自己怀里就揣着 `'local'` 覆盖——**`previewRef` 打出来的居然还是 `'app'`！**
+
+为什么？因为 `previewRef` 往外找 `rendererRef` 时，发现它归根作用域管，于是就在**根作用域**里把它跑起来了。归父级管的 provider 永远在父级作用域里找依赖，绝对不会倒退回碰巧调用它的那个子作用域里去找。
+
+<Code title="case3-parent-owned.ts" code={case3Code} />
+
+## 4. 把消费方和依赖一起重绑
+
+如果根应用已经挂了 `rendererRef`，但你又非让 `previewRef` 用上读 `'local'` 的版本，怎么办？很简单：在 `previewRef` 的 `{ providers }` 里把 `labelToken` **和** `rendererRef` 一块儿重新绑一遍。
+
+这样一来，`previewRef` 的私有作用域里既有自己的 `rendererRef`，又有旁边的 `'local'` 覆盖，读出来的就是 `'local'`；而根应用自己的 `rendererRef` 照旧读 `'app'`。
+
+<Code title="case4-rebind-both.ts" code={case4Code} />
+
+## 四种场景速查对比
+
+| 场景 | 根级 `providers` | `previewRef` 的 `providers` | `previewRef` 读到的值 | 原因 |
+| --- | --- | --- | --- | --- |
+| **1. 向上兜底** | `label = 'app'` | `rendererRef` | `'app'` | 私有 `rendererRef` 在本地找不到 `labelToken`，往上翻到根级。 |
+| **2. 局部覆盖** | `label = 'app'` | `rendererRef`, `label = 'local'` | `'local'` | 私有 `rendererRef` 直接命中同一层私有作用域里的 `'local'`。 |
+| **3. 父级持有消费方** | `label = 'app'`, `rendererRef` | `label = 'local'` | `'app'` | `rendererRef` 归根作用域管，它的 `inject(labelToken)` 从根开始找。 |
+| **4. 两者一起重绑** | `label = 'app'`, `rendererRef` | `label = 'local'`, `provideFor(rendererRef, ...)` | `'local'` | 消费方和依赖都归 `previewRef` 的私有作用域管。 |
+
+<Callout kind="note" title="嵌套的 providers 是懒校验的">
+
+跟 `bootstrapApp()` 当场校验根级 `providers` 不同，挂在单个 provider 上的嵌套 `{ providers }` 数组要等那棵子树第一次被解析时才会校验。如果里面混进了非法值，触发解析的那次 `inject()` 会抛出 `Invalid provider input received`。
+
+</Callout>

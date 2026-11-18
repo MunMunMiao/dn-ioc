@@ -1,0 +1,50 @@
+---
+title: "异步工厂"
+slug: "async"
+part: kernel
+order: 7
+summary: "不用学另一套异步 API：直接写 async 工厂即可共享在途 Promise、失败自动清缓存重试、区分启动阻塞与后台预热，以及标注异步 Token 类型。"
+---
+import asyncCode from '../../examples/async/shared-and-background.ts' with { type: 'text' }
+
+建数据库连接池、拉远端密钥或者预热内存缓存，完全犯不着专门搞一套 `provideAsync()` / `injectAsync()` 新 API。在 `dn-ioc` 里，你直接把工厂函数写成 `async` 就完事了：`inject()` 原样返回标准的 `Promise<T>`，而且同一个作用域里的所有调用方会自动共用同一个在途（in-flight）`Promise`。
+
+<Code title="shared-promise.ts" code={asyncCode} region="shared" />
+
+## 共享在途 Promise 与失败自动清缓存
+
+`inject()` 从来不会强行给同步值套一层 Promise——同步工厂直接返回 `T`，异步工厂返回 `Promise<T>`。
+
+在 `shared-promise.ts` 里，`sharedApp` 在同一作用域连续调了两次 `inject(settingsRef)`，底层工厂其实只跑了一次，两边拿到的是完全同一个 `Promise` 实例（`first === second` 为 `true`）。你再也不用自己手写防重入锁，去防着启动时五个业务服务同时发起五次数据库握手了。
+
+那万一异步工厂挂了呢——比如网络抖了一下请求超时？
+
+- **失败立刻踢出缓存：** 只要工厂返回的 `Promise` 一 reject，内核会在把错误往外抛之前，先把这条失败的缓存记录从当前作用域里清掉。
+- **运行期随时干净重试：** 只要应用还没 `stop()`，之后在同一作用域再调 `inject()` 就会重新跑一遍工厂，绝不会把第一次的网络报错死死缓存到进程重启。
+
+## 阻塞启动 vs 后台异步预热
+
+`app.start()` 的等待规则非常直白：它**只等**你的根工厂函数，以及根工厂里真正 `await`（或直接 return）了的那些 `Promise`。利用这一点，什么该卡住启动、什么该放后台慢慢跑，全由你说了算：
+
+- **关键依赖卡住 `start()`：** 如果数据库或核心配置没就绪之前服务绝对不能对外接客，就在 `bootstrapApp(async ({ inject }) => { ... })` 里老老实实写 `await inject(settingsRef)`。万一它挂了，`start()` 会自动执行回滚清理并把错抛出来。
+- **非关键任务放后台预热：** 在根工厂里调 `inject(warmupRef)` 但故意**不写 `await`**，`app.start()` 就会立刻完成，让 `warmupRef` 自己在后台接着跑。记得像 `background-task.ts` 里的 `warmupTask` 那样，把这个没 `await` 的 `Promise` 存到外部变量上，方便后续拿结果或兜底抓错——脱离根工厂的悬空 Promise 是不归 `start()` 管的。
+
+<Code title="background-task.ts" code={asyncCode} region="background" />
+
+## 给异步 Token 标注类型
+
+用 `provide(async () => ...)` 的时候，TypeScript 看一眼函数签名就能自动推出 `Ref<Promise<T>>`。但 `token()` 没有默认工厂可供推导——所以声明异步 Token 时，直接把 `Promise<...>` 写进泛型参数里就行。
+
+写成 `token<Promise<Settings>>('Settings')` 之后，契约两头都清清楚楚：消费方一眼就知道 `inject(settingsToken)` 拿回来的是个得 `await` 的 `Promise`，而写 `provideFor(settingsToken, ...)` 的人也会受到类型约束，必须返回 `Promise<Settings>`。
+
+<Code title="async-token.ts" code={asyncCode} region="asyncToken" />
+
+## 异步循环依赖检测与停机边界
+
+- **跨 `await` 的无死锁环检测：** 内核会跨 `await` 边界追踪所有在途异步依赖链。如果挂起中的 `A` 正在等 `B`，而 `B` 绕了一圈又回头来等 `A`，`inject()` 会当场抛出 `Circular dependency detected: A -> B -> A`，绝不会让进程无声无息地永久死锁。
+
+<Callout kind="caution" title="stop() 不会替你取消正在飞的 Promise">
+
+调用 `app.stop()` 会立刻禁止所有**新的** `inject()` 调用（包括异步工厂在 `await` 醒来之后再调的 `inject()`）。但 `stop()` 不会干等那些脱离了根工厂的后台异步任务跑完，也不会自动掐断底层的 `fetch()` 或 socket 连接。如果后台任务在停机时需要主动中断，请在 `onDispose()` 里接好 `AbortController`——下一章我们就来看[生命周期与资源清理](/zh-hans/lifecycle/)。
+
+</Callout>

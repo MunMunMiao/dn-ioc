@@ -1,0 +1,61 @@
+---
+title: "概览与核心理念"
+slug: ""
+part: start
+order: 1
+summary: "基于普通工厂函数的轻量 TypeScript 依赖注入内核——零装饰器、零反射、零全局容器。"
+---
+import minimalCode from '../../examples/overview/minimal.ts' with { type: 'text' }
+
+项目稍微写大一点，把配置对象、数据库客户端、业务 Service 一层层往五六个函数参数里透传，很快就会让人写吐；而且单测里只想换掉一个依赖，犯不着去折腾模块劫持黑魔法或者满屏类装饰器。如果你想直接用最普通的 TypeScript 函数把依赖关系接清楚，又不想引入半点隐式运行时魔法，`dn-ioc` 就是干这个的。
+
+<Code title="minimal.ts" code={minimalCode} />
+
+## 说白了，Provider 就是普通函数
+
+只要你会写一个返回值的普通函数，就已经会用 `dn-ioc` 了。不用继承基类，不用挂 `@Injectable()` 装饰器，不用开 `emitDecoratorMetadata` 编译选项，更不用引 `reflect-metadata` 垫片。
+
+每个 provider 就是一个再普通不过的 `(ctx: Context) => T` 工厂函数：
+
+- 函数参数里拿到 `{ inject, onDispose }`，需要别的依赖就调 `inject()` 取，最后返回**任意 TypeScript 值**——普通对象、函数、基础类型、类实例，或者 `Promise` 都行。
+- `bootstrapApp()` 负责搭好一个彼此隔离的根作用域，并立刻返回 `App` 句柄，此时一行工厂代码都不会跑。
+- 直到你调用 `await app.start()`，依赖图才真正开始执行。像 `minimal.ts` 里既没开端口、也没挂定时器或文件句柄，跑完连 `app.stop()` 都不用调。
+
+<Callout kind="tip" title="根工厂负责干活，不往外返回值">
+
+传给 `bootstrapApp()` 的入口函数签名必须是返回 `void` 或 `Promise<void>`。把它当成程序的 `main()` 就好：在里面 `inject()` 顶层依赖、把业务跑起来，而不是算个结果往外返回。
+
+</Callout>
+
+## 六个原语，就是全部 API
+
+整个公开运行时 API 一共就六个函数。把这六个拼装方式看明白，后面没有任何隐藏配置层需要背：
+
+| 函数 | 返回什么 | 什么时候用 |
+| --- | --- | --- |
+| `provide(factory, options?)` | `Ref<T>` | 包一层带默认实现的工厂，首次 `inject()` 时自动在当前作用域挂载并缓存。 |
+| `token<T>(description?)` | `Token<T>` | 声明一个纯类型契约，本身不带任何默认实现。 |
+| `provideFor(key, factory, options?)` | `ProviderDef<T>` | 给 `Token<T>` 绑具体实现，或者在测试和局部覆盖里把某个 `Ref<T>` 换掉。 |
+| `bundleProviders(...inputs)` | `ProviderBundle` | 把一组相关的绑定和 `Ref` 打成包，调用方一行就能装完一整层依赖。 |
+| `isProvideRef(value)` | `value is Ref<unknown>` | 在运行时判断一个未知值是不是 `provide()` 产出的真 `Ref`。 |
+| `bootstrapApp(fn, options?)` | `App` | 组装独立的依赖图，提供 `start()`、`stop()` 以及 `await using` 自动清理支持。 |
+
+## 只要能跑 JavaScript 的地方都能跑
+
+`dn-ioc` 零运行时依赖，压缩后仅 `4.8 kB`（gzip 后 `1.9 kB`）。
+
+更关键的是，内核**不碰任何平台专属 API**——不读 `process`，不碰 DOM 全局对象，也不挂定时器。同一套依赖图，放到 Node.js、Bun、Deno、浏览器、Web Worker，甚至 Serverless 和边缘运行时里，一行不改照样跑。各个平台的退出信号长得完全不一样，内核不会替你瞎猜；需要优雅退出时，把 `app.stop()` 接到对应运行时的信号或组件卸载钩子上就行（详见[生命周期与资源清理](/zh-hans/lifecycle/)）。
+
+## dn-ioc 刻意不做什么
+
+想把内核保持得足够小而稳，就得把“依赖组装”和“业务控制流”的边界划清楚。`dn-ioc` 明确**不做**下面这些事：
+
+- **不搞装饰器、反射和全局容器：** 每次调用 `bootstrapApp()` 都会建一张完全独立的依赖图，并发跑测试时绝不会因为抢全局单例而互相污染。
+- **不搞框架繁文缛节：** 没有 Module 类，没有内置的 HTTP 请求级子容器，没有多实例数组注入（multi-bindings），也不会偷偷往进程上挂系统信号监听。
+- **不搞魔法取消或对象吊销：** 调用 `stop()` 会立刻封死后续的 `inject()` 并执行你注册的清理钩子，但不会替你掐断正在飞的网络 I/O、不会干等没被 `await` 的后台工厂跑完，也不会销毁你手里已经拿到的普通 JS 对象引用。什么时候拒绝新请求、`AbortController` 怎么透传、关机排水顺序怎么排，主动权全在你自己手里。
+
+<Callout kind="note" title="冻结的不透明句柄，不是安全沙箱">
+
+`token()`、`provide()`、`provideFor()` 和 `bundleProviders()` 返回的句柄都是冻结的不透明对象，由内核在内部登记追踪。拿展开运算符浅拷贝一个句柄（比如 `{ ...configRef }`）是没用的——内核会直接拒绝拷贝出来的冒牌对象。另外，`dn-ioc` 服务于同一进程内的可信业务代码，不是用来防不可信脚本的安全沙箱。
+
+</Callout>

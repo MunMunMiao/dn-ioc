@@ -1,0 +1,76 @@
+---
+title: "生命周期与资源清理"
+slug: "lifecycle"
+part: kernel
+order: 8
+summary: "利用 LIFO 顺序执行的 onDispose() 钩子、启动失败自动回滚、await using 语法以及各平台信号监听，干净释放连接池、端口和定时器。"
+---
+import disposeAndUsingCode from '../../examples/lifecycle/dispose-and-using.ts' with { type: 'text' }
+import nodeShutdownCode from '../../examples/lifecycle/node-server-shutdown.ts' with { type: 'text' }
+import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' with { type: 'text' }
+
+`app.start()` 跑完之后绝对不会自作主张把应用停掉——到底要不要调 `app.stop()`，完全看你的场景。比如跑完就退出的短命 CLI 脚本，或者跟着浏览器标签页同生共死的全页前端应用，进程或标签页一关操作系统自然全回收了，压根不用调 `stop()`。只有当**外部环境比这张依赖图活得更久**时——比如长期占着端口和连接池的后端服务、跑完一个接一个的单测用例，或者页面没关但局部卸载掉的前端组件——才需要用上 `onDispose()` 和 `app.stop()`。
+
+<Code title="dispose.ts" code={disposeAndUsingCode} region="dispose" />
+
+## 先封死注入，再按后进先出（LIFO）顺序清理
+
+调用 `app.stop()` 时，内核会严格按先后顺序做两件事：
+
+1. **同步封死整个应用的所有 `inject()`：** 连一个微任务都不会等，全应用上下的 `inject()` 句柄当场永久关闭。此后不管是谁再调 `inject()`——哪怕要取的是早就缓存好的实例，哪怕是在私有子树或上面 `service.read()` 这样的业务方法里调——都会立刻抛出 `Cannot inject after the app has stopped`。
+2. **按后进先出（LIFO）顺序挨个执行 `onDispose` 钩子：** 清理钩子按注册顺序倒着串行执行。假如数据库连接池先注册、HTTP 服务器后注册，`stop()` 就会先关掉 HTTP 服务器不再接客，再去排空关闭数据库连接池。
+
+正因为跑清理钩子的时候 `inject()` 已经彻底关门了，**一定记得在注册 `onDispose()` 之前先把要用到的依赖存进局部变量**——就像 `dispose.ts` 里先写 `const store = inject(storeRef)` 那样。
+
+重复或并发调用 `app.stop()` 是幂等的：大家拿到的是同一个 `Promise`，每个清理钩子都只跑一次。另外，一旦应用停机，再回头调 `app.start()` 会直接 reject 并报错 `Cannot start an app that has been stopped`。
+
+## 用 await using 自动收尾
+
+每个 `App` 都实现了 `AsyncDisposable`——如果当前运行时原生支持 `Symbol.asyncDispose` 就直接挂在 `[Symbol.asyncDispose]` 上；如果跑在还没有原生 symbol 的旧运行时上，会自动回退挂载到 `[Symbol.for('Symbol.asyncDispose')]`，确保 TypeScript 5.2+ 降级编译出来的 `await using` 照样能认出来。
+
+在单测、CLI 脚本或者像 `runScopedTask()` 这样的短生命周期任务里，写一句 `await using app = bootstrapApp(...)`，代码离开作用域块时就会自动 `await app.stop()`——就算块里半路抛了异常也一准儿给你收干净。
+
+<Code title="await-using.ts" code={disposeAndUsingCode} region="awaitUsing" />
+
+## 在不同运行时里接入退出信号
+
+各个 JavaScript 运行时的退出机制五花八门，所以内核绝不偷偷挂全局监听器。按你跑的平台挑对应的生命周期钩子把 `app.stop()` 接上去就行：
+
+| 运行时 | 触发时机 | 异步清理靠不靠谱 |
+| --- | --- | --- |
+| Node.js、Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | 靠谱（只要回调里等它跑完再退出进程） |
+| Deno | `Deno.addSignalListener('SIGINT', handler)` | 靠谱 |
+| 浏览器局部子应用 | 组件自己的卸载钩子（React `useEffect`、Vue `onScopeDispose`、路由切走） | 靠谱 |
+| 浏览器整页关闭 | `addEventListener('pagehide', handler)` | 不靠谱 —— 钩子里只写同步逻辑 |
+| Web Worker | 宿主在调 `worker.terminate()` 之前发消息通知 | 取决于宿主愿不愿意等清理完再强杀 |
+| Serverless、边缘函数 | 单次请求或调用结束前（把 app 作用域收敛在单次请求内） | 取决于平台提供的保活 API（如 `waitUntil`） |
+
+落地时有几个实战细节值得留意：
+
+- **Node.js 与 Bun（`node-server.ts`）：** 在调 `await app.start()` **之前**就把 `SIGINT` / `SIGTERM` 监听器挂好。因为 `bootstrapApp()` 当下不跑任何工厂，在 `3000` 端口打开前你就已经拿到 `app` 引用了。换到 Deno 上代码一模一样，只用把监听换成 `Deno.addSignalListener('SIGINT', () => void app.stop())`。
+- **浏览器局部组件（`browser-unmount.ts`）：** 只要条件允许，尽量把前端依赖图绑在你能手动卸载的组件或路由生命周期上（`await ready; await app.stop()`）。页面还活着，异步清理钩子就能稳稳当当地 `await` 完。
+- **浏览器整页卸载（`browser-pagehide.ts`）：** 优先用 `pagehide`，别用 `beforeunload`（容易破坏往返缓存 bfcache，在移动端还经常不触发）。不过就算用了 `pagehide`，浏览器也经常不等 `async` Promise 跑完就直接把页面销毁了——所以卸载钩子里只放纯同步操作，比如 `navigator.sendBeacon()`。
+
+<CodeTabs
+  files={[
+    { title: 'node-server.ts', code: nodeShutdownCode },
+    { title: 'browser-unmount.ts', code: browserUnmountCode, region: 'unmount' },
+    { title: 'browser-pagehide.ts', code: browserUnmountCode, region: 'pagehide' },
+  ]}
+/>
+
+## 清理钩子规矩、启动失败回滚与能力边界
+
+写 `onDispose` 钩子时，记住下面这几条硬规矩：
+
+- **允许注册的时间窗口：** 只有在当前工厂函数**正在运行**且应用还没 `stop()` 时，才能调 `onDispose()`。同步工厂一旦 return 或抛错，窗口立刻关闭；异步工厂则在它返回的 `Promise` 落定（resolve / reject）那一刻关闭。工厂跑完之后再去调 `onDispose()` 会抛 `onDispose can only be called while the factory is running`；停机开始之后再去调则会抛 `Cannot register cleanup after the app has stopped`。
+- **必须返回 `void` 或 `Promise<void>`：** 清理钩子只能返回 `void` 或 `Promise<void>`——返回任何别的值（或者 resolve 出非 `void` 值的 `Promise`）在 TypeScript 编译期就会直接报错，防止手滑把别的返回值漏出去。遇到像 Node 的 `http.Server.close()` 这种会返回 `Server` 实例的方法，套一层花括号就行：`onDispose(() => { server.close() })`。
+- **千万别在钩子里 `await app.stop()`：** 清理钩子本身就是 `stop()` 收尾流程的一部分，在 `onDispose()` 里再去等 `app.stop()` 会当场永久死锁。
+- **钩子报错与 `AggregateError`：** 就算某个钩子中途抛错或 reject，`stop()` 照样会把剩下的所有钩子挨个跑完。如果只有一个钩子挂了，原样抛出那个错误；如果挂了两个及以上，会把它们打包成 `AggregateError`（消息为 `App stop failed`）。
+- **`start()` 半路失败会自动回滚：** 如果 `app.start()` 启动到一半报错了，它会自动调 `stop()` 把前面已经建好的资源全清掉，然后再往外 reject。如果只有启动本身报错，原样抛出该错误；如果启动挂了、紧接着连清理钩子也挂了，`start()` 会 reject 一个 `AggregateError`（消息为 `App startup and stop failed`）。一旦 `start()` 成功返回，后续运行期的业务报错**不会**自动触发停机。
+
+<Callout kind="caution" title="stop() 不会替你做哪些事">
+
+`stop()` 只负责两件事：封死后续的 `inject()`，以及跑完已注册的 `onDispose` 钩子。它**不会**干等脱离了根工厂的后台异步任务结束，**不会**自动掐断在途的网络 I/O，也**不会**把你手里已经存进变量的 JS 对象废掉。停止接收新请求、调 `AbortController.abort()`、安排优雅停机排水顺序，这些都由你的业务代码自己掌控。
+
+</Callout>

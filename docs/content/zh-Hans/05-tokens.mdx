@@ -1,0 +1,50 @@
+---
+title: "Token 与依赖绑定"
+slug: "tokens"
+part: kernel
+order: 5
+summary: "用 token() 声明零实现契约，用 provideFor() 绑定具体实现，并让报错信息清晰可读。"
+---
+import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { type: 'text' }
+
+如果调用方不应该直接 `import` 具体实现，或者写代码的时候压根还不知道具体实现是谁，那就该上 `token<T>()` 了。像数据库连接串这类运行时密钥、可插拔的 UI 主题、还有 DDD 里的纯领域端口（Port）都属于这种场景：你先放一个带类型的占位符，等组装应用时再用 `provideFor()` 把真家伙绑上去。
+
+<Code title="bound-token.ts" code={tokenBindingCode} region="bound" />
+
+## 用 token() 声明契约，用 provideFor() 绑定实现
+
+`provide()` 是把“键”和“默认工厂”绑在一块儿导出；而 `token<T>(description?)` **只创建键本身**。它里面没有半行运行时实现逻辑，也不会顺带引入任何外部驱动——类型 `T` 交给 TypeScript 盯紧，可选的 `description` 字符串则留着在报错时给人看。
+
+想把具体实现接上去，把 token 和工厂函数传给 `provideFor(key, factory, options?)` 就行：
+
+- 在 `bound-token.ts` 里，`prefixToken` 规定了“必须有人提供一个 `string`”。
+- `formatterRef` 直接 `inject(prefixToken)`，完全不关心这个前缀到底来自环境变量、配置文件还是测试桩。
+- `boundApp` 在启动时挂上了 `provideFor(prefixToken, () => '[app] ')`，于是 `formatterRef` 顺利打出 `[app] ready`。
+
+顺便留意一下：`provideFor()` 接收的类型是 `InjectKey<T>`——也就是说 **`Token<T>` 和 `Ref<T>` 都能传**。不管是生产环境给抽象端口绑适配器，还是单测里把某个现成的 `Ref` 换成假实现，用的都是同一个函数。
+
+## 漏绑 Token 时立刻报错（Fail Fast）
+
+正因为 `Token<T>` 没有兜底的默认工厂，一旦当前作用域和所有父作用域都没绑过它，`inject()` 当场就会抛错。在 `unbound-token.ts` 里，`unboundApp.start()` 会直接 reject 并报错 `No provider for token: DatabaseUrl`——格式固定为 `No provider for token: Name`，其中的 `Name` 就是你传给 `token()` 的描述名。
+
+<Callout kind="tip" title="在入口根工厂里尽早 inject 顶层依赖">
+
+记得在 `bootstrapApp()` 的入口函数里，把顶层 Controller、路由或后台 Worker 直接 `inject()` 进来。这样万一漏写了哪个 `provideFor()` 绑定，服务刚起调 `await app.start()` 时就会立刻报错退出，而不是等线上第一个真实请求打进来才炸。
+
+</Callout>
+
+<Code title="unbound-token.ts" code={tokenBindingCode} region="unbound" />
+
+## 给 Token 和工厂起好名字，排错少走弯路
+
+碰到漏绑 Token 或者两个模块不小心写出循环依赖（`Circular dependency detected: A -> B -> A`）时，报错信息里能不能直接喊出名字，排查效率差得不是一星半点。内核是按下面这套规则取名字的：
+
+- **Token 取它的描述字符串：** 直接按它代表的接口或配置项起名就行，比如 `token<OrderRepository>('OrderRepository')` 或 `token<string>('DatabaseUrl')`。如果省掉不传（`token<string>()`），报错里就会显示 `<anonymous>`。
+- **Ref 取工厂函数的 `factory.name`：** `provide()` 没有单独的命名参数，它直接读 JavaScript 函数的 `.name` 属性。写成具名函数 `provide(function Formatter({ inject }) { ... })`，报错时就能清楚显示 `Formatter`；如果随手写成匿名箭头函数 `provide(({ inject }) => ...)`，没有函数名，报错里就只能看到 `<anonymous>`。
+
+<Callout kind="note" title="代码压缩器与非法 Key 校验">
+
+- **压缩混淆提醒：** 因为 `Ref` 的诊断名来自 `factory.name`，如果打包压缩工具把函数名改短或抹掉了（除非开了 `keepNames`），循环依赖报错里的名字也会跟着变。而传给 `token('Name')` 的描述是普通字符串，压缩器不会动它。
+- **不透明 Key 校验：** 如果把 `null`、基础类型、`ProviderDef`、`ProviderBundle`，或者浅拷贝出来的对象（`{ ...prefixToken }`）传给 `inject()` 或 `provideFor()`，会直接抛出 `Invalid inject key received`。
+
+</Callout>
