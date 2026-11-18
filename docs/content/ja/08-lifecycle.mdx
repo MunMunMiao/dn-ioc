@@ -1,0 +1,76 @@
+---
+title: "ライフサイクルとクリーンアップ"
+slug: "lifecycle"
+part: kernel
+order: 8
+summary: "LIFO 順の onDispose() フック、起動失敗時の自動ロールバック、await using、そして各ランタイムでのシャットダウン配線を解説します。"
+---
+import disposeAndUsingCode from '../../examples/lifecycle/dispose-and-using.ts' with { type: 'text' }
+import nodeShutdownCode from '../../examples/lifecycle/node-server-shutdown.ts' with { type: 'text' }
+import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' with { type: 'text' }
+
+`app.start()` が成功したあと、カーネルが勝手にアプリを止めることはありません。そもそも `app.stop()` が必要かどうかもアプリ次第です。すぐ終わる CLI スクリプトや、タブを閉じれば丸ごと消えるブラウザ全体のグラフなら、OS やブラウザがリソースを回収してくれるので `stop()` は不要です。`onDispose()` と `app.stop()` の出番になるのは、ポートや DB プールを握り続ける常駐サーバー、1件ごとに隔離したいテストケース、画面遷移でアンマウントされる UI ウィジェットなど、**グラフより長生きする環境の中でリソースを確実に解放したいとき** です。
+
+<Code title="dispose.ts" code={disposeAndUsingCode} region="dispose" />
+
+## inject() の即時クローズと LIFO 順の解体
+
+`app.stop()` を呼ぶと、厳密に次の順番で2つの処理が行われます。
+
+1. **アプリ全体の `inject()` を同期的に閉じる:** マイクロタスクが1つも走る前に、アプリ内のすべての `inject()` ハンドルが恒久的に閉じられます。これ以降に `inject()` を呼ぶと、たとえキャッシュ済みのインスタンスであっても、プライベートサブツリー内（上の `service.read()` など）であっても、即座に `Cannot inject after the app has stopped` が投げられます。
+2. **`onDispose` フックを新しい順（LIFO）に実行する:** 登録された逆順で1つずつ直列に実行されます。たとえば DB プールが先に登録され、HTTP サーバーがあとから登録された場合、`stop()` はまず HTTP サーバーを閉じてから DB プールをクローズします。
+
+クリーンアップフックが走る時点ではすでに `inject()` が閉じられているため、`dispose.ts` の `const store = inject(storeRef)` のように、**クリーンアップで使う依存は必ず `onDispose()` を登録する前にローカル変数へ退避しておいてください。**
+
+なお、`app.stop()` を複数回（あるいは同時に）呼んでも冪等に動作し、まったく同じ `Promise` を返して各フックを1回だけ実行します。一度停止したアプリに対してもう一度 `app.start()` を呼ぶと、`Cannot start an app that has been stopped` で reject されます。
+
+## await using による自動クリーンアップ
+
+すべての `App` は `AsyncDisposable` を実装しています。ランタイムにネイティブの `Symbol.asyncDispose` があれば `[Symbol.asyncDispose]` を定義し、ネイティブシンボルを持たない古いランタイムでは `[Symbol.for('Symbol.asyncDispose')]` にフォールバックするため、TypeScript 5.2+ のダウンレベル変換された `await using` でもそのまま動きます。
+
+テストや CLI ジョブ、`runScopedTask()` のようなリクエスト単位のワーカーでは、`await using app = bootstrapApp(...)` と書くだけで、スコープを抜ける瞬間に（途中で例外が投げられた場合でも）自動的に `app.stop()` が `await` されます。
+
+<Code title="await-using.ts" code={disposeAndUsingCode} region="awaitUsing" />
+
+## 各ランタイムでのシャットダウン配線
+
+終了シグナルの仕組みは JavaScript ランタイムごとにまったく異なるため、カーネルが裏で勝手にグローバルリスナーを仕掛けることはありません。お使いの環境に合ったトリガーへ `app.stop()` をつなぎましょう。
+
+| ランタイム | トリガー | 非同期クリーンアップ |
+| --- | --- | --- |
+| Node.js, Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | ハンドラがプロセスを生かしている限り `await` 可能 |
+| Deno | `Deno.addSignalListener('SIGINT', handler)` | `await` 可能 |
+| ブラウザの部分 UI | コンポーネントのアンマウント（React `useEffect`, Vue `onScopeDispose`, ルーター遷移） | `await` 可能 |
+| ブラウザのページ離脱 | `addEventListener('pagehide', handler)` | 完了保証なし — 同期処理に限定すること |
+| Web Worker | `worker.terminate()` 前にホストから送る終了メッセージ | ホスト側が終了完了を待ってから terminate する場合のみ |
+| サーバーレス・エッジ | アプリを紐づけたリクエストや呼び出しの終了時 | プラットフォームの keep-alive API 次第 |
+
+環境ごとに押さえておきたい実務上のポイントです。
+
+- **Node.js & Bun (`node-server.ts`):** `SIGINT` / `SIGTERM` リスナーは `await app.start()` の **前** に登録しましょう。`bootstrapApp()` はまだプロバイダを実行しないため、ポート `3000` が開くより前に `app` ハンドルを受け取れます。Deno でもグラフ自体はまったく同じで、リスナーを `Deno.addSignalListener('SIGINT', () => void app.stop())` に変えるだけです。
+- **ブラウザのウィジェット (`browser-unmount.ts`):** ブラウザで使う場合は、ページ全体よりもコンポーネントやルート単位にグラフを閉じ込め、アンマウント時に自分で止める（`await ready; await app.stop()`）のが一番確実です。ページが生きている間なので、非同期のクリーンアップフックも最後までしっかり待てます。
+- **ブラウザのタブ離脱 (`browser-pagehide.ts`):** bfcache（戻る・進むキャッシュ）を阻害したりスキップされたりする `beforeunload` ではなく、`pagehide` を使いましょう。ただし `pagehide` でも、`async` の `Promise` が完了する前にブラウザがページを破棄してしまうのが普通なので、離脱時のフックは `navigator.sendBeacon()` のような同期処理だけに留めてください。
+
+<CodeTabs
+  files={[
+    { title: 'node-server.ts', code: nodeShutdownCode },
+    { title: 'browser-unmount.ts', code: browserUnmountCode, region: 'unmount' },
+    { title: 'browser-pagehide.ts', code: browserUnmountCode, region: 'pagehide' },
+  ]}
+/>
+
+## フックの制約・起動失敗時のロールバック・注意点
+
+`onDispose` フックを書くときは、次のルールを頭に入れておくとトラブルを防げます。
+
+- **登録できるタイミング:** `onDispose()` を呼べるのは、そのプロバイダ自身のファクトリ関数が実行中であり、かつ `stop()` が呼ばれる前だけです。同期ファクトリなら値を返した（または例外を投げた）瞬間、非同期ファクトリなら返した `Promise` が settle した瞬間に受付窓口が閉じます。ファクトリ終了後に呼ぶと `onDispose can only be called while the factory is running`、シャットダウン開始後に呼ぶと `Cannot register cleanup after the app has stopped` が投げられます。
+- **戻り値は `void` または `Promise<void>` のみ:** クリーンアップフックの戻り値は `void` か `Promise<void>` に限定されており、それ以外の値（または非 `void` に解決する `Promise`）を返すと TypeScript のコンパイルエラーになります。たとえば Node の `http.Server.close()` は `Server` インスタンスを返すので、`onDispose(() => { server.close() })` のように波括弧で囲んで値を返さないようにしてください。
+- **フックの中で `await app.stop()` を呼ばない:** クリーンアップフック自体が `stop()` の完了処理の一部なので、`onDispose()` の中で `app.stop()` を `await` すると永遠にデッドロックします。
+- **フックのエラーと `AggregateError`:** 途中で1つのフックが例外を投げたり reject したりしても、`stop()` は残りのフックを最後まで実行します。失敗が1件だけならそのエラーをそのまま投げ直し、複数件失敗した場合は `AggregateError`（`App stop failed`）にまとめて reject します。
+- **`start()` 失敗時の自動ロールバック:** 起動の途中で `app.start()` が失敗した場合、それまでに登録されたリソースを片付けるため自動的に `stop()` が呼ばれてから reject されます。エラーが1件ならそのまま、起動とクリーンアップの両方で失敗した場合は `AggregateError`（`App startup and stop failed`）になります。なお、一度 `start()` が成功したあとにアプリ内で起きた実行時エラーでは、グラフは自動停止 **しません**。
+
+<Callout kind="caution" title="stop() がやらないこと">
+
+`stop()` が行うのは「今後の `inject()` を閉じること」と「登録済みの `onDispose` フックを走らせること」だけです。切り離された未完了ファクトリを待ったり、通信中の I/O を中断したり、すでに変数に持っているオブジェクトを無効化したりはしません。新規リクエストの受付停止や `AbortController.abort()` の呼び出し、グレースフルドレインの順序制御はアプリ側で実装してください。
+
+</Callout>

@@ -1,0 +1,50 @@
+---
+title: "非同期プロバイダ"
+slug: "async"
+part: kernel
+order: 7
+summary: "専用 API なしで async ファクトリを書く方法、処理中 Promise の共有、一時的な失敗からのリトライ、起動待機とバックグラウンド処理の切り分け、非同期 Token の型付けを解説します。"
+---
+import asyncCode from '../../examples/async/shared-and-background.ts' with { type: 'text' }
+
+DB プールの初期化やリモートシークレットの取得、インメモリキャッシュのウォームアップをしたいだけなのに、`provideAsync()` や `injectAsync()` みたいな別系統の API を覚えさせられるのは面倒ですよね。`dn-ioc` なら、いつもの `async` 関数を渡すだけでOKです。`inject()` は標準の `Promise<T>` を返し、同じスコープ内のすべての呼び出し元でその実行中の `Promise` を自動的に共有します。
+
+<Code title="shared-promise.ts" code={asyncCode} region="shared" />
+
+## Promise の同一性共有と失敗時の自動リトライ
+
+`inject()` が同期的な値を勝手に `Promise` で包むことはありません。同期ファクトリなら `T` をそのまま返し、`async` ファクトリなら `Promise<T>` を返します。
+
+`sharedApp` のように同じ解決スコープの中で `inject(settingsRef)` を立て続けに2回呼んでも、ファクトリ関数が走るのは1回きりで、両方の呼び出し元には **まったく同じ `Promise` インスタンス** が返ります（`first === second` は `true`）。起動時に5つのサービスが一斉に DB 接続を取りにいって5本重複ハンドシェイクが走る……といった事故を防ぐために、自前でメモ化コードを書く必要はありません。
+
+では、一時的なネットワークタイムアウトなどで非同期プロバイダが reject された場合はどうなるでしょうか？
+
+- **reject 時にキャッシュから自動破棄:** ファクトリの `Promise` が reject された瞬間、カーネルはエラーを呼び出し元へ伝播させる前に、その失敗した保留エントリをスコープのキャッシュから取り除きます。
+- **稼働中ならそのままクリーンに再試行:** アプリが `stop()` されていなければ、あとから同じスコープで再度 `inject()` を呼んだときにファクトリが最初からやり直されます。1回失敗した `Promise` がずっとキャッシュに居座り続けることはありません。
+
+## 起動を待つ処理とバックグラウンド処理の使い分け
+
+`app.start()` の待機ルールはとても明快です。待つのは **ルート関数そのものと、ルート関数が実際に `await`（または return）した `Promise` だけ** です。これを利用すると、起動をブロックしたい処理と裏で流したい処理をきれいに切り分けられます。
+
+- **必須の依存は `start()` でしっかり待つ:** そのリソースの準備が整うまでアプリを「起動完了」にしたくない場合は、`bootstrapApp(async ({ inject }) => { ... })` の中で `await inject(settingsRef)` と書きます。もし失敗すれば、`start()` は自動でクリーンアップを走らせてから reject します。
+- **急がない処理はバックグラウンドで走らせる:** ルート関数の中で `await` せずに `inject(warmupRef)` を呼べば、`warmupRef` を裏で走らせたまま `app.start()` はすぐに完了します。ただし、`start()` は切り離された `Promise` を追跡しないため、結果の参照やエラー捕捉ができるよう、必ずルート関数の外側の変数（`background-task.ts` の `warmupTask` など）で受け取っておきましょう。
+
+<Code title="background-task.ts" code={asyncCode} region="background" />
+
+## 非同期 Token の型付け
+
+`provide(async () => ...)` の場合は `async` 関数の戻り値から TypeScript が自動で `Ref<Promise<T>>` を推論してくれますが、`token()` には推論元になるファクトリ関数がありません。非同期トークンを宣言するときは、型パラメータの中に直接 `Promise<...>` を書きましょう。
+
+`token<Promise<Settings>>('Settings')` と書いておけば、使う側には「`inject(settingsToken)` は `await` が必要な `Promise` を返す」ことが一目で伝わりますし、実装側の `provideFor(settingsToken, ...)` でも `Promise<Settings>` を返しているか厳密に型チェックされます。
+
+<Code title="async-token.ts" code={asyncCode} region="asyncToken" />
+
+## 非同期の循環依存とシャットダウンの境界
+
+- **デッドロックしない循環依存検知:** カーネルは `await` をまたぐ非同期の依存エッジも実行中に追跡しています。保留中のプロバイダ `A` が `B` を待ち、その `B` が回り回って `A` を待とうとした瞬間、プロセスが永遠にハングするのではなく、即座に `Circular dependency detected: A -> B -> A` を投げて止めます。
+
+<Callout kind="caution" title="stop() は実行中の Promise を自動キャンセルしません">
+
+`app.stop()` を呼ぶと、それ以降の *新しい* `inject()` 呼び出し（`await` から復帰した直後の非同期ファクトリ内での呼び出しも含む）は即座にブロックされます。ただし、切り離された未完了ファクトリの終了を待ったり、その裏で動いている `fetch()` やソケット通信を勝手に中断したりはしません。バックグラウンド処理を明示的に中断したい場合は、`onDispose()` と `AbortController` を組み合わせましょう。次の章 [ライフサイクルとクリーンアップ](/ja/lifecycle/) で詳しく見ていきます。
+
+</Callout>

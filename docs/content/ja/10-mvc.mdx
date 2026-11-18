@@ -1,0 +1,105 @@
+---
+title: "実践 MVC パターン"
+slug: "mvc"
+part: patterns
+order: 10
+summary: "自動登録される Ref とルート共有のコネクションプールを使って、ボイラープレートなしで Controller-Service-Repository 構成を組む方法を解説します。"
+---
+import userControllerCode from '../../examples/mvc/controllers/user-controller.ts' with { type: 'text' }
+import databaseCode from '../../examples/mvc/db/database.ts' with { type: 'text' }
+import mvcMainCode from '../../examples/mvc/main.ts' with { type: 'text' }
+import userModelCode from '../../examples/mvc/models/user.ts' with { type: 'text' }
+import userRepoCode from '../../examples/mvc/repositories/user-repository.ts' with { type: 'text' }
+import userServiceCode from '../../examples/mvc/services/user-service.ts' with { type: 'text' }
+import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with { type: 'text' }
+
+大半の HTTP API や社内管理ツール、CRUD バックエンドなら、定番のレイヤード **MVC**（`Controller → Service → Repository → Database`）が一番しっくりきます。各レイヤーが自分の真下にある具象レイヤーをそのまま import して構わないため、すべてのモジュールを自動登録される `Ref<T>` で書けます。責務はきれいに分離しつつ、巨大な中央コンテナ設定ファイルをメンテナンスする手間もかかりません。
+
+<Code
+  title="mvc-project"
+  lang="text"
+  code={`src/
+├── models/
+│   └── user.ts                # プレーンな TypeScript 型定義（ランタイムコードなし）
+├── db/
+│   └── database.ts            # 状態を持つ接続プール Ref + onDispose クリーンアップ
+├── repositories/
+│   └── user-repository.ts     # databaseRef を注入するデータアクセス Ref
+├── services/
+│   ├── user-service.ts        # userRepositoryRef を注入するビジネスルール Ref
+│   └── user-service.test.ts   # provideFor() で userRepositoryRef を差し替える単体テスト
+├── controllers/
+│   └── user-controller.ts     # userServiceRef を注入するトランスポート層 Ref
+└── main.ts                    # ルートに [databaseRef] を固定登録するエントリポイント`}
+/>
+
+## レイヤーごとの import ルール
+
+健全な MVC コードベースでは、`import` の矢印は常に上から下への一方通行になります。Controller が Service を飛び越えて直接テーブルを引いたり、Repository が HTTP の Controller を import したりしないようにします。
+
+| レイヤー | ファイル | エクスポート | 許可するプロジェクト内 import | 責務 |
+| --- | --- | --- | --- | --- |
+| **Models** | `models/user.ts` | `type User` | なし | 共通の TypeScript インターフェースとデータ構造。 |
+| **Database** | `db/database.ts` | `databaseRef` | なし | コネクションプールを管理し、`onDispose()` で終了処理を登録する。 |
+| **Repositories** | `repositories/user-repository.ts` | `userRepositoryRef` | `db/`, `models/` | コレクションや SQL クエリを型付きメソッドの裏に隠蔽する。 |
+| **Services** | `services/user-service.ts` | `userServiceRef` | `repositories/`, `models/` | バリデーションやドメインルール（`Invalid email`、重複チェック）を担う。 |
+| **Controllers** | `controllers/user-controller.ts` | `userControllerRef` | `services/`, `models/` | HTTP/RPC の入力を Service 呼び出しとステータスコードに変換する。 |
+| **Entrypoint** | `main.ts` | `app` | `controllers/`, `db/` | 状態を持つ共有 `Ref` をルートに固定し、アプリを起動する。 |
+
+## MVC グラフ全体を下から上へたどる
+
+6つのファイルタブを下から順番にめくって、リクエストがどう流れるか見てみましょう。
+
+1. **`db/database.ts`:** `provide(function Database({ onDispose }) { ... })` と名前付き関数にすることで、循環依存などの診断時に `<anonymous>` ではなく `Database` と表示されるようにしています。状態を閉じる `onDispose` フックも、その状態のすぐ隣で登録します。
+2. **`models/user.ts`:** 純粋な TypeScript の `interface User` だけです。DI ライブラリの import すら必要ありません。
+3. **`repositories/user-repository.ts`:** `userRepositoryRef` はファクトリ実行時に1回だけ `inject(databaseRef)` を呼び、`'users'` コレクションを取得して `{ findByEmail, create }` を返します。
+4. **`services/user-service.ts`:** `userServiceRef` が `userRepositoryRef` を受け取り、メールアドレスの検証や重複チェックを HTTP ハンドラから切り離します。
+5. **`controllers/user-controller.ts`:** `userControllerRef` が `userServiceRef` を受け取り、`{ status: 201, body }` のレスポンス形式に整えます。
+6. **`main.ts`:** `bootstrapApp()` でルートスコープに `providers: [databaseRef]` を登録し、起動コールバックの中で `userControllerRef` を `inject()` します。
+
+<CodeTabs
+  files={[
+    { title: 'db/database.ts', code: databaseCode },
+    { title: 'models/user.ts', code: userModelCode },
+    { title: 'repositories/user-repository.ts', code: userRepoCode },
+    { title: 'services/user-service.ts', code: userServiceCode },
+    { title: 'controllers/user-controller.ts', code: userControllerCode },
+    { title: 'main.ts', code: mvcMainCode },
+  ]}
+/>
+
+## コネクションプールをルートの providers に明記する理由
+
+ここで「`databaseRef` は `provide()` で作っているんだから、`main.ts` の `providers: [databaseRef]` を省いても、`userRepositoryRef` が `inject(databaseRef)` したときに自動でルートに入るんじゃないの？」と思った方もいるかもしれません。
+
+単一スコープのフラットなアプリならその通りです。それでも **`main.ts` に `providers: [databaseRef]` を明示しておくべき理由** は、アプリが大きくなったときの事故防止にあります。
+
+- [プロバイダと Ref](/ja/providers/) と [スコープとプライベートサブツリー](/ja/scopes/) で見た通り、未登録の `Ref` は **最初に `inject()` を呼んだスコープ** に自動登録されます。
+- 将来、管理画面ルーターとバックグラウンドワーカーのように2つの独立した `{ providers }` サブツリーを生やしたとき、親のルートに `databaseRef` が登録されていないと、それぞれのサブツリーが **別々のコネクションプールを勝手に立ち上げてしまいます**。
+- 状態を持つリソース（`databaseRef`、Redis クライアント、レート制限ストアなど）をルートの `providers` にピン留めしておけば、遅延初期化のメリットは保ったまま、プロセス内のすべてのサブツリーで確実に1つのプールを共有し、`await app.stop()` で1回だけクローズできます。
+
+## 新しいリソースモジュールを追加する手順
+
+たとえば2つ目の機能として `posts` を足すときも、既存の `user` 周りのファイルには一切触れず、毎回おなじみの4ステップで完了します。
+
+1. **モデルを足す (`models/post.ts`):** `interface Post { id: string; authorId: string; title: string }` をエクスポートします。
+2. **Repository を足す (`repositories/post-repository.ts`):** 既存の `databaseRef` を注入する `postRepositoryRef = provide(function PostRepository({ inject }) { ... })` をエクスポートします。
+3. **Service を足す (`services/post-service.ts`):** `postRepositoryRef`（投稿者の存在確認もするなら `userRepositoryRef` も）を注入する `postServiceRef = provide(function PostService({ inject }) { ... })` をエクスポートします。
+4. **Controller をつなぐ (`controllers/post-controller.ts` → `main.ts`):** `postControllerRef` をエクスポートし、`main.ts` のルーティング配線で `inject(postControllerRef)` を呼びます。
+
+注目してほしいのは「触らなくてよかった場所」です。Repository や Service を1つ増やすたびに中央の DI 設定ファイルを編集する必要はなく、`databaseRef` も最初からルートで共有されています。
+
+## 単体テストで userRepositoryRef を差し替える
+
+`userServiceRef` は `userRepositoryRef` を直接 import していますが、`UserService` を単体テストするのに `vi.mock` や `mock.module` のようなモジュールモックは必要ありません。テスト側の `bootstrapApp()` に `provideFor(userRepositoryRef, fakeUserRepository)` を渡すだけでOKです。
+
+- `userServiceRef` には本物の Repository ではなく、オンメモリの `Map` で作ったフェイクが渡されます。
+- `userRepositoryRef` のデフォルトファクトリは一度も実行されないため、テスト中に `databaseRef` がインスタンス化されることすらありません。
+
+<Callout kind="caution" title="単体テストでの Ref のモック漏れには注意">
+
+すべての `Ref` は動くデフォルトファクトリを持っているため、MVC の単体テストで `provideFor(someOtherRef, fake)` を書き忘れても **エラーにはならず**、本物の実装がそのまま動きます。「コアなビジネスロジックから DB や外部 SDK の import を完全に追い出したい」「テストでフェイクを差し忘れたら即エラーで落ちてほしい」というチームには、次の [DDD とクリーンアーキテクチャ](/ja/ddd/) がぴったりです。
+
+</Callout>
+
+<Code title="services/user-service.test.ts" code={mvcTestCode} />

@@ -1,0 +1,199 @@
+---
+title: "DDD とクリーンアーキテクチャ"
+slug: "ddd"
+part: patterns
+order: 11
+summary: "純粋な token() ポート、インフラ層の bundleProviders()、そして Linter による境界保護で、ドメイン層とアプリケーション層から SQL や外部 SDK の import を完全に排除します。"
+---
+import orderServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
+import domainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
+import domainPortsCode from '../../examples/ddd/domain/ports.ts' with { type: 'text' }
+import infraProvidersCode from '../../examples/ddd/infra/providers.ts' with { type: 'text' }
+import sqlOrderRepoCode from '../../examples/ddd/infra/sql-order-repository.ts' with { type: 'text' }
+import systemAdaptersCode from '../../examples/ddd/infra/system-adapters.ts' with { type: 'text' }
+import dddMainCode from '../../examples/ddd/main.ts' with { type: 'text' }
+import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' with { type: 'text' }
+
+現在の SQL ドライバやメール配信サービス、HTTP フレームワークよりもビジネスルールの寿命のほうが長いプロジェクトでは、**DDD / クリーンアーキテクチャ（ヘキサゴナルアーキテクチャ）** で外部インフラの都合をコアモデルの外へ追い出すのが効果的です。`dn-ioc` で依存性逆転をやるのに、抽象基底クラスも大仰なコンテナモジュールもいりません。一番内側の `domain/` でインターフェースと `token()` ポートを宣言し、`application/` で `provide()` を使ってユースケースを組み立て、`infra/` で本物のアダプタ群を1つの `bundleProviders()` にまとめて公開するだけです。
+
+<Code
+  title="ddd-project"
+  lang="text"
+  code={`src/
+├── domain/                        # プロジェクト内の他レイヤーを一切 import しない
+│   ├── order.ts                   # Order エンティティ + OrderRepository ポートと token
+│   └── ports.ts                   # 横断的な Clock・Mailer ポートと token
+├── application/                   # domain/ のみ import 可
+│   ├── order-service.ts           # ドメイン token を注入する OrderService ユースケース Ref
+│   └── order-service.test.ts      # 軽量なフェイクだけをバインドする純粋な単体テスト
+├── infra/                         # domain/ のみ import 可
+│   ├── sql-order-repository.ts    # 非公開の sqlTableRef + sqlOrderRepositoryProvider
+│   ├── system-adapters.ts         # systemClockProvider + smtpMailerProvider
+│   └── providers.ts               # infraProviders = bundleProviders(...)
+└── main.ts                        # Composition Root：application/ と infra/ を統合`}
+/>
+
+## 1. 純粋なドメインエンティティとポート Token（domain/）
+
+`domain/` ディレクトリは依存グラフのど真ん中に位置し、プロジェクト内の **ほかのどのレイヤーも import しません**。`Order` のようなエンティティと並べて、永続化（`OrderRepository`）や現在時刻（`Clock`）、メール送信（`Mailer`）といった「外の世界が満たすべき **ポート（Port）**」を定義します。
+
+各ポートは、TypeScript の `interface` と、そのインターフェース名をそのまま付けた `token<T>('Name')` のペアで書きます。たとえば現在時刻の取得を `clockToken` の裏に隠しておけば、ビジネスルールの中で直接 `new Date()` を呼ばずに済むため、時刻が絡む状態遷移のテストが 100% 決定論的になります。
+
+<CodeTabs
+  files={[
+    { title: 'domain/order.ts', code: domainOrderCode },
+    { title: 'domain/ports.ts', code: domainPortsCode },
+  ]}
+/>
+
+## 2. アプリケーション層のユースケース（application/）
+
+`application/` レイヤーは、ドメインエンティティとポートを組み合わせて `OrderService.submit(id)` のようなユースケースを実行します。ここで意図的にハイブリッドな使い分けをしている点に注目してください。
+
+- `OrderService` が外部の機能を呼び出すときは、すべて **ドメイントークン**（`orderRepositoryToken`、`clockToken`、`mailerToken`）経由で注入します。注文データが Postgres にあるのか SQLite にあるのか、それともオンメモリの `Map` にあるのかは一切知りません。
+- なのに、`orderServiceRef` 自身は `provide(function OrderService({ inject }) { ... })` で作った **`Ref`** としてエクスポートしています！ なぜかというと、`application/` を呼ぶ側（HTTP コントローラ、CLI コマンド、キューワーカー、テスト）はいずれも *外側のレイヤー* にあり、ユースケースを直接 import するのが本来あるべき方向だからです。すでに矢印が内側を向いている箇所にまで、冗長なトークンを作る必要はありません。
+
+<Code title="application/order-service.ts" code={orderServiceCode} />
+
+## 3. インフラ層のアダプタとバンドル（infra/）
+
+`infra/` ディレクトリは `domain/` の契約を import し、実際のドライバや SDK、データベースを使って実装を与えます。
+
+- **ドライバのハンドルは `infra/` 内部に隠す:** `sql-order-repository.ts` の `sqlTableRef` は、テーブルや接続プールの状態を保持して `onDispose` フックを登録する非公開の `Ref` です。`sqlOrderRepositoryProvider` は裏側でこの `sqlTableRef` を `inject()` しますが、`domain/` と `application/` は `sqlTableRef` の存在すら知りません。
+- **インフラ層まるごと `infraProviders` に束ねる:** `infra/providers.ts` では、`sqlTableRef`（ルートスコープ内の全アダプタで同じクライアントを共有するため）と各 `provideFor()` バインドを1つの `bundleProviders(...)` ハンドルにまとめています。
+- **新しいアダプタの追加は2箇所触るだけ:** 新しいインフラアダプタが増えても、`infra/` の中で `provideFor()` を書き、`infraProviders` に1行足すだけです。どのエントリポイントも書き換える必要がありません。
+
+<Callout kind="caution" title="DDD のアダプタを Ref として公開し、domain や application から import しないでください">
+
+`infra/` で `export const sqlOrderRepositoryRef = provide(...)` と書いて、それを `domain/` や `application/` から import するのはNGです。コアロジックが SQL ドライバと密結合してしまうだけでなく、import の矢印が **外向き** にひっくり返ります。そもそも `infra/sql-order-repository.ts` は `domain/order.ts` の `Order` を import しているため、`domain/` から `infra/` を逆輸入した瞬間に ES モジュールの循環参照が発生します。ポートは必ず `domain/` の `token()` として定義し、`infra/` の `provideFor()` でバインドしてください。
+
+</Callout>
+
+<CodeTabs
+  files={[
+    { title: 'infra/sql-order-repository.ts', code: sqlOrderRepoCode },
+    { title: 'infra/system-adapters.ts', code: systemAdaptersCode },
+    { title: 'infra/providers.ts', code: infraProvidersCode },
+  ]}
+/>
+
+## 4. Composition Root と複数エントリポイントでの再利用
+
+`main.ts` は **Composition Root（合成起点）**、つまりコードベース全体で唯一 `application/` と `infra/` の両方を import して `providers: [infraProviders]` でガチャンと組み合わせる場所です。
+
+`infraProviders` が再利用可能なバンドルになっていて、`orderServiceRef` も通信プロトコルから切り離されているため、同じドメインの上に複数のエントリポイントを数行ずつで立ち上げられます。
+
+- **HTTP API サーバー (`main.ts`):** `[infraProviders]` を登録し、`bootstrapApp()` の中で `orderServiceRef` を `inject()` してルーターへ渡します。起動時に解決させておくことで、万一トークンのバインド漏れがあっても本番リクエストの途中ではなく `await app.start()` の瞬間に即失敗させられます。
+- **キューワーカーや CLI バッチ (`worker.ts`):** 別ファイルのエントリポイントで `bootstrapApp(..., { providers: [infraProviders] })` を呼び、まったく同じ `orderServiceRef` を使います。顧客にメールを飛ばしたくないデータ移行スクリプトなら、`infraProviders` の **後ろ** に `provideFor(mailerToken, dryRunMailer)` を1つ添えるだけで上書き完了です。
+- **単体テスト (`application/order-service.test.ts`):** `infraProviders` は一切読み込まず、軽量な `provideFor()` のフェイクだけを登録します。もしポートのフェイクを1つでも渡し忘れれば、`unitTestApp.start()` が即座に `No provider for token: Mailer` で reject してくれます。
+
+<CodeTabs
+  files={[
+    { title: 'main.ts', code: dddMainCode },
+    { title: 'application/order-service.test.ts', code: dddUnitTestCode },
+  ]}
+/>
+
+## 5. Biome / ESLint でレイヤーの依存方向を強制する
+
+`dn-ioc` が扱うのは実行時のハンドルだけなので、チームメンバーのエディタ自動補完がうっかり `application/order-service.ts` に `../infra/sql-order-repository` を import してしまうこと自体はカーネルでは止められません。Linter のルールで import の矢印を固定しておけば、アーキテクチャ違反が混入した瞬間に `lint:check` で自動的に弾けます。
+
+| レイヤー | 許可するプロジェクト内 import | 禁止するプロジェクト内 import |
+| --- | --- | --- |
+| **`domain/`** | なし（`'dn-ioc'` の `token` のみ） | `application/`, `infra/`, `main.ts` |
+| **`application/`** | `domain/` | `infra/`, `main.ts` |
+| **`infra/`** | `domain/` | `application/`, `main.ts` |
+| **`main.ts`（エントリポイント）** | `application/`, `infra/`, `domain/` | — |
+
+<CodeTabs
+  files={[
+    {
+      title: 'biome.json',
+      lang: 'json',
+      code: `{
+  "overrides": [
+    {
+      "includes": ["src/domain/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../application/**", "../infra/**", "**/application/**", "**/infra/**"],
+                    "message": "domain/ must stay pure and cannot import application/ or infra/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/application/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../infra/**", "**/infra/**"],
+                    "message": "application/ must depend on domain/ tokens, not infra/ adapters."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}`,
+    },
+    {
+      title: 'eslint.config.js',
+      lang: 'js',
+      code: `export default [
+  {
+    files: ['src/domain/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../application/*', '../application/**', '../infra/*', '../infra/**'],
+              message: 'domain/ must stay pure and cannot import application/ or infra/.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/application/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../infra/*', '../infra/**'],
+              message: 'application/ must depend on domain/ tokens, not infra/ adapters.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+]`,
+    },
+  ]}
+/>
+
+続いて、[テストとモック差し替え](/ja/testing/) で単体テストと結合テストの実践パターンを並べて見ていきましょう。

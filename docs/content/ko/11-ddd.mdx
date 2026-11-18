@@ -1,0 +1,199 @@
+---
+title: "DDD와 클린 아키텍처"
+slug: "ddd"
+part: patterns
+order: 11
+summary: "순수 token() 포트, 인프라 어댑터 번들, 그리고 린터 경계 규칙을 조합해 도메인과 애플리케이션 계층에서 SQL·HTTP·외부 SDK import를 완전히 덜어내 봐요."
+---
+import orderServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
+import domainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
+import domainPortsCode from '../../examples/ddd/domain/ports.ts' with { type: 'text' }
+import infraProvidersCode from '../../examples/ddd/infra/providers.ts' with { type: 'text' }
+import sqlOrderRepoCode from '../../examples/ddd/infra/sql-order-repository.ts' with { type: 'text' }
+import systemAdaptersCode from '../../examples/ddd/infra/system-adapters.ts' with { type: 'text' }
+import dddMainCode from '../../examples/ddd/main.ts' with { type: 'text' }
+import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' with { type: 'text' }
+
+핵심 비즈니스 규칙이 지금 당장 쓰는 SQL 드라이버나 이메일 벤더, HTTP 프레임워크보다 훨씬 오래 살아남아야 하는 프로젝트라면 **DDD / 클린(헥사고날) 아키텍처**로 외부 인프라 세부 사항을 코어 모델 바깥으로 밀어내는 게 좋아요. `dn-ioc`에서는 의존성을 역전시키기 위해 추상 베이스 클래스나 복잡한 컨테이너 모듈을 만들 필요가 없어요. 가장 안쪽 `domain/`이 인터페이스와 `token()` 포트를 선언하고, `application/`이 `provide()`로 유스케이스를 엮고, `infra/`가 실제 어댑터들을 단일 `bundleProviders()`로 묶어 내보내면 끝이거든요.
+
+<Code
+  title="ddd-project"
+  lang="text"
+  code={`src/
+├── domain/                        # 프로젝트 내 다른 어떤 계층도 import하지 않음
+│   ├── order.ts                   # Order 엔티티 + OrderRepository 포트 및 token
+│   └── ports.ts                   # 횡단 관심사 Clock & Mailer 포트 및 token
+├── application/                   # 오직 domain/만 import함
+│   ├── order-service.ts           # 도메인 token을 주입받는 OrderService 유스케이스 Ref
+│   └── order-service.test.ts      # 가벼운 가짜 구현만 바인딩하는 순수 단위 테스트
+├── infra/                         # 오직 domain/만 import함
+│   ├── sql-order-repository.ts    # 내부 비공개 sqlTableRef + sqlOrderRepositoryProvider
+│   ├── system-adapters.ts         # systemClockProvider + smtpMailerProvider
+│   └── providers.ts               # infraProviders = bundleProviders(...)
+└── main.ts                        # 조합 루트(Composition Root): application/ + infra/ 연결`}
+/>
+
+## 1. 순수 도메인 엔티티와 포트 Token (domain/)
+
+`domain/` 폴더는 의존성 그래프 한가운데 자리 잡고 프로젝트 안의 **그 어떤 다른 계층도 `import`하지 않아요**. `Order` 같은 엔티티와 함께 바깥세상이 충족해야 할 **포트(Port)들** — 영속성(`OrderRepository`)은 물론 현재 시각(`Clock`)이나 이메일 발송(`Mailer`) 같은 횡단 관심사 부수 효과까지 — 을 정의하죠.
+
+각 포트는 TypeScript `interface`와 그 인터페이스 이름을 그대로 딴 `token<T>('Name')` 한 쌍으로 구성돼요. 예를 들어 `Clock`을 `clockToken` 뒤로 숨겨 두면 비즈니스 규칙이 직접 `new Date()`를 호출하지 않기 때문에, 시간에 민감한 상태 전이도 테스트에서 100% 결정론적으로 검증할 수 있어요.
+
+<CodeTabs
+  files={[
+    { title: 'domain/order.ts', code: domainOrderCode },
+    { title: 'domain/ports.ts', code: domainPortsCode },
+  ]}
+/>
+
+## 2. 애플리케이션 유스케이스 (application/)
+
+`application/` 계층은 도메인 엔티티와 포트를 조율해 `OrderService.submit(id)` 같은 유스케이스를 완성해요. 여기서 의도적으로 두 가지 도구를 섞어 쓴 점에 주목해 보세요.
+
+- `OrderService`는 외부 기능을 오직 **도메인 토큰**(`orderRepositoryToken`, `clockToken`, `mailerToken`)으로만 주입받아요. 주문 데이터가 Postgres에 있는지, SQLite에 있는지, 아니면 메모리 `Map`에 있는지 전혀 알지 못하죠.
+- 그런데 정작 `orderServiceRef` 자체는 `provide(function OrderService({ inject }) { ... })`를 통해 **평범한 `Ref`로** 내보내고 있어요! 왜 그럴까요? `application/`을 호출하는 주체들 — HTTP 컨트롤러, CLI 명령어, 큐 워커, 테스트 — 은 모두 *바깥 계층*에 살면서 원래 유스케이스를 직접 `import`하도록 설계된 코드이기 때문이에요. 이미 `import` 화살표가 안쪽을 향하고 있는 서비스에까지 굳이 중복 토큰을 만들 필요는 없어요.
+
+<Code title="application/order-service.ts" code={orderServiceCode} />
+
+## 3. 인프라 어댑터와 번들 (infra/)
+
+`infra/` 폴더는 `domain/`의 계약을 `import`해서 실제 드라이버, SDK, 데이터베이스 기반 구현체를 작성해요.
+
+- **드라이버 핸들은 `infra/` 내부에만 비공개로 숨기세요:** `sql-order-repository.ts`의 `sqlTableRef`는 하위 테이블/풀 상태를 소유하고 `onDispose` 훅을 등록하는 내부 전용 `Ref`예요. `sqlOrderRepositoryProvider`가 뒤에서 `sqlTableRef`를 주입받아 쓸 뿐, `domain/`과 `application/`은 `sqlTableRef`의 존재조차 몰라요.
+- **계층 전체를 `infraProviders` 하나로 묶으세요:** `infra/providers.ts`는 루트 스코프의 모든 어댑터가 단일 클라이언트를 공유하도록 `sqlTableRef`를 넣고, 모든 `provideFor()` 바인딩을 더해 하나의 `bundleProviders(...)` 핸들로 묶어 내보내요.
+- **새 어댑터 추가는 딱 두 군데만 고치면 끝나요:** 새로운 인프라 어댑터를 추가할 때는 `infra/` 안에서 `provideFor()` 바인딩을 작성하고 `infraProviders`에 한 줄만 추가하면 돼요. 어떤 진입점 파일도 수정할 필요가 없어요.
+
+<Callout kind="caution" title="DDD 어댑터를 Ref로 내보내서 domain이나 application에서 import하지 마세요">
+
+`infra/`에서 `export const sqlOrderRepositoryRef = provide(...)`처럼 내보낸 뒤 `domain/`이나 `application/`에서 이를 `import`하고 싶은 유혹을 꼭 피해 주세요. 코어 로직이 SQL 드라이버에 강하게 결합될 뿐만 아니라 `import` 화살표가 **바깥쪽**으로 뒤집혀 버리거든요. 게다가 `infra/sql-order-repository.ts`는 이미 `domain/order.ts`에서 `Order`를 가져오고 있어서, `domain/`이 다시 `infra/`를 `import`하는 순간 ES 모듈 순환 참조가 바로 발생해요. 포트는 항상 `domain/`의 `token()`으로 두고 `infra/`에서 `provideFor()`로 바인딩해 주세요.
+
+</Callout>
+
+<CodeTabs
+  files={[
+    { title: 'infra/sql-order-repository.ts', code: sqlOrderRepoCode },
+    { title: 'infra/system-adapters.ts', code: systemAdaptersCode },
+    { title: 'infra/providers.ts', code: infraProvidersCode },
+  ]}
+/>
+
+## 4. 조합 루트(Composition Root)와 다중 진입점 재사용
+
+`main.ts`는 코드베이스에서 유일하게 `application/`과 `infra/` 양쪽을 모두 `import`해서 `providers: [infraProviders]`로 딱 맞물려 주는 **조합 루트(Composition Root)** 역할을 해요.
+
+`infraProviders`가 재사용 가능한 값으로 묶여 있고 `orderServiceRef`도 전송 계층 코드와 분리되어 있기 때문에, 같은 도메인 위에 여러 진입점을 각각 몇 줄만으로 가볍게 띄울 수 있어요.
+
+- **HTTP API 서버 (`main.ts`):** `[infraProviders]`를 설치하고 `bootstrapApp()` 안에서 `orderServiceRef`를 미리 `inject()`한 뒤 라우터에 넘겨요. 이렇게 해 두면 토큰 바인딩을 하나라도 빼먹었을 때 실제 고객 요청 도중이 아니라 `await app.start()` 시점에 즉시 실패해요.
+- **큐 워커나 CLI 배치 작업 (`worker.ts`):** 자체 진입점에서 `bootstrapApp(..., { providers: [infraProviders] })`를 호출하고 똑같은 `orderServiceRef`를 주입받아요. 고객에게 실제 메일을 보내면 안 되는 백필 스크립트라면 `infraProviders` *뒤에* `provideFor(mailerToken, dryRunMailer)` 한 줄만 덧붙여 덮어쓰면 돼요.
+- **단위 테스트 (`application/order-service.test.ts`):** `infraProviders`는 아예 건너뛰고 가벼운 `provideFor()` 가짜 구현만 설치해요. 포트 대역을 단 하나라도 빠뜨리면 `unitTestApp.start()`가 즉시 `No provider for token: Mailer` 에러로 알려 줘요.
+
+<CodeTabs
+  files={[
+    { title: 'main.ts', code: dddMainCode },
+    { title: 'application/order-service.test.ts', code: dddUnitTestCode },
+  ]}
+/>
+
+## 5. Biome나 ESLint로 계층 방향 강제하기
+
+`dn-ioc`는 런타임 핸들만 바라보기 때문에, 동료의 에디터 자동 완성 기능이 실수로 `application/order-service.ts` 상단에 `../infra/sql-order-repository`를 `import`하는 것까지 커널이 막아 주지는 못해요. 아키텍처 경계가 흐트러지면 `lint:check`에서 자동으로 실패하도록 린터 규칙으로 화살표 방향을 단단히 고정해 두세요.
+
+| 계층 | 허용된 프로젝트 내부 import | 금지된 프로젝트 내부 import |
+| --- | --- | --- |
+| **`domain/`** | 없음 (`'dn-ioc'`의 `token`만 허용) | `application/`, `infra/`, `main.ts` |
+| **`application/`** | `domain/` | `infra/`, `main.ts` |
+| **`infra/`** | `domain/` | `application/`, `main.ts` |
+| **`main.ts` (진입점)** | `application/`, `infra/`, `domain/` | — |
+
+<CodeTabs
+  files={[
+    {
+      title: 'biome.json',
+      lang: 'json',
+      code: `{
+  "overrides": [
+    {
+      "includes": ["src/domain/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../application/**", "../infra/**", "**/application/**", "**/infra/**"],
+                    "message": "domain/ must stay pure and cannot import application/ or infra/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/application/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../infra/**", "**/infra/**"],
+                    "message": "application/ must depend on domain/ tokens, not infra/ adapters."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}`,
+    },
+    {
+      title: 'eslint.config.js',
+      lang: 'js',
+      code: `export default [
+  {
+    files: ['src/domain/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../application/*', '../application/**', '../infra/*', '../infra/**'],
+              message: 'domain/ must stay pure and cannot import application/ or infra/.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/application/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../infra/*', '../infra/**'],
+              message: 'application/ must depend on domain/ tokens, not infra/ adapters.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+]`,
+    },
+  ]}
+/>
+
+이제 [테스트와 대역 갈아끼우기](/ko/testing/)로 넘어가서 단위 테스트와 통합 테스트 패턴을 나란히 비교해 볼게요.

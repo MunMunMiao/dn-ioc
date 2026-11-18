@@ -1,0 +1,122 @@
+---
+title: "インストールと対応ランタイム"
+slug: "installation"
+part: start
+order: 2
+summary: "普段使いのパッケージマネージャでの導入から、Deno の直接 import、ブラウザ CDN、TypeScript の bundler 設定までをまとめます。"
+---
+
+`dn-ioc` は依存ゼロの単一 ESM パッケージ（minify 後 `4.8 kB`、gzip `1.9 kB`）として配布されています。コマンド1つで入りますし、`node_modules` に余計な間接依存を持ち込むこともありません。普段プロジェクトで使っているパッケージマネージャで入れるのはもちろん、Deno の `npm:` 指定子やブラウザの CDN から直接読み込むこともできます。
+
+<CodeTabs
+  files={[
+    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
+    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
+    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
+    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
+    { title: 'deno', lang: 'bash', code: 'deno add npm:dn-ioc' },
+  ]}
+/>
+
+## Deno ならインストールすら不要
+
+ちょっとした単一ファイルの Deno スクリプトを試したいだけで、わざわざ `deno.json` を作りたくないときもありますよね。Deno なら `npm:` 指定子でそのまま `dn-ioc` を import できます。あとから実行したときにバージョンが変わって驚かないよう、`@0.3.1` のようにバージョンを固定しておくのがおすすめです。
+
+<Code
+  title="deno-import.ts"
+  lang="ts"
+  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc@0.3.1'`}
+/>
+
+## ブラウザ CDN と Import Maps
+
+Web ページで `dn-ioc` を使うのにバンドラは必須ではありません。モダンブラウザなら、CDN から配信されている minify 済み ESM ビルドをそのまま読み込めます。
+
+| CDN | バージョン固定 URL | 配信される中身 |
+| --- | --- | --- |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1` | `index.min.js`（`4.8 kB`、gzip `1.9 kB`） |
+| unpkg | `https://unpkg.com/dn-ioc@0.3.1` | `index.min.js` — 上とまったく同じファイル |
+| esm.sh | `https://esm.sh/dn-ioc@0.3.1` | esm.sh 側でトランスパイルされたビルド |
+
+ブラウザ向けの URL では、必ず `@0.3.1` のようにバージョンをピン留めしてください。バージョン指定を省くと常に最新リリースが降ってくるため、公開中のページがある日突然変わる原因になります。
+
+また、`<script type="importmap">` を書いておけば、モジュール側のコードを `'dn-ioc'` のベア指定子のまま統一できるので、バンドラあり・なしのどちらでも同じコードがそのまま動きます。
+
+<CodeTabs
+  files={[
+    {
+      title: 'importmap.html',
+      lang: 'html',
+      code: `<!doctype html>
+<html lang="en">
+  <head>
+    <script type="importmap">
+      {
+        "imports": {
+          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module">
+      import { bootstrapApp, provide } from 'dn-ioc'
+
+      const greetingRef = provide(() => 'hello, browser')
+      const app = bootstrapApp(({ inject }) => {
+        document.body.textContent = inject(greetingRef)
+      })
+
+      await app.start()
+    </script>
+  </body>
+</html>`,
+    },
+    {
+      title: 'direct-cdn.html',
+      lang: 'html',
+      code: `<!doctype html>
+<html lang="en">
+  <body>
+    <script type="module">
+      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1'
+
+      const greetingRef = provide(() => 'hello, browser')
+      const app = bootstrapApp(({ inject }) => {
+        document.body.textContent = inject(greetingRef)
+      })
+
+      await app.start()
+    </script>
+  </body>
+</html>`,
+    },
+  ]}
+/>
+
+## ESM と TypeScript の設定
+
+`dn-ioc` は **ESM 専用** です。CommonJS の `require()` ではなく、必ず `import` で読み込んでください。
+
+TypeScript プロジェクトでは、`tsconfig.json` の `"moduleResolution"` に `"bundler"` を指定します。最近の Vite、Bun、Deno、Next.js、Astro、`tsdown` などの環境なら、最初からこの設定になっているはずです。
+
+<Code
+  title="tsconfig.json"
+  lang="json"
+  code={`{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true
+  }
+}`}
+/>
+
+<Callout kind="caution" title="NodeNext / Node16 の型解決には非対応です">
+
+`NodeNext` および `Node16` の型定義解決は **サポートしていません**。`dn-ioc` を型チェックする TypeScript 設定では、`"moduleResolution": "bundler"` を使ってください。
+
+</Callout>
+
+カーネル内部で `process` や DOM API、タイマーに一切依存していないおかげで、書いたプロバイダは Node.js、Bun、Deno、ブラウザ、Web Worker、エッジランタイムの間で 100% そのまま使い回せます。準備ができたら、さっそく [5分クイックスタート](/ja/quickstart/) で最初のアプリを動かしてみましょう。

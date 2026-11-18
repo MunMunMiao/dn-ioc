@@ -1,0 +1,121 @@
+---
+title: "공개 API 레퍼런스"
+slug: "api"
+part: reference
+order: 13
+summary: "여섯 가지 런타임 함수, 열다섯 가지 공개 TypeScript 타입, 그리고 동결된 불투명 핸들의 정확한 시그니처와 동작 규칙을 모두 정리했어요."
+---
+import signaturesCode from '../../examples/api/signatures.ts' with { type: 'text' }
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+`dn-ioc`가 내보내는 모든 항목은 서브패스 `import`나 전역 부수 효과 없이 단일 진입점인 `'dn-ioc'`에서 바로 가져올 수 있어요. 런타임 함수 여섯 개와 TypeScript 타입 열다섯 개가 전부예요. 정확한 매개변수 타입이나 반환값, 핸들 불변 조건을 다시 확인하고 싶을 때 이 장을 펼쳐 보세요.
+
+<Code title="functions.ts" code={signaturesCode} region="functions" />
+
+## 런타임 함수
+
+### `token<T>(description?)`
+
+**시그니처:** `function token<T>(description?: string): Token<T>`
+
+런타임 구현체는 전혀 없이 TypeScript 타입 `T`만 실어 나르는 순수 의존성 키를 생성해요.
+
+- **`description`** *(선택적 `string`)*: `No provider for token: Name` 및 `Circular dependency detected: ...` 메시지에 표시되는 사람이 읽기 좋은 이름표예요. 생략하거나 빈 문자열을 넘기면 진단 메시지에 `<anonymous>`가 찍혀요. `token('Same')`을 두 번 호출하면 항상 서로 다른 별개의 키가 만들어지며, 설명 문자열이 같다고 해서 같은 키가 되지는 않아요.
+- **비동기 계약:** `inject()` 호출자와 `provideFor()` 구현체 양쪽이 비동기 반환 타입을 명확히 공유하도록 `T` 안에 `Promise`를 넣어 주세요(`token<Promise<Settings>>('Settings')`).
+
+### `provide<T>(factory, options?)`
+
+**시그니처:** `function provide<T>(factory: Factory<T>, options?: ProviderOptions): Ref<T>`
+
+`factory`를 감싸 스스로 등록 가능한 `Ref<T>` 핸들을 반환해요.
+
+- **`factory`**: `(ctx: Context) => T`. `inject()`가 호출될 때 현재 활성 스코프나 상위 조상 스코프에 이 `Ref`에 대한 바인딩이 없으면, 활성 스코프에 기본 팩토리를 설치하고 한 번 실행한 뒤 결과를 캐시해요(비동기 팩토리라면 진행 중인 `Promise`를 공유해요). 동기 예외와 비동기 거부(rejection)는 캐시되지 **않으므로** 앱이 실행 중인 동안 언제든 재시도할 수 있어요.
+- **진단 이름:** `factory.name`에서 가져와요(예를 들어 `provide(function UserService(ctx) { ... })`는 `UserService`로 표시되고, 이름 없는 화살표 함수는 `<anonymous>`로 표시돼요).
+- **`options?.providers`**: 오직 `factory` 자신과 하위 자손에게만 보이는 선택적 프라이빗 자식 서브트리예요. `provide()` 호출 시점에 스냅샷으로 복사되며, 해당 서브트리가 처음 해석될 때 지연 검증돼요.
+
+### `provideFor<T>(key, factory, options?)`
+
+**시그니처:** `function provideFor<T>(key: InjectKey<T>, factory: Factory<T>, options?: ProviderOptions): ProviderDef<T>`
+
+구현체 `factory`를 `key`(`Token<T>`와 `Ref<T>` **모두 가능**)에 바인딩하고, `{ providers }`나 `bundleProviders()`에 바로 넣을 수 있는 `ProviderDef<T>`를 반환해요.
+
+- `provideFor()`를 호출하는 즉시 `key`를 검증하며, 진짜 `Token`이나 `Ref`가 아닌 값을 넘기면 `Invalid inject key received`를 던져요.
+- **`options?.providers`**: 바인딩된 이 `factory`와 하위 자손에게만 보이는 선택적 프라이빗 자식 서브트리예요. 생성 시점에 스냅샷으로 저장돼요.
+
+### `bundleProviders(...inputs)`
+
+**시그니처:** `function bundleProviders(...inputs: ProviderInput[]): ProviderBundle`
+
+`Ref`, `ProviderDef` 바인딩, 중첩 배열, 다른 `ProviderBundle`들의 조합을 재사용 가능한 단일 `ProviderBundle`로 묶어 줘요.
+
+- 생성 시점에 입력 배열을 얕게 복사하므로 이후 원본 배열을 수정해도 번들은 변하지 않아요.
+- 번들을 설치하면 코드 작성 순서대로 왼쪽에서 오른쪽으로 항목들을 평탄화해 전달받은 스코프에 직접 등록해요. 번들 자체가 별도의 격리된 자식 스코프를 만들지는 **않아요**.
+
+### `isProvideRef(value)`
+
+**시그니처:** `function isProvideRef(value: unknown): value is Ref<unknown>`
+
+`value`가 `provide()`가 반환한 진짜 `Ref`일 때만 `true`를 돌려주는 타입 가드예요. `Token`, `ProviderDef`, `ProviderBundle`, 원시 값, `null`, 그리고 복제된 객체(`{ ...someRef }`)에는 모두 `false`를 반환해요.
+
+### `bootstrapApp(fn, options?)`
+
+**시그니처:** `function bootstrapApp(fn: BootstrapAppFn, options?: BootstrapAppOptions): App`
+
+격리된 루트 스코프를 만들고 `options?.providers`를 동기적으로 검증 및 설치한 뒤, 아직 `fn`이나 프로바이더 팩토리는 **실행하지 않은 채로** `App` 핸들을 반환해요.
+
+- **`fn`**: `(ctx: Context) => void | Promise<void>`. `app.start()`가 호출될 때 실행되며 반드시 `void` 또는 `Promise<void>`를 반환해야 해요.
+- **`options?.providers`**: 루트 수준 바인딩, `Ref`, 배열, 번들 목록이에요. 잘못된 항목이 들어 있으면 `App` 핸들이 반환되기 전에 동기적으로 `Invalid provider input received`를 던져요.
+
+## Context 및 App 생명주기 인터페이스
+
+### Context (`InjectFn` & `OnDisposeFn`)
+
+모든 프로바이더 `Factory<T>`와 `BootstrapAppFn`은 두 함수를 담은 `Context` 객체를 인자로 받아요.
+
+- **`inject: InjectFn`** (`<T>(key: InjectKey<T>) => T`) — 프로바이더를 소유한 스코프부터 위쪽으로 올라가며 `key`를 해석해요. 동기 팩토리라면 값을 바로 반환하고, 비동기 팩토리라면 공유 `Promise`를 반환해요. 팩토리 실행이 끝난 뒤 반환된 객체의 메서드 내부에서도 `app.stop()`이 호출되기 전까지는 계속 호출할 수 있어요.
+- **`onDispose: OnDisposeFn`** (`(fn: () => void | Promise<void>) => void`) — `app.stop()` 도중 LIFO(최신 등록순)로 실행될 정리 훅을 등록해요. 오직 자기 자신의 팩토리가 실행 중이고 `stop()`이 호출되기 전에만 부를 수 있어요. `void` 또는 `Promise<void>` 이외의 값을 반환하면 TypeScript 컴파일 에러가 발생하므로, 반환값이 있는 종료 호출은 중괄호로 감싸 주세요(`onDispose(() => { server.close() })`).
+
+### App (`start`, `stop` & `AsyncDisposable`)
+
+`bootstrapApp()`이 반환하는 핸들은 세 가지 멤버를 제공해요.
+
+- **`start(): Promise<void>`** — 루트 콜백을 딱 한 번 실행하고 반환된 `Promise`가 있다면 끝날 때까지 기다려요. 동시에 혹은 반복해서 호출해도 정확히 같은 `Promise`를 돌려줘요. 기동 도중 실패하면 이미 획득한 리소스를 되돌리기 위해 자동으로 `stop()`을 먼저 실행한 뒤 reject해요. 일단 `stop()`이 호출된 뒤에는 `start()`를 부르면 `Cannot start an app that has been stopped` 에러로 거부돼요.
+- **`stop(): Promise<void>`** — 앱 전체의 `inject()`를 동기적으로 즉시 닫은 뒤, 등록된 `onDispose` 훅들을 최신순으로 차례대로 `await`해요. 동시 호출이나 반복 호출에 대해 멱등성을 보장하며, 도중에 한 훅이 실패하더라도 나머지 훅들은 끝까지 실행돼요.
+- **`[Symbol.asyncDispose](): Promise<void>`** — `await using app = bootstrapApp(...)` 구문이 블록 종료 시 앱을 자동으로 정리할 수 있도록 `stop`과 정확히 같은 함수를 가리켜요. 런타임에 네이티브 `Symbol.asyncDispose`가 존재하면 `[Symbol.asyncDispose]`를 정의하고, 네이티브 심볼이 없는 구형 런타임(예: Node 18)에서는 TypeScript 다운레벨 `await using` 탐색 규칙에 맞춰 `[Symbol.for('Symbol.asyncDispose')]`로 폴백해요.
+
+<Code title="types.ts" code={signaturesCode} region="types" />
+
+## 핸들 및 유틸리티 타입
+
+| 내보내는 타입 | 정의 / 형태 | 용도 |
+| --- | --- | --- |
+| `Token<T>` | `T`를 품은 브랜드 불투명 인터페이스 | `token<T>()`이 반환하는 계약 키예요. |
+| `Ref<T>` | `extends Token<T>` (Ref로 브랜딩됨) | `provide()`가 반환하는 자동 등록 핸들이에요. |
+| `RefType<T>` | `T extends Ref<infer U> ? U : never` | `typeof someRef`에서 해석된 결과 타입 `U`를 추출해요 — 중복 인터페이스 작성 없이 테스트 대역 타입을 잡을 때 아주 유용해요. |
+| `InjectKey<T>` | `Token<T> \| Ref<T>` | `inject()`와 `provideFor()`가 허용하는 유효한 조회·바인딩 대상 타입이에요. |
+| `ProviderDef<T>` | `T`를 품은 브랜드 불투명 인터페이스 | `provideFor()`가 반환하는 명시적 바인딩이에요. |
+| `ProviderBundle` | 브랜드 불투명 인터페이스 | `bundleProviders()`가 반환하는 묶음 배선 핸들이에요. |
+| `ProviderInput` | `Ref<unknown> \| ProviderDef<unknown> \| ProviderBundle \| readonly ProviderInput[]` | `providers`와 `bundleProviders()`에 넣을 수 있는 설치 항목 또는 임의 깊이의 중첩 배열이에요. |
+| `ProviderOptions` | `{ providers?: readonly ProviderInput[] }` | 프라이빗 자식 서브트리를 선언하는 `provide()` 및 `provideFor()`용 옵션 객체예요. |
+| `BootstrapAppOptions` | `{ providers?: readonly ProviderInput[] }` | 루트 스코프 바인딩을 설치하는 `bootstrapApp()`용 옵션 객체예요. |
+| `InjectFn` | `<T>(key: InjectKey<T>) => T` | `Context` 안의 `ctx.inject` 함수 타입이에요. |
+| `OnDisposeFn` | `(fn: () => void \| Promise<void>) => void` | `Context` 안의 `ctx.onDispose` 함수 타입이에요. |
+| `Factory<T>` | `(ctx: Context) => T` | 프로바이더 팩토리 함수 시그니처예요. |
+| `BootstrapAppFn` | `(ctx: Context) => void \| Promise<void>` | `bootstrapApp()`의 루트 기동 콜백 시그니처예요. |
+
+## 동결된 불투명 핸들 동작 원리
+
+`token()`, `provide()`, `provideFor()`, `bundleProviders()`가 반환하는 모든 핸들은 열거 가능한 자체 프로퍼티도 없고 자체 심볼 키도 없는 빈 동결 객체(`Object.freeze({})`)예요. 모든 내부 메타데이터는 커널 안의 비공개 `WeakMap`에만 보관돼요.
+
+- **수정 시도는 실패해요:** 핸들에 프로퍼티를 추가하거나 덮어쓰려 하면 strict 모드에서 즉시 `TypeError`가 발생해요.
+- **복사본과 위조 객체는 거부돼요:** 핸들을 전개하거나 복사(`{ ...sampleRef }`, `Object.assign({}, myToken)`)하면 커널의 `WeakMap`에 등록되지 않은 완전히 새로운 객체 참조가 만들어져요. 이 복사본을 `isProvideRef()`에 넘기면 `false`가 나오고, `inject()`나 `provideFor()`에 넘기면 `Invalid inject key received`를 던지며, 복사된 바인딩이나 번들을 `providers`에 넣으면 `Invalid provider input received`를 던져요.
+
+<Callout kind="note" title="신뢰된 인프로세스 커널이지, 보안 샌드박스는 아니에요">
+
+불투명 핸들은 실수로 인한 객체 변경, 직렬화 버그, 패키지 간의 깨지기 쉬운 덕 타이핑(duck-typing)을 막아 주는 안전장치예요. 같은 JavaScript 격리 환경(isolate) 안에서 실행되는 신뢰할 수 없는 코드를 막기 위한 보안 경계는 **아니에요**.
+
+</Callout>
+
+커널이 던질 수 있는 모든 런타임 에러 메시지와 각각의 해결 방법이 궁금하다면 다음 장인 [에러 메시지와 해결 가이드](/ko/errors/)로 넘어가 보세요.
+
+<Code title="opaque-handles.ts" code={providersCode} region="isProvideRef" />

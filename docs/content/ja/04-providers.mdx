@@ -1,0 +1,50 @@
+---
+title: "プロバイダと Ref"
+slug: "providers"
+part: kernel
+order: 4
+summary: "provide() がスコープごとに自動登録・キャッシュする仕組み、bundleProviders() によるまとめ方、そして登録順序のルールを解説します。"
+---
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+設定ヘルパーや MVC の Repository、アプリケーションサービスのように、「デフォルトの実装が1つに決まっていて、呼び出し側がそのまま import して構わない依存」には迷わず `provide()` を使いましょう。戻り値の `Ref<T>` は、必要になったタイミングで自分自身を組み立て、所有スコープの中に結果をキャッシュしてくれます。
+
+<Code title="caching.ts" code={providersCode} region="caching" />
+
+## 自動登録される Ref とルートへの明示登録
+
+世の中の DI ライブラリには、「中央のコンテナにクラスを登録し忘れると実行時エラーになる」ものが少なくありません。`provide()` が作る `Ref<T>` なら、そんなボイラープレートは不要です。現在のスコープ（および親スコープ）に `configRef` がまだバインドされていなければ、最初に `inject(configRef)` が呼ばれた瞬間にその場でデフォルトのファクトリが登録されて1回だけ走り、インスタンスがキャッシュされます（`first === second` は `true`、`created` は `1` のままです）。
+
+とても便利な仕組みですが、**ここだけ気をつけてください。`Ref` はスコープ単位のシングルトンであり、プロセス全体のグローバルシングルトンではありません。**
+
+- `bootstrapApp()` を2回呼べば、それぞれのアプリでインスタンスは完全に別物になります。
+- 兄弟関係にある2つの `{ providers }` サブツリーが、それぞれ未登録の `Ref` を初めて `inject()` した場合、サブツリーごとに別々のインスタンスが自動登録・キャッシュされます。
+
+DB のコネクションプールやインメモリキャッシュ、あるいは上の `configRef` のように「アプリ全体で必ず1つだけ共有したい状態やリソース」を扱う場合は、`bootstrapApp(..., { providers: [configRef] })` のようにルートの `providers` へ明示的に並べておきましょう。ルートに登録しても遅延評価（実際に誰かが `inject()` するまでファクトリは走らない）はそのままで、アプリ全体が確実に同じインスタンスを共有できます。
+
+## bundleProviders() で関連する配線をまとめる
+
+機能を切り出していると、複数のバインドをセットで配布したくなる場面がよくあります。たとえば「外部に公開するトークン」と「その裏で読む内部設定トークン」のペアや、`infra/` ディレクトリ配下の DB・メール送信アダプタ一式などです。
+
+`bundleProviders(...inputs)` を使えば、`Ref`、`provideFor()` のバインド、配列、さらには入れ子のバンドルまで自由にひとまとめにして、1つの `ProviderBundle` としてエクスポートできます。使う側は `{ providers }` に `provideTheme({ palette: 'ocean' })` を1行足すだけで済み、内部の細かい配線を知る必要がありません。
+
+なお、バンドルはあくまで「配線をフラットにまとめるパッケージング用ヘルパー」であり、**それ自身が独立したプライベートスコープを作るわけではない** 点は押さえておいてください。バンドルの中身は、受け取った側のスコープへそのまま展開されます（隔離されたスコープを作りたい場合は [スコープとプライベートサブツリー](/ja/scopes/) を参照してください）。
+
+<Code title="bundle.ts" code={providersCode} region="bundle" />
+
+## isProvideRef() でハンドルを判定する
+
+フレームワークとの薄い連携コードやテストヘルパーを書いていて、実行時に未知の値が `Ref` かどうか調べたいときは、`isProvideRef(value)` で `Ref<unknown>` へと型を絞り込めます。
+
+`isProvideRef()` が `true` を返すのは、`provide()` が作った **本物の `Ref` だけ** です。`token()` のキー、`provideFor()` のバインド、`bundleProviders()` のバンドル、プリミティブ値、そして `{ ...sampleRef }` のような浅いコピーに対してはすべて `false` を返します。
+
+<Code title="is-provide-ref.ts" code={providersCode} region="isProvideRef" />
+
+## 登録順序のルールと境界ケース
+
+`bootstrapApp()` のルートであれ、ネストした `{ providers }` オプションであれ、カーネルが `providers` リストをインストールするときは常に次の4つのルールに従います。
+
+1. **作成時のスナップショット:** `provide()`、`provideFor()`、`bundleProviders()`、`bootstrapApp()` に渡された配列やバンドルは、その場で浅くコピーされます。あとから元の配列を書き換えても、作成済みの `Ref` やバインド、バンドルの中身が変わることはありません。
+2. **記述順でのフラット展開:** 入れ子の配列や `ProviderBundle` は、コードに書いた順番のまま左から右へフラットに展開されます。
+3. **同一スコープ内は「あと勝ち」で上書き:** 同じスコープに同じキーを2回登録すると、あとから登録したバインドが前のものを静かに置き換えます（前のバインドに紐づいていたネスト `{ providers }` ごと置き換わります）。結合テストで `[infraProviders, provideFor(repoToken, fakeRepo)]` と書くだけで特定のアダプタだけきれいに差し替えられるのは、このルールのおかげです。
+4. **バリデーションのタイミング:** `bootstrapApp()` に渡したルートの `providers` は即座に検証され、不正な値が混ざっていれば `App` ハンドルが作られる前に `Invalid provider input received` を投げます。一方、`Ref` やバインドに付けたネスト `{ providers }` は、そのサブツリーが初めて解決されるタイミングで遅延検証され、不正があればその `inject()` 呼び出しから `Invalid provider input received` が投げられます。

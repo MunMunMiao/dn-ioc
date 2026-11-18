@@ -1,0 +1,62 @@
+---
+title: "テストとモック差し替え"
+slug: "testing"
+part: patterns
+order: 12
+summary: "モジュールモックの黒魔術に頼らず、provideFor()、バンドルのあと勝ち上書き、そして await using で安全に並列テストを回す方法を解説します。"
+---
+import mvcFakeCode from '../../examples/mvc/user-service-fake-example.ts' with { type: 'text' }
+import testingCode from '../../examples/testing/unit-and-integration.ts' with { type: 'text' }
+
+`dn-ioc` を使ったテストでは、`vi.mock()` も `mock.module()` も、壊れやすい `afterEach(() => container.reset())` の儀式も一切必要ありません。**グローバルコンテナが存在しない** ため、`bootstrapApp()` を呼ぶたびにメモリ上に真っさらな依存グラフが作られます。何十本ものテストファイルを並列実行してもお互いの状態を汚しませんし、`provideFor()` を1行書けば `Token<T>` でも `Ref<T>` でも自在に差し替えられます。
+
+<Code title="order-service.unit.test.ts" code={testingCode} region="unit" />
+
+## 隔離されたフェイクによる単体テスト
+
+単体テストでは、テストごとに専用の `bootstrapApp()` を作り、テスト対象が必要とするフェイク **だけ** を登録します（`order-service.unit.test.ts` なら `fakeOrders`、時刻固定の `Clock`、`fakeMailer` の3つです）。
+
+`provideFor(key, fakeFactory)` の書き方自体は `key` が `Token<T>` でも `Ref<T>` でもまったく同じですが、**うっかりモックを登録し忘れたときの挙動はキーの種類によって大きく変わります。**
+
+| キーの種類 | 単体テストで `provideFor()` を忘れた場合 | 実務上の影響 |
+| --- | --- | --- |
+| **`Token<T>`** | `app.start()` が即座に `No provider for token: Name` で reject される。 | **フェイルファスト:** 単体テストが誤って本物のソケットを開いたりメールを送信したりする事故を完全に防げる。 |
+| **`Ref<T>`** | エラーにはならず、`Ref` が持つ本物のファクトリが自動登録されて走る。 | **暗黙フォールバック:** 純粋なオンメモリヘルパーには便利だが、外部 I/O を叩く `Ref` を差し忘れると本物が動いてしまう。 |
+
+上の DDD の単体テストと、下の MVC のテスト（`services/user-service.test.ts`）を見比べてみてください。`provideFor(userRepositoryRef, fakeUserRepository)` による差し替え自体は同じくらいすっきり書けますが、MVC の場合は `userServiceRef` が触る I/O 系の `Ref` を漏れなく上書きするよう意識しておくのがポイントです。
+
+<Callout kind="tip" title="テスト失敗時のエラートレースを読みやすくするコツ">
+
+トークンにはインターフェース名をそのまま付け（`token<Mailer>('Mailer')`）、`provide()` のファクトリには名前付き関数を使いましょう（`provide(function OrderService({ inject }) { ... })`）。テストでバインドを忘れたり循環依存を作ったりしたとき、エラーメッセージに `<anonymous>` ではなく `OrderService` や `Mailer` とハッキリ表示されます。
+
+</Callout>
+
+<Code title="services/user-service.test.ts" code={mvcFakeCode} />
+
+## バンドル上書きによる結合テスト
+
+単体テストが「フェイクを相手にビジネスロジックが正しく動くか」を検証するのに対し、結合テストは「本物の SQL Repository やシリアライズ処理とドメインサービスをつなぎつつ、SMTP や Stripe といった外部サービスだけをスタブにする」テストです。
+
+`dn-ioc` は配列や `ProviderBundle` を記述順にフラット展開し、**同じスコープ内ではあとに書いたバインドが前のものを上書きする** ため、本番用の `infraProviders` バンドルを丸ごと入れた直後に、差し替えたいポートだけ1行並べるだけで済みます。
+
+- **正しい順番 (`[infraProviders, provideFor(mailerToken, fakeMailer)]`):** まず `sqlTableRef`、`sqlOrderRepositoryProvider`、`systemClockProvider`、`smtpMailerProvider` が登録され、直後に `mailerToken` だけが `fakeMailer` で上書きされます。
+- **間違った順番 (`[provideFor(mailerToken, fakeMailer), infraProviders]`):** せっかく登録した `fakeMailer` の **あと** から `infraProviders` が展開されるため、本物の `smtpMailerProvider` で静かに上書きし直されてしまいます！
+
+<Callout kind="note" title="ネストしたサブツリー内で上書きする場合">
+
+`bootstrapApp(..., { providers })` のルートで上書きした場合は、ルート所有のすべてのサービスに自動で効きます。もし「利用側のサービスはルートに登録したまま、子の `{ providers }` サブツリーの中だけで依存を上書きしたい」という場合は、子スコープ側で利用側と依存先の両方を再バインドする必要があることを思い出してください（詳しくは [スコープとプライベートサブツリー](/ja/scopes/) を参照）。
+
+</Callout>
+
+<Code title="order-service.integration.test.ts" code={testingCode} region="integration" />
+
+## await using でテストごとの後片付けを自動化する
+
+`testOrderSubmitUnit()` と `testOrderSubmitIntegration()` の両方にある `await using app = bootstrapApp(...)` に注目してください。
+
+- `App` は `AsyncDisposable` を実装しているため、関数ブロックを抜けるときに TypeScript が自動で `app.stop()` を `await` してくれます。**たとえテストの途中で `expect()` アサーションが失敗して例外が飛んでも確実に走ります。**
+- テスト関数を抜ける前に `sqlTableRef` の `onDispose` フックが実行されるため、`try / finally` を毎回書かなくてもコネクションプールやタイマー、一時サーバーをきれいに閉じられます。
+
+まだ `await using` を使っていない環境でも、`try { await app.start() } finally { await app.stop() }` で囲めばまったく同じ効果が得られます。また、`app.stop()` は冪等なので、後片付けフックの中でうっかり2回呼んでしまっても安全です。
+
+正確な型シグネチャやエラーメッセージの一覧を確認したくなったら、パート IV の [公開 API リファレンス](/ja/api/) と [エラーメッセージと対処法](/ja/errors/) を開いてみてください。

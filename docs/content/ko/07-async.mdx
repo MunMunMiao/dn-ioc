@@ -1,0 +1,50 @@
+---
+title: "비동기 프로바이더"
+slug: "async"
+part: kernel
+order: 7
+summary: "별도 API 없이 async 팩토리를 작성하고, 진행 중인 Promise를 공유하며, 일시적 장애 후 재시도하고, 시작 대기와 백그라운드 작업을 분리하는 법을 알아봐요."
+---
+import asyncCode from '../../examples/async/shared-and-background.ts' with { type: 'text' }
+
+DB 커넥션 풀을 열거나 원격 시크릿을 가져오고 인메모리 캐시를 예열할 때마다 `provideAsync()`나 `injectAsync()` 같은 별도 API 체계를 따로 배울 필요는 없어요. `dn-ioc`에서는 그냥 평범한 `async` 팩토리를 작성하면 끝이에요. `inject()`가 표준 `Promise<T>`를 그대로 반환하고, 같은 스코프 안에서 호출한 모든 곳과 진행 중인 단일 `Promise`를 자동으로 공유하거든요.
+
+<Code title="shared-promise.ts" code={asyncCode} region="shared" />
+
+## Promise 인스턴스 공유와 실패 시 자동 재시도
+
+`inject()`는 동기 값을 억지로 `Promise`로 감싸지 않아요. 동기 팩토리는 `T`를 바로 돌려주고, 비동기 팩토리는 `Promise<T>`를 돌려주죠.
+
+`sharedApp`처럼 같은 스코프에서 `inject(settingsRef)`를 연달아 두 번 호출해도 팩토리는 딱 한 번만 실행되고, 두 호출자 모두 정확히 같은 `Promise` 인스턴스를 받아요(`first === second`가 `true`예요). 앱이 뜰 때 서비스 다섯 개가 동시에 DB 연결을 열면서 중복 핸드셰이크를 다섯 번 일으키는 걸 막으려고 직접 메모이제이션 가드를 짤 필요가 없어요.
+
+만약 일시적인 네트워크 타임아웃 같은 이유로 비동기 프로바이더가 실패(reject)하면 어떻게 될까요?
+
+- **실패 즉시 캐시에서 자동 제거:** 팩토리의 `Promise`가 거부되는 순간, 커널은 에러를 밖으로 전달하기 전에 실패한 대기 항목을 스코프 캐시에서 먼저 지워 버려요.
+- **실행 중이라면 깔끔하게 재시도 가능:** 앱이 아직 `stop()`되지 않았다면, 이후 같은 스코프에서 다시 `inject()`를 호출했을 때 영구히 고장 난 에러를 재탕하지 않고 팩토리를 처음부터 새로 실행해요.
+
+## 시작을 기다리는 작업 vs 백그라운드 작업
+
+`app.start()`가 지키는 규칙은 아주 단순해요. **루트 팩토리 함수 자체와, 그 안에서 실제로 `await`하거나 반환한 `Promise`만 기다린다**는 거예요. 덕분에 앱 기동을 막아야 하는 작업과 뒤에서 조용히 돌릴 작업을 선명하게 나눌 수 있어요.
+
+- **핵심 의존성은 `start()`에서 기다리기:** 해당 리소스가 준비되기 전에는 앱이 준비 완료 상태가 되면 안 된다면 `bootstrapApp(async ({ inject }) => { ... })` 안에서 `await inject(settingsRef)`처럼 작성하세요. 만약 실패하면 `start()`가 자동으로 정리(cleanup)를 수행한 뒤 reject해요.
+- **논블로킹 백그라운드 작업 띄우기:** 루트 함수 안에서 `await` 없이 `inject(warmupRef)`를 호출하면 `warmupRef`가 뒤에서 계속 도는 동안 `app.start()`는 곧바로 완료돼요. 단, 분리된 `Promise`는 `start()`가 추적하지 않으니 결과 확인이나 에러 처리를 놓치지 않도록 `background-task.ts`의 `warmupTask`처럼 루트 함수 바깥 변수에 꼭 담아 두세요.
+
+<Code title="background-task.ts" code={asyncCode} region="background" />
+
+## 비동기 Token 타입 지정하기
+
+`provide(async () => ...)`는 TypeScript가 `async` 함수의 반환 타입을 보고 알아서 `Ref<Promise<T>>`를 추론해 주지만, `token()`은 타입을 추론할 팩토리 함수가 없어요. 그래서 비동기 토큰을 선언할 때는 타입 매개변수 안에 `Promise<...>`를 직접 적어 주면 돼요.
+
+`token<Promise<Settings>>('Settings')`라고 선언해 두면 양쪽 계약이 한눈에 명확해져요. 쓰는 쪽에서는 `inject(settingsToken)`이 `await`해야 할 `Promise`를 돌려준다는 걸 바로 알 수 있고, 바인딩하는 쪽에서도 `provideFor(settingsToken, ...)`가 `Promise<Settings>`를 반환하는지 컴파일 타임에 꼼꼼히 검사해 주거든요.
+
+<Code title="async-token.ts" code={asyncCode} region="asyncToken" />
+
+## 비동기 순환 참조와 종료 경계
+
+- **데드락 없는 순환 참조 감지:** 커널은 `await` 경계를 넘어 진행 중인 비동기 의존성 간선도 함께 추적해요. 대기 중인 프로바이더 `A`가 `B`를 기다리는데 `B`가 다시 돌아와 `A`를 기다리려 하면, 프로세스가 영원히 멈춰 서는 대신 즉시 `Circular dependency detected: A -> B -> A` 에러를 던져 줘요.
+
+<Callout kind="caution" title="stop()은 진행 중인 Promise를 강제로 취소하지 않아요">
+
+`app.stop()`을 호출하면 `await` 뒤에서 막 깨어난 비동기 팩토리 내부를 포함해 모든 *새로운* `inject()` 호출이 즉시 차단돼요. 하지만 분리된 미완료 팩토리가 끝날 때까지 기다려 주거나, 그 안에서 돌고 있는 `fetch()`나 소켓 I/O를 대신 끊어 주지는 않아요. 백그라운드 작업에 명시적인 취소가 필요하다면 `onDispose()`에 `AbortController`를 연결해 주세요. 바로 다음 장인 [생명주기와 리소스 정리](/ko/lifecycle/)에서 자세히 알아볼게요.
+
+</Callout>

@@ -1,0 +1,50 @@
+---
+title: "프로바이더와 Ref"
+slug: "providers"
+part: kernel
+order: 4
+summary: "provide()가 스코프별로 스스로 등록되고 인스턴스를 캐시하는 원리, bundleProviders()로 바인딩을 묶는 법, 그리고 설치 순서 규칙을 알아봐요."
+---
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+설정 헬퍼나 MVC 리포지토리, 애플리케이션 서비스처럼 뚜렷한 기본 구현체가 하나 있고 호출하는 쪽에서 그 파일을 직접 `import`해도 괜찮다면 `provide()`를 쓰면 돼요. `provide()`가 돌려주는 `Ref<T>`는 필요한 순간 스스로 인스턴스를 생성하고, 자기를 소유한 스코프 안에 결과값을 캐시해 두거든요.
+
+<Code title="caching.ts" code={providersCode} region="caching" />
+
+## 자동 등록되는 Ref vs 루트 명시 등록
+
+많은 DI 라이브러리에서는 중앙 컨테이너에 클래스를 등록하는 걸 깜빡하면 런타임 에러가 터지곤 해요. 반면 `provide()`가 만든 `Ref<T>`는 그런 반복 코드를 없애 줘요. 현재 활성 스코프(와 부모 스코프들)에 아직 `configRef`가 바인딩되어 있지 않다면, 첫 번째 `inject(configRef)`가 호출되는 그 자리에 기본 팩토리를 자동 설치하고 딱 한 번 실행한 뒤 인스턴스를 캐시해요(`first === second`는 `true`이고 `created`도 계속 `1`이에요).
+
+아주 편리한 기능이지만 **여기서 주의할 점이 하나 있어요. `Ref`는 스코프 단위로 공유될 뿐, 프로세스 전역 싱글턴이 아니에요.**
+
+- 서로 다른 두 번의 `bootstrapApp()` 호출은 절대 인스턴스를 공유하지 않아요.
+- 형제 관계인 두 `{ providers }` 서브트리가 아직 어디에도 등록되지 않은 `Ref`를 각자 처음 `inject()`하면, 두 서브트리에 각각 별도의 복사본이 자동 설치되고 캐시돼요.
+
+그래서 DB 커넥션 풀, 인메모리 캐시, 혹은 위 예제의 `configRef`처럼 공유 상태나 제한된 리소스를 다루는 `Ref`라면 `bootstrapApp(..., { providers: [configRef] })`처럼 루트 스코프에 명시적으로 적어 두는 게 좋아요. 루트에 미리 등록해 두더라도 지연 생성(누군가 실제로 `inject()`하기 전까지는 팩토리가 돌지 않음)은 그대로 유지되면서, 앱 전체가 단 하나의 인스턴스를 공유하도록 확실히 보장해 주거든요.
+
+## bundleProviders()로 관련 배선 한데 묶기
+
+기능을 모듈화하다 보면 여러 바인딩을 한 세트로 묶어 내보내고 싶을 때가 있어요. 예를 들어 외부로 공개할 토큰과 내부 옵션 토큰을 함께 묶거나, `infra/` 폴더 안의 DB 및 이메일 어댑터 전체를 하나로 모으는 경우죠.
+
+`bundleProviders(...inputs)`는 `Ref`, `provideFor()` 바인딩, 배열, 심지어 중첩된 다른 번들까지 한데 묶어 단일 `ProviderBundle`로 만들어 줘요. 쓰는 쪽에서는 내부 배선을 일일이 알 필요 없이 `{ providers }`에 `provideTheme({ palette: 'ocean' })` 한 줄만 툭 넣으면 끝나요.
+
+다만 번들은 어디까지나 평탄하게 묶어 주는 패키징 도우미일 뿐, **그 자체로 격리된 새 스코프를 만들지는 않는다**는 점을 기억해 두세요. 번들 안의 항목들은 번들을 전달받은 스코프에 그대로 풀려서 설치돼요(격리된 프라이빗 스코프가 필요하다면 [스코프와 프라이빗 서브트리](/ko/scopes/)를 참고해 주세요).
+
+<Code title="bundle.ts" code={providersCode} region="bundle" />
+
+## isProvideRef()로 핸들 확인하기
+
+얇은 프레임워크 연결 코드나 테스트 헬퍼를 작성하면서 런타임에 알 수 없는 값이 들어왔을 때, `isProvideRef(value)`를 쓰면 타입을 안전하게 `Ref<unknown>`으로 좁힐 수 있어요.
+
+`isProvideRef()`는 오직 `provide()`로 만든 **진짜 `Ref`에만** `true`를 반환해요. `token()` 키, `provideFor()` 바인딩, `bundleProviders()` 번들, 일반 값, 그리고 `{ ...sampleRef }`처럼 얕게 복사한 객체에는 모두 `false`를 돌려줘요.
+
+<Code title="is-provide-ref.ts" code={providersCode} region="isProvideRef" />
+
+## 설치 규칙과 엣지 케이스
+
+`bootstrapApp()`의 루트에서든 중첩된 `{ providers }` 옵션 안에서든, 커널이 `providers` 목록을 설치할 때는 항상 아래 네 가지 규칙을 따라요.
+
+1. **생성 시점 스냅샷:** `provide()`, `provideFor()`, `bundleProviders()`, `bootstrapApp()`에 넘긴 배열과 번들은 호출 즉시 얕은 복사본으로 저장돼요. 나중에 원본 배열을 수정하더라도 이미 만들어진 `Ref`나 바인딩, 번들은 절대 바뀌지 않아요.
+2. **작성 순서대로 평탄화:** 중첩 배열과 `ProviderBundle`은 코드에 적힌 순서 그대로 왼쪽에서 오른쪽으로 평탄화돼요.
+3. **같은 스코프에서는 마지막 등록이 우선(Last-write-wins):** 한 스코프에 같은 키를 두 번 설치하면 나중에 들어온 바인딩이 이전 바인딩을(이전 바인딩에 딸린 중첩 `{ providers }`까지 포함해서) 조용히 덮어써요. 통합 테스트에서 `[infraProviders, provideFor(repoToken, fakeRepo)]`처럼 적어서 원하는 어댑터 하나만 깔끔하게 덮어쓸 수 있는 비결이 바로 이거예요.
+4. **검증 시점 차이:** `bootstrapApp()`에 넘긴 루트 `providers`는 즉시 검증되어, 잘못된 값이 섞여 있으면 `App` 핸들이 만들어지기도 전에 `Invalid provider input received`를 던져요. 반면 `Ref`나 바인딩에 붙은 중첩 `{ providers }`는 해당 서브트리가 처음 해석될 때 지연 검증되며, 문제가 있으면 그때의 `inject()` 호출에서 `Invalid provider input received`가 발생해요.

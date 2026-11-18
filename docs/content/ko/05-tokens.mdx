@@ -1,0 +1,50 @@
+---
+title: "Token과 구현체 바인딩"
+slug: "tokens"
+part: kernel
+order: 5
+summary: "token()으로 구현체 없는 순수 계약을 선언하고, provideFor()로 실제 구현을 연결하며, 디버깅하기 좋은 진단 이름을 붙이는 방법을 알아봐요."
+---
+import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { type: 'text' }
+
+의존성을 요청하는 코드가 구체 구현체를 `import`해서는 안 되거나 아직 어떤 구현체가 들어올지 알 수 없을 때는 `token<T>()`을 꺼내 보세요. DB 접속 URL 같은 런타임 시크릿, 교체 가능한 UI 테마, 순수한 DDD 도메인 포트가 모두 여기에 해당해요. 먼저 타입이 지정된 빈자리만 선언해 두고, 나중에 `provideFor()`로 실제 값을 연결해 주면 되거든요.
+
+<Code title="bound-token.ts" code={tokenBindingCode} region="bound" />
+
+## token()과 provideFor()로 계약 선언하고 연결하기
+
+`provide()`가 키와 기본 팩토리를 한 몸으로 묶는다면, `token<T>(description?)`은 **오직 키만** 만들어요. 런타임 로직도 전혀 없고 다른 구현 파일을 끌고 오지도 않죠. TypeScript가 타입 `T`를 실어 나르고, 선택 인자인 `description` 문자열은 에러 메시지에서 사람이 읽기 좋은 이름표 역할을 해 줘요.
+
+실제 구현을 넣어 주려면 토큰과 팩토리를 `provideFor(key, factory, options?)`에 넘기면 돼요.
+
+- `bound-token.ts`에서 `prefixToken`은 누군가 반드시 `string`을 공급해야 한다는 계약만 선언해요.
+- `formatterRef`는 그 접두사가 환경 변수에서 오는지, 설정 파일에서 오는지, 테스트 스텁에서 오는지 전혀 모른 채 `prefixToken`을 주입받아요.
+- `boundApp`이 시작될 때 `provideFor(prefixToken, () => '[app] ')`를 설치해 주었기 때문에, `formatterRef`는 `[app] ready`를 출력해요.
+
+참고로 `provideFor()`는 모든 `InjectKey<T>`, 즉 **`Token<T>`와 `Ref<T>` 둘 다** 받을 수 있어요. 운영 환경에서 추상 포트에 어댑터를 바인딩할 때나, 테스트에서 구체 `Ref`를 가짜 객체로 바꿔치기할 때나 완전히 똑같은 헬퍼를 쓰면 돼요.
+
+## 바인딩을 빼먹으면 즉시 실패해요
+
+`Token<T>`에는 기본 폴백 팩토리가 없기 때문에, 현재 스코프나 상위 스코프 어디에도 바인딩되지 않은 토큰을 `inject()`하면 그 즉시 에러를 던져요. 아래 `unbound-token.ts`에서는 `unboundApp.start()`가 `No provider for token: DatabaseUrl` 메시지와 함께 거부(reject)돼요(`token()`에 넘긴 설명이 `Name`일 때 `No provider for token: Name` 형식으로 출력돼요).
+
+<Callout kind="tip" title="진입점이 쓰는 의존성은 루트 함수 안에서 바로 inject()하세요">
+
+`bootstrapApp()`의 루트 함수 안에서 최상위 컨트롤러나 라우트, 워커를 미리 `inject()`하도록 작성해 두세요. 그래야 `provideFor()` 바인딩을 실수로 빠뜨렸을 때 실제 사용자 요청이 들어올 때까지 숨어 있다가 터지지 않고, 앱을 띄우는 `await app.start()` 시점에 곧바로 잡아낼 수 있어요.
+
+</Callout>
+
+<Code title="unbound-token.ts" code={tokenBindingCode} region="unbound" />
+
+## 한눈에 읽히는 에러 메시지를 위한 이름 짓기
+
+토큰 바인딩을 잊어버렸거나 두 프로바이더가 실수로 서로를 참조해 순환 구조(`Circular dependency detected: A -> B -> A`)가 생겼을 때, 에러 메시지에 정확한 이름이 찍히면 디버깅 시간을 크게 아낄 수 있어요. 진단 이름은 다음 규칙을 따라요.
+
+- **Token은 설명 문자열을 그대로 써요:** `token<OrderRepository>('OrderRepository')`나 `token<string>('DatabaseUrl')`처럼 대표하는 타입이나 설정 이름을 그대로 적어 주세요. 설명을 생략(`token<string>()`)하면 에러 메시지에 `<anonymous>`로 표시돼요.
+- **Ref는 `factory.name`을 읽어요:** `provide()`는 별도의 이름 인자를 받지 않고 JavaScript 함수의 `.name` 프로퍼티를 그대로 읽어요. `provide(function Formatter({ inject }) { ... })`처럼 기명 함수를 쓰면 진단 이름이 `Formatter`가 되지만, 이름 없는 인라인 화살표 함수(`provide(({ inject }) => ...)`)를 쓰면 `<anonymous>`로 표시돼요.
+
+<Callout kind="note" title="코드 압축기(Minifier) 주의점과 잘못된 키 검증">
+
+- **코드 압축기 참고:** `Ref`는 진단 이름을 `factory.name`에서 가져오기 때문에, 번들러나 미니파이어가 함수 이름을 줄이거나 지워 버리면(`keepNames` 옵션을 켜지 않는 한) 순환 참조 에러에 찍히는 이름도 함께 바뀌어요. 반면 `token('Name')`에 넘긴 문자열은 일반 문자열이라 압축 후에도 온전히 유지돼요.
+- **불투명 키 검사:** `null`, 원시 값, `ProviderDef`, `ProviderBundle`, 또는 얕은 복사본(`{ ...prefixToken }`)을 `inject()`나 `provideFor()`에 넘기면 `Invalid inject key received` 에러가 발생해요.
+
+</Callout>

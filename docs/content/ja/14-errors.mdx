@@ -1,0 +1,67 @@
+---
+title: "エラーメッセージと対処法"
+slug: "errors"
+part: reference
+order: 14
+summary: "dn-ioc が投げるすべての Error / AggregateError の原文メッセージ一覧と、判定の優先順位、最短での直し方をまとめています。"
+---
+import disposeCode from '../../examples/lifecycle/dispose-and-using.ts' with { type: 'text' }
+import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { type: 'text' }
+
+配線ミスがあったとき、`dn-ioc` は謎めいた内部スタックトレースや暗黙の `undefined` でお茶を濁すのではなく、シンプルで予測しやすい `Error` メッセージで即座に失敗します。ここではカーネルが出力するすべての原文エラーメッセージと、判定順序、エラー伝播の仕組み、具体的な修正レシピを一覧にまとめています。
+
+<Code title="unbound-token.ts" code={tokenBindingCode} region="unbound" />
+
+## 原文エラーメッセージ一覧
+
+`dn-ioc` が投げる標準 `Error` メッセージは全部で8種類あり、終了処理などで複数のエラーが重なった場合のみ2種類の `AggregateError` ラッパーが使われます。
+
+| 原文の `Error.message` | 発生元（throw / reject） | 原因 |
+| --- | --- | --- |
+| `No provider for token: Name` | `inject()` | `token('Name')` が注入されましたが、現在のスコープにも親スコープにも `provideFor()` によるバインドがありません。トークンに説明文字列がない場合は `<anonymous>` と出力されます。 |
+| `Circular dependency detected: A -> B -> A` | `inject()` | 同期または実行中の非同期プロバイダ同士がループして依存し合っています。パスはループを閉じたキーから始まり（自己注入なら `A -> A`）、名前のないキーは `<anonymous>` と出力されます。 |
+| `Invalid inject key received` | `inject()`, `provideFor()` | 渡されたキーが本物の `Token` または `Ref` ではありません（`null`、プリミティブ、`ProviderDef`、`ProviderBundle`、浅いコピー `{ ...myToken }` など）。 |
+| `Invalid provider input received` | `bootstrapApp()`（ルート）または `inject()`（ネスト） | `providers` またはインストールされた `bundleProviders()` の要素が、`Ref`・`ProviderDef`・`ProviderBundle`・それらの配列ではありません（例：`provideFor()` で包まず生の `Token` をそのまま渡した）。 |
+| `Cannot inject after the app has stopped` | `inject()` | `app.stop()` の実行中または完了後に `inject()` が呼ばれました（`onDispose` フック内、切り離された非同期処理の続き、すでにキャッシュ済みのキーに対する呼び出しも含みます）。 |
+| `onDispose can only be called while the factory is running` | `onDispose()` | ファクトリが同期的に値を返したあと、例外を投げたあと、または返した `Promise` が settle したあとに `onDispose()` が呼ばれました（`setTimeout` 内やリクエストハンドラ内、別のクリーンアップフック内など）。 |
+| `Cannot register cleanup after the app has stopped` | `onDispose()` | `async` ファクトリが `await` で一時停止している間に `app.stop()` が走り、復帰したあとで `onDispose()` を呼びました。 |
+| `Cannot start an app that has been stopped` | `app.start()`（reject） | `app.stop()` が開始または完了したあとに `app.start()` が呼ばれました。 |
+| `App stop failed`（`AggregateError`） | `app.stop()`（reject） | 解体中に2つ以上の `onDispose` フックが例外を投げるか reject しました（`error.errors` に LIFO 実行順で各エラーが入ります）。 |
+| `App startup and stop failed`（`AggregateError`） | `app.start()`（reject） | `app.start()` が失敗し、さらに自動実行された `stop()` ロールバックでも失敗しました（`error.errors` に `[startupError, cleanupError]` が入ります）。 |
+
+## 判定の優先順位とタイミングの仕様
+
+境界ケースをデバッグするときに知っておくと役立つ、カーネル内部の厳密な判定順です。
+
+1. **`inject()` では停止済みチェックが最優先:** `Cannot inject after the app has stopped` は、キーの妥当性検証、循環依存チェック、スコープ探索、キャッシュヒットの **すべてより前** に判定されます。`app.stop()` のあとは、たとえキャッシュ済みのインスタンスや不正なキーを渡しても必ず `Cannot inject after the app has stopped` になります。
+2. **ルートとネストでの `Invalid provider input received` の違い:** `bootstrapApp()` に渡したルートの `providers` は、`App` ハンドルが作られる前に **同期的** に展開・検証されます。一方、`provide()` や `provideFor()` に付けたネスト `{ providers }` は、そのプライベート子サブツリーが初めて解決されるときに `inject()` の中で **遅延** 検証されます。
+3. **`onDispose()` では実行中ウィンドウ判定が停止チェックより先:** 一度ファクトリが完了（return、throw、または Promise の settle）すると、その `onDispose` ハンドルは恒久的に無効化されます。そのあとにアプリが停止したとしても、常に `onDispose can only be called while the factory is running` が優先して投げられます。
+4. **`start()` の冪等キャッシュより停止済みチェックが先:** アプリが未起動または稼働中の間は、`app.start()` は同じ `Promise` をキャッシュして返します。しかし一度 `app.stop()` が呼ばれると、そのキャッシュより先に停止状態をチェックし、過去の成功結果を返すのではなく `Cannot start an app that has been stopped` で reject します。
+
+<Code title="dispose.ts" code={disposeCode} region="dispose" />
+
+## 失敗時の伝播とアプリ状態マトリクス
+
+どのフェーズでエラーが起きたかによって、エラーの返り方とキャッシュ・リソースの事後状態がどうなるかを整理した表です。
+
+| 失敗シナリオ | エラーの現れ方 | キャッシュとアプリの事後状態 |
+| --- | --- | --- |
+| ルート `bootstrapApp(..., { providers })` に不正要素 | `bootstrapApp()` から同期的に throw | `App` ハンドル自体が作成されない。 |
+| ネスト `{ providers }` に不正要素 | 初回サブツリー解決時の `inject()` から同期的に throw | サブツリーは作成されず呼び出し元へ伝播（起動中なら `start()` がロールバック）。 |
+| `inject()` 内で同期ファクトリが throw | `inject()` から同期的に throw | キャッシュには残らない。稼働中なら後続の `inject()` で再実行される。 |
+| `inject()` 内で非同期ファクトリが reject | 返された共有 `Promise` が reject | 保留キャッシュが破棄される。稼働中なら後続の `inject()` で再試行される。 |
+| ルート関数（または起動時に `await` した `Promise`）が失敗 | `app.start()` が `await app.stop()` を実行してから reject | アプリは恒久的に停止状態へ移行。単一エラーはそのまま、クリーンアップも失敗した場合は `AggregateError`。 |
+| `await` していないバックグラウンド `Promise` が reject | その `Promise` 自体が reject（`start()` は関知しない） | アプリは稼働を継続。失敗した非同期プロバイダはキャッシュから破棄される。 |
+| `app.stop()` 中に `onDispose` フックが1件失敗 | 残りのフックもすべて実行したうえで、そのエラーのまま reject | アプリは恒久的に停止状態のまま。 |
+| `app.stop()` 中に複数の `onDispose` フックが失敗 | 全フック実行後、`AggregateError`（`App stop failed`）で reject | アプリは恒久的に停止状態のまま。 |
+
+## エラー別の最短修正レシピ
+
+- **`No provider for token: Name`:** ルートの `providers` か `infraProviders` バンドルの中で `provideFor(myToken, ...)` を登録してください。結合テストで出た場合は `infraProviders` の入れ忘れを、子サブツリーで出た場合は [スコープとプライベートサブツリー](/ja/scopes/) を見て「利用側が親スコープ所有になっていないか」を確認しましょう。
+- **`Circular dependency detected: A -> B -> A`:** `A` と `B` の両方が必要としている共通の状態やヘルパーを、第3のプロバイダ `C` に切り出してください（`A -> C` かつ `B -> C`）。経路に `<anonymous>` が出ている場合は、`provide(({ inject }) => ...)` を `provide(function MyService({ inject }) { ... })` のように名前付き関数へ変えると犯人がすぐ特定できます。
+- **`Invalid provider input received`:** `providers: [...]` 配列や `bundleProviders(...)` の中に、`provideFor(myToken, factory)` で包んでいない生の `token()` や、ES モジュールの循環参照による `undefined`、コピーしたオブジェクトが紛れ込んでいないか確認してください。
+- **`Invalid inject key received`:** `inject()` や `provideFor()` の第1引数に、`provideFor()` の戻り値（`ProviderDef`）や `bundleProviders()` の戻り値（`ProviderBundle`）ではなく、正しい `Token` または `Ref` を渡しているか確認してください。
+- **`Cannot inject after the app has stopped`:** `onDispose(() => { ... })` を登録する **前** に、ファクトリの先頭で `const dep = inject(depRef)` と変数へ取っておき、クリーンアップ時はその変数を参照するように直してください（[ライフサイクルとクリーンアップ](/ja/lifecycle/) 参照）。グレースフルシャットダウン中にリクエストハンドラから出た場合は、`app.stop()` を呼ぶ前に新規リクエストの受付を止めるようにします。
+- **`onDispose can only be called while the factory is running`:** クリーンアップの登録は、タイマーコールバックやイベントリスナー、遅延実行メソッドの中ではなく、ファクトリの先頭（または `async` ファクトリの戻り値 `Promise` が解決する前）で行ってください。
+- **`Cannot register cleanup after the app has stopped`:** `async` ファクトリが `await` の途中で待機している最中に `app.stop()` が呼ばれています。可能であれば `await` する前に `onDispose()` を登録しておくか、`AbortSignal` を渡してシャットダウン開始時に初期化処理自体を中断できるようにしましょう（[非同期プロバイダ](/ja/async/) 参照）。
+- **`Cannot start an app that has been stopped`:** 停止済みの `App` はクリーンアップフックでリソースを手放しているため再利用できません。[テストとモック差し替え](/ja/testing/) でテストごとにやっているのと同じく、もう一度 `bootstrapApp(...)` を呼んで新しい `App` インスタンスを作ってください。

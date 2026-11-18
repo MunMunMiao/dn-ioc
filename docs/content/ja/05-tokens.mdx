@@ -1,0 +1,50 @@
+---
+title: "Token と実装のバインド"
+slug: "tokens"
+part: kernel
+order: 5
+summary: "実装を持たない純粋な契約を token() で宣言し、provideFor() で具象実装を紐づけ、わかりやすいエラー診断名を付ける方法を解説します。"
+---
+import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { type: 'text' }
+
+依存を使う側のコードに具象実装を import させたくないときや、そもそもコードを書く時点では実装がまだ決まっていないときは `token<T>()` の出番です。DB の接続 URL のような実行時シークレット、差し替え可能な UI テーマ、DDD の純粋なドメインポートなどがまさにこのパターンで、先に型付きのプレースホルダだけ宣言しておき、あとから `provideFor()` で本物の値を流し込みます。
+
+<Code title="bound-token.ts" code={tokenBindingCode} region="bound" />
+
+## token() と provideFor() で契約と実装を分ける
+
+`provide()` が「キーとデフォルト実装」をセットにするのに対し、`token<T>(description?)` が作るのは **キーだけ** です。ランタイムの処理も持たなければ、実装ファイルへの import も一切引き込みません。TypeScript が型 `T` を運び、省略可能な `description` 文字列がエラーメッセージ用のラベルになります。
+
+実装を紐づけるには、トークンとファクトリ関数を `provideFor(key, factory, options?)` に渡します。
+
+- `bound-token.ts` では、`prefixToken` が「誰かが `string` を提供してくれるはず」という契約だけを宣言しています。
+- `formatterRef` は、そのプレフィックスが環境変数から来るのか設定ファイルから来るのか、それともテスト用のスタブなのかを一切知らずに `prefixToken` を `inject()` します。
+- `boundApp` の起動時に `provideFor(prefixToken, () => '[app] ')` を登録しているため、`formatterRef` は `[app] ready` を出力します。
+
+ちなみに `provideFor()` が受け取る型は `InjectKey<T>`、つまり **`Token<T>` と `Ref<T>` の両方** です。本番環境で抽象ポートに実装をバインドするときも、テストで具象 `Ref` をフェイクに差し替えるときも、まったく同じ関数で書けます。
+
+## 未バインドの Token は即座にエラーになる
+
+`Token<T>` にはフォールバック用のデフォルト実装がないため、現在のスコープにも親スコープにもバインドされていない状態で `inject()` すると、その場で例外が投げられます。`unbound-token.ts` では、`unboundApp.start()` が `No provider for token: DatabaseUrl` で reject されます（一般形は `No provider for token: Name` で、`Name` の部分に `token()` へ渡した説明文字列が入ります）。
+
+<Callout kind="tip" title="エントリポイントの依存はルート関数の中で inject() しよう">
+
+`bootstrapApp()` のルート関数の中で、トップレベルの Controller やルーター、ワーカーを必ず `inject()` するようにしておきましょう。そうすれば、`provideFor()` の登録漏れがあっても、本番の最初のリクエストが飛んでくるまで気づかない……なんて事故を防ぎ、`await app.start()` の瞬間に即座に検知できます。
+
+</Callout>
+
+<Code title="unbound-token.ts" code={tokenBindingCode} region="unbound" />
+
+## エラー追跡をラクにする命名のコツ
+
+トークンのバインド漏れや、うっかりプロバイダ同士がループしてしまったとき（`Circular dependency detected: A -> B -> A`）、エラーメッセージにちゃんとした名前が出ていると原因特定が一瞬で終わります。診断用の名前は次のルールで決まります。
+
+- **Token は `description` 文字列を使う:** `token<OrderRepository>('OrderRepository')` や `token<string>('DatabaseUrl')` のように、型名や設定名をそのまま渡しておくのが定番です。引数を省略（`token<string>()`）すると、エラー表示は `<anonymous>` になります。
+- **Ref は `factory.name` を読む:** `provide()` にはラベル用の引数がなく、JavaScript 関数の `.name` プロパティをそのまま使います。`provide(function Formatter({ inject }) { ... })` のように名前付き関数で書けば診断名は `Formatter` になりますが、無名アロー関数（`provide(({ inject }) => ...)`）で書くと名前がないため `<anonymous>` と表示されます。
+
+<Callout kind="note" title="minify 時の注意点と不正キーのチェック">
+
+- **ミニファイアの影響:** `Ref` の診断名は `factory.name` から取得するため、バンドラやミニファイアが関数名を圧縮・削除すると（`keepNames` を有効にしない限り）循環依存エラーに出る名前も変わります。一方、`token('Name')` に渡した文字列はただの文字列リテラルなので、minify されてもそのまま残ります。
+- **不透明キーの検証:** `null`、プリミティブ値、`ProviderDef`、`ProviderBundle`、あるいは `{ ...prefixToken }` のような浅いコピーを `inject()` や `provideFor()` に渡すと、`Invalid inject key received` が投げられます。
+
+</Callout>

@@ -1,0 +1,72 @@
+---
+title: "스코프와 프라이빗 서브트리"
+slug: "scopes"
+part: kernel
+order: 6
+summary: "inject()가 스코프를 타고 위로 탐색하는 원리, 프라이빗 { providers } 서브트리로 로컬 오버라이드를 격리하는 법, 그리고 소유 스코프가 결과를 결정하는 이유를 알아봐요."
+---
+import case1Code from '../../examples/scopes/case1-fallback.ts' with { type: 'text' }
+import case2Code from '../../examples/scopes/case2-local-override.ts' with { type: 'text' }
+import case3Code from '../../examples/scopes/case3-parent-owned.ts' with { type: 'text' }
+import case4Code from '../../examples/scopes/case4-rebind-both.ts' with { type: 'text' }
+
+대부분의 앱은 `bootstrapApp()`이 만들어 주는 단일 루트 스코프 하나만으로 모든 의존성 연결이 충분해요. 개별 `provide()`나 `provideFor()`에 `{ providers }` 옵션을 붙이는 건 테마 미리보기 위젯, 내장 플러그인, 격리된 워커처럼 특정 서브트리 안에서만 값을 덮어쓰고 부모나 형제 스코프로는 절대 새어 나가지 않게 막고 싶을 때예요.
+
+## 스코프 탐색이 동작하는 세 가지 규칙
+
+중첩된 스코프 안에서 `inject(key)`가 값을 찾는 방식은 딱 세 가지 규칙으로 정리돼요.
+
+1. **아래에서 위로 탐색하고 먼저 찾은 걸 써요:** `inject(key)`는 현재 스코프를 가장 먼저 확인하고, 바인딩을 찾을 때까지 부모 스코프를 차례대로 타고 올라가요. 끝까지 못 찾으면 `Ref`는 현재 활성 스코프에 스스로 설치되고, `Token`은 `No provider for token: Name` 에러를 던져요.
+2. **`{ providers }`는 프라이빗 자식 서브트리를 만들어요:** 프로바이더의 `{ providers }` 옵션에 적은 바인딩들은 오직 그 프로바이더 자신과 하위 자손들에게만 보여요. 각 바인딩은 자기를 소유한 스코프(자체 `{ providers }`가 있다면 그 전용 자식 스코프)에 인스턴스를 캐시하기 때문에, 형제 서브트리나 부모 스코프는 로컬 오버라이드를 절대 볼 수 없어요.
+3. **프로바이더는 항상 '자기를 소유한 스코프' 안에서 해석돼요:** 의존성을 쓰는 쪽(consumer)이 누가 자기를 호출했는지에 따라 호출자의 로컬 오버라이드를 물려받는 일은 없어요. 만약 어떤 프로바이더가 부모 스코프에 등록되어 있다면, 그 내부의 `inject()` 호출 역시 항상 부모 스코프에서 탐색을 시작해요.
+
+아래 네 가지 시나리오는 모두 똑같은 `labelToken`, `rendererRef`, `previewRef` 구성을 사용해요. 코드 한 줄을 어디로 옮기느냐에 따라 `previewRef`가 읽는 값이 어떻게 달라지는지 순서대로 살펴볼게요.
+
+## 1. 로컬 오버라이드 없음: 부모 스코프로 폴백
+
+`case1-fallback.ts`에서는 `previewRef`가 자신의 프라이빗 `{ providers }` 서브트리에 `rendererRef`를 설치하고, 루트 앱은 `labelToken`에 `'app'`을 바인딩해요.
+
+`previewRef`가 `rendererRef`를 `inject()`하면 프라이빗 스코프에 있는 로컬 `rendererRef`를 찾아요. 이어서 `rendererRef`가 `labelToken`을 요청하는데, 미리보기 서브트리 안에는 로컬 `labelToken` 바인딩이 없으니 루트 스코프까지 올라가서 `'app'`을 읽어 와요.
+
+<Code title="case1-fallback.ts" code={case1Code} />
+
+## 2. 소비자 바로 옆에 로컬 오버라이드 추가하기
+
+이번에는 `previewRef`의 프라이빗 `{ providers }` 안에 `rendererRef`와 나란히 `provideFor(labelToken, () => 'local')`을 추가해 볼게요.
+
+`rendererRef`는 `previewRef`의 프라이빗 서브트리 소유이기 때문에, `labelToken`을 찾을 때 그 프라이빗 스코프를 먼저 확인하고 바로 옆에 있는 `'local'`을 집어 들어요. 반면 서브트리 바깥인 루트에서 `inject(rendererRef)`를 호출하면 루트 전용 `rendererRef`가 따로 자동 설치되어 여전히 `'app'`을 읽어요. 양쪽이 서로 전혀 섞이지 않죠.
+
+<Code title="case2-local-override.ts" code={case2Code} />
+
+## 3. 부모 스코프가 소유한 소비자의 함정
+
+여기서 가장 자주 겪는 함정이 하나 있어요. 만약 `rendererRef`를 `previewRef`에서 빼서 루트 앱의 `providers`로 옮기고, `previewRef` 안에는 `provideFor(labelToken, () => 'local')`만 남겨 두면 어떻게 될까요?
+
+분명 `previewRef`가 제일 먼저 `inject(rendererRef)`를 호출했고, `previewRef` 안에 `'local'` 바인딩도 버젓이 들어 있는데 — **`previewRef`는 여전히 `'app'`을 출력해요!**
+
+이유는 간단해요. `previewRef`가 위쪽으로 `rendererRef`를 탐색하다가 루트 스코프가 소유한 `rendererRef`를 발견했고, *루트 스코프에서* 실행했기 때문이에요. 부모 스코프 소유인 프로바이더는 자식 스코프가 호출했더라도 항상 부모 스코프 기준으로 자기 의존성을 해결해요.
+
+<Code title="case3-parent-owned.ts" code={case3Code} />
+
+## 4. 소비자와 의존성을 함께 다시 바인딩하기
+
+그렇다면 루트 앱이 이미 `rendererRef`를 소유하고 있는 상황에서, `previewRef`에만 `'local'`을 보는 버전을 주려면 어떻게 해야 할까요? `previewRef`의 `{ providers }` 안에 **`labelToken`과 `rendererRef`를 둘 다 함께 다시 바인딩**해 주면 돼요.
+
+이제 `previewRef`는 `'local'` 토큰 오버라이드 바로 옆에 자기만의 로컬 `rendererRef` 바인딩을 직접 소유하게 되므로, `previewRef`는 `'local'`을 읽고 루트 앱의 `rendererRef`는 계속 `'app'`을 읽어요.
+
+<Code title="case4-rebind-both.ts" code={case4Code} />
+
+## 스코프 동작 한눈에 비교하기
+
+| 시나리오 | 루트 `providers` | `previewRef`의 `providers` | `previewRef`가 읽는 값 | 이유 |
+| --- | --- | --- | --- | --- |
+| **1. 폴백** | `label = 'app'` | `rendererRef` | `'app'` | 로컬 `rendererRef`가 `labelToken`을 찾으러 루트까지 올라가요. |
+| **2. 로컬 오버라이드** | `label = 'app'` | `rendererRef`, `label = 'local'` | `'local'` | 로컬 `rendererRef`가 같은 프라이빗 스코프의 형제 `'local'`을 찾아요. |
+| **3. 부모 소유** | `label = 'app'`, `rendererRef` | `label = 'local'` | `'app'` | `rendererRef`가 루트에 속해 있어 `inject(labelToken)`도 루트에서 풀려요. |
+| **4. 둘 다 재바인딩** | `label = 'app'`, `rendererRef` | `label = 'local'`, `provideFor(rendererRef, ...)` | `'local'` | 소비자와 의존성 모두 `previewRef`의 프라이빗 스코프 소유가 돼요. |
+
+<Callout kind="note" title="중첩된 providers 입력은 지연 검증돼요">
+
+`bootstrapApp()`이 즉시 검사하는 루트 `providers`와 달리, 프로바이더의 중첩 `{ providers }` 배열은 그 서브트리가 실제로 처음 해석되는 시점에 검증돼요. 중첩 배열 안에 잘못된 항목이 들어 있다면 그때의 `inject()` 호출이 `Invalid provider input received`를 던져요.
+
+</Callout>

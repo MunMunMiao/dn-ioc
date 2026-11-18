@@ -1,0 +1,121 @@
+---
+title: "公開 API リファレンス"
+slug: "api"
+part: reference
+order: 13
+summary: "全6つのランタイム関数、15個の公開 TypeScript 型、そして凍結された不透明ハンドルの仕様を網羅したリファレンスです。"
+---
+import signaturesCode from '../../examples/api/signatures.ts' with { type: 'text' }
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+`dn-ioc` がエクスポートするものはすべて `'dn-ioc'` 直下から手に入ります。ランタイム関数が6つ、TypeScript の型が15個だけで、サブパス import もグローバルな副作用も一切ありません。引数の型や戻り値、ハンドルの細かな挙動を確認したいときの辞書として使ってください。
+
+<Code title="functions.ts" code={signaturesCode} region="functions" />
+
+## ランタイム関数
+
+### `token<T>(description?)`
+
+**シグネチャ:** `function token<T>(description?: string): Token<T>`
+
+TypeScript の型 `T` だけを持ち、実行時の実装を一切持たない純粋な依存キーを作成します。
+
+- **`description`** *(省略可能な `string`)*: `No provider for token: Name` や `Circular dependency detected: ...` に表示される人間向けのラベルです。省略または空文字の場合は `<anonymous>` と出力されます。なお、`token('Same')` を2回呼ぶと常に別々のキーが作られます（文字列で同一性が決まるわけではありません）。
+- **非同期の契約:** `token<Promise<Settings>>('Settings')` のように型パラメータ `T` の中に `Promise` を入れることで、`inject()` する側と `provideFor()` で実装する側の両方で非同期の戻り値型が一致します。
+
+### `provide<T>(factory, options?)`
+
+**シグネチャ:** `function provide<T>(factory: Factory<T>, options?: ProviderOptions): Ref<T>`
+
+`factory` を包み、自動登録に対応した `Ref<T>` ハンドルを返します。
+
+- **`factory`**: `(ctx: Context) => T`。`inject()` が呼ばれた時点で現在のスコープにも親スコープにもこの `Ref` のバインドがなければ、現在のスコープにデフォルトファクトリを登録して1回だけ実行し、結果をキャッシュします（`async` ファクトリの場合は実行中の `Promise` を共有します）。同期例外や非同期の reject はキャッシュ **されない** ため、アプリ稼働中であれば後から再試行できます。
+- **診断名:** `factory.name` から取得されます（たとえば `provide(function UserService(ctx) { ... })` なら `UserService`、無名のアロー関数なら `<anonymous>` になります）。
+- **`options?.providers`**: `factory` とその子孫からしか見えないプライベートな子サブツリーを定義します。`provide()` 呼び出し時にスナップショットされ、そのサブツリーが初めて解決されるときに遅延検証されます。
+
+### `provideFor<T>(key, factory, options?)`
+
+**シグネチャ:** `function provideFor<T>(key: InjectKey<T>, factory: Factory<T>, options?: ProviderOptions): ProviderDef<T>`
+
+`key`（`Token<T>` または `Ref<T>` の **どちらも可**）に実装 `factory` を紐づけ、`{ providers }` や `bundleProviders()` に渡せる `ProviderDef<T>` を返します。
+
+- `provideFor()` を呼んだ瞬間に `key` を検証し、本物の `Token` または `Ref` 以外が渡された場合は即座に `Invalid inject key received` を投げます。
+- **`options?.providers`**: バインドされたこの `factory` とその子孫から見えるプライベートな子サブツリーです。作成時にスナップショットされます。
+
+### `bundleProviders(...inputs)`
+
+**シグネチャ:** `function bundleProviders(...inputs: ProviderInput[]): ProviderBundle`
+
+`Ref`、`ProviderDef` バインド、入れ子の配列、ほかの `ProviderBundle` を自由に組み合わせて、再利用可能な1つの `ProviderBundle` にまとめます。
+
+- 作成時に入力配列を浅くコピーするため、あとから元の配列を変更してもバンドルには影響しません。
+- バンドルをインストールすると、中身が記述順のまま左から右へフラット展開されて受け入れ先のスコープに直接登録されます。バンドル自身が独立した子スコープを作ることはありません。
+
+### `isProvideRef(value)`
+
+**シグネチャ:** `function isProvideRef(value: unknown): value is Ref<unknown>`
+
+`value` が `provide()` によって作られた本物の `Ref` であるとき **だけ** `true` を返す型ガード関数です。`Token`、`ProviderDef`、`ProviderBundle`、プリミティブ値、`null`、およびコピーされたオブジェクト（`{ ...someRef }`）に対しては `false` を返します。
+
+### `bootstrapApp(fn, options?)`
+
+**シグネチャ:** `function bootstrapApp(fn: BootstrapAppFn, options?: BootstrapAppOptions): App`
+
+隔離されたルートスコープを作成し、`options?.providers` を同期的に検証・登録したうえで、`fn` やプロバイダファクトリを **まだ1つも実行せずに** `App` ハンドルを返します。
+
+- **`fn`**: `(ctx: Context) => void | Promise<void>`。`app.start()` が呼ばれたときに実行されます。戻り値は `void` または `Promise<void>` でなければなりません。
+- **`options?.providers`**: ルートスコープに登録するバインド、`Ref`、配列、バンドルです。不正な要素が含まれている場合、`App` ハンドルを返す前に同期的に `Invalid provider input received` を投げます。
+
+## Context と App ライフサイクルのインターフェース
+
+### Context（`InjectFn` & `OnDisposeFn`）
+
+すべてのプロバイダ `Factory<T>` と `BootstrapAppFn` には、2つの関数を持つ `Context` オブジェクトが渡されます。
+
+- **`inject: InjectFn`** (`<T>(key: InjectKey<T>) => T`) — そのプロバイダを所有するスコープを起点に上向きへ `key` を解決します。同期ファクトリなら値をそのまま返し、非同期ファクトリなら共有 `Promise` を返します。ファクトリの完了後に返却オブジェクトのメソッド内から呼ぶことも可能で、`app.stop()` が呼ばれるまで有効です。
+- **`onDispose: OnDisposeFn`** (`(fn: () => void | Promise<void>) => void`) — `app.stop()` の最中に LIFO（新しい順）で実行されるクリーンアップフックを登録します。自身のファクトリが実行中であり、かつ `stop()` が呼ばれる前 **だけ** 呼び出せます。`void` または `Promise<void>` 以外の値を返すと TypeScript のコンパイルエラーになるため、値を返す終了処理は波括弧で包んでください（`onDispose(() => { server.close() })`）。
+
+### App（`start`, `stop` & `AsyncDisposable`）
+
+`bootstrapApp()` が返すハンドルは、次の3つのメンバーを持ちます。
+
+- **`start(): Promise<void>`** — ルートコールバックを1回だけ実行し、返された `Promise` があれば完了を待ちます。同時または複数回呼んでもまったく同じ `Promise` を返します。起動途中で失敗した場合は、自動的に `stop()` を実行して取得済みリソースをロールバックしてから reject します。一度 `stop()` が呼ばれたあとに `start()` を呼ぶと、`Cannot start an app that has been stopped` で reject されます。
+- **`stop(): Promise<void>`** — アプリ全体の `inject()` を同期的に閉じたあと、登録済みの `onDispose` フックを新しい順に `await` します。同時・複数回の呼び出しに対して冪等です。途中のフックが失敗しても、残りのフックはすべて最後まで実行されます。
+- **`[Symbol.asyncDispose](): Promise<void>`** — `stop` とまったく同じ関数を指しており、`await using app = bootstrapApp(...)` でブロック終了時に自動解体できるようにします。ランタイムにネイティブの `Symbol.asyncDispose` が存在する場合は `[Symbol.asyncDispose]` を定義し、ネイティブシンボルを持たない古いランタイム（Node 18 など）では TypeScript のダウンレベル `await using` 探索に合わせて `[Symbol.for('Symbol.asyncDispose')]` へフォールバックします。
+
+<Code title="types.ts" code={signaturesCode} region="types" />
+
+## ハンドル型・ユーティリティ型一覧
+
+| エクスポート型 | 定義 / 形状 | 用途 |
+| --- | --- | --- |
+| `Token<T>` | 型 `T` を保持するブランド付き不透明インターフェース | `token<T>()` が返す契約キー。 |
+| `Ref<T>` | `extends Token<T>`（Ref としてブランド化） | `provide()` が返す自動登録対応ハンドル。 |
+| `RefType<T>` | `T extends Ref<infer U> ? U : never` | `typeof someRef` から解決後の型 `U` を抜き出す型ヘルパー。重複インターフェースを書かずにテスト用フェイクへ型を付けるのに便利です。 |
+| `InjectKey<T>` | `Token<T> \| Ref<T>` | `inject()` と `provideFor()` が受け取れる有効なキー型。 |
+| `ProviderDef<T>` | 型 `T` を保持するブランド付き不透明インターフェース | `provideFor()` が返す明示的バインド定義。 |
+| `ProviderBundle` | ブランド付き不透明インターフェース | `bundleProviders()` が返す配線グループハンドル。 |
+| `ProviderInput` | `Ref<unknown> \| ProviderDef<unknown> \| ProviderBundle \| readonly ProviderInput[]` | `providers` や `bundleProviders()` に渡せる要素または任意階層のネスト配列。 |
+| `ProviderOptions` | `{ providers?: readonly ProviderInput[] }` | `provide()` と `provideFor()` でプライベート子サブツリーを宣言するオプション型。 |
+| `BootstrapAppOptions` | `{ providers?: readonly ProviderInput[] }` | `bootstrapApp()` でルートスコープにバインドを登録するオプション型。 |
+| `InjectFn` | `<T>(key: InjectKey<T>) => T` | `Context` 内の `ctx.inject` の関数型。 |
+| `OnDisposeFn` | `(fn: () => void \| Promise<void>) => void` | `Context` 内の `ctx.onDispose` の関数型。 |
+| `Factory<T>` | `(ctx: Context) => T` | プロバイダファクトリ関数のシグネチャ。 |
+| `BootstrapAppFn` | `(ctx: Context) => void \| Promise<void>` | `bootstrapApp()` に渡すルート起動コールバックのシグネチャ。 |
+
+## 凍結された不透明ハンドルの仕様
+
+`token()`、`provide()`、`provideFor()`、`bundleProviders()` が返すハンドルはすべて、列挙可能な独自プロパティも独自シンボルキーも一切持たない空の凍結オブジェクト（`Object.freeze({})`）です。内部メタデータはすべてカーネル内の非公開 `WeakMap` に格納されています。
+
+- **変更は不可:** ハンドルにプロパティを追加・上書きしようとすると、strict モードでは `TypeError` が投げられます。
+- **コピーや偽造はすべて拒否:** スプレッドやコピー（`{ ...sampleRef }`、`Object.assign({}, myToken)`）を行うと、カーネルの `WeakMap` に登録されていない新しいオブジェクト参照が作られます。これを `isProvideRef()` に渡すと `false` になり、`inject()` や `provideFor()` に渡すと `Invalid inject key received`、コピーしたバインドやバンドルを `providers` に渡すと `Invalid provider input received` が投げられます。
+
+<Callout kind="note" title="信頼されたインプロセスコード向けであり、サンドボックスではありません">
+
+不透明ハンドルは、うっかり起きるプロパティ書き換えやシリアライズ事故、パッケージ間の脆いダックタイピングを防ぐための仕組みです。同じ JavaScript アイソレート内で動く信頼できないコードに対するセキュリティ境界 **ではありません**。
+
+</Callout>
+
+カーネルが投げるすべての実行時エラーメッセージと具体的な直し方については、次の [エラーメッセージと対処法](/ja/errors/) を確認してください。
+
+<Code title="opaque-handles.ts" code={providersCode} region="isProvideRef" />

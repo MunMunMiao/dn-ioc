@@ -1,0 +1,72 @@
+---
+title: "スコープとプライベートサブツリー"
+slug: "scopes"
+part: kernel
+order: 6
+summary: "inject() がスコープを上向きに探索する仕組み、{ providers } で局所的な上書きを隔離する方法、そして所有スコープが解決結果を決める理由を解説します。"
+---
+import case1Code from '../../examples/scopes/case1-fallback.ts' with { type: 'text' }
+import case2Code from '../../examples/scopes/case2-local-override.ts' with { type: 'text' }
+import case3Code from '../../examples/scopes/case3-parent-owned.ts' with { type: 'text' }
+import case4Code from '../../examples/scopes/case4-rebind-both.ts' with { type: 'text' }
+
+たいていのアプリは、`bootstrapApp()` が作る単一のルートスコープだけで配線が完結します。個別の `provide()` や `provideFor()` に `{ providers }` オプションを付けるのは、テーマのプレビュー用ウィジェットや埋め込みプラグイン、隔離されたワーカーなど、「特定のサブツリー内だけで依存を上書きしたいけれど、親や兄弟には一切漏らしたくない」ときです。
+
+## スコープ探索の3原則
+
+ネストしたスコープの中で `inject(key)` がどう解決されるかは、たった3つのルールで説明できます。
+
+1. **下から上へ探し、最初に見つかったものを採用:** `inject(key)` はまず現在のスコープを探し、見つからなければ親スコープへと順番に遡っていきます。最後まで見つからなかった場合、`Ref` なら現在のスコープに自動登録され、`Token` なら `No provider for token: Name` を投げます。
+2. **`{ providers }` はプライベートな子サブツリーを作る:** あるプロバイダの `{ providers }` オプションに並べたバインドは、そのプロバイダ自身とその子孫からしか見えません。各バインドは自分を所有するスコープ（さらに自身が `{ providers }` を持つ場合はその専用子スコープ）にインスタンスをキャッシュするため、兄弟サブツリーや親スコープにローカルな上書きが漏れることはありません。
+3. **プロバイダは「自分を所有するスコープ」の中で依存を解決する:** 呼び出し元のローカル上書きが、呼び出し先へ勝手に引き継がれることはありません。親スコープに登録されているプロバイダは、誰から呼ばれても必ずその親スコープを起点に `inject()` を行います。
+
+以下の4つのケースは、どれもまったく同じ `labelToken`、`rendererRef`、`previewRef` を使っています。1行動かすだけで `previewRef` が読む値がどう変わるか、順番に見ていきましょう。
+
+## 1. ローカル上書きなし：親スコープへのフォールバック
+
+`case1-fallback.ts` では、`previewRef` が自分のプライベートな `{ providers }` サブツリーに `rendererRef` を登録し、ルート側では `labelToken` に `'app'` をバインドしています。
+
+`previewRef` が `rendererRef` を `inject()` すると、プライベートスコープにあるローカルの `rendererRef` が見つかります。続いて `rendererRef` が `labelToken` を要求しますが、プレビュー側のサブツリーには `labelToken` がないため、ルートスコープまで遡って `'app'` を読み取ります。
+
+<Code title="case1-fallback.ts" code={case1Code} />
+
+## 2. 利用側のすぐ横にローカル上書きを置く
+
+今度は `previewRef` のプライベートな `{ providers }` の中に、`rendererRef` と並べて `provideFor(labelToken, () => 'local')` を足してみましょう。
+
+`rendererRef` は `previewRef` のプライベートサブツリーに所有されているため、`labelToken` を探すときもまずそのプライベートスコープをチェックし、すぐ隣にある `'local'` にヒットします。一方で、サブツリーの外（ルート側）で `inject(rendererRef)` を呼ぶと、ルート側に別の `rendererRef` が自動登録され、そちらは変わらず `'app'` を読みます。お互いの値が混ざることはありません。
+
+<Code title="case2-local-override.ts" code={case2Code} />
+
+## 3. 親スコープ所有の罠（一番ハマりやすい落とし穴）
+
+一番ハマりやすい落とし穴がここです。`rendererRef` を `previewRef` から外し、代わりにルートアプリの `providers` に登録したうえで、`previewRef` の中には `provideFor(labelToken, () => 'local')` だけを残したらどうなるでしょうか？
+
+コード上では `previewRef` が真っ先に `inject(rendererRef)` を呼んでいますし、`previewRef` の中にはちゃんと `'local'` の上書きもあります。**それなのに、`previewRef` が出力するのは `'app'` になります！**
+
+理由はシンプルです。`previewRef` が `rendererRef` を上向きに探した結果、「ルートスコープが所有している `rendererRef`」を見つけ、ルートスコープの中で実行したからです。親スコープに所有されているプロバイダは、たまたま子スコープから呼ばれたとしても、常に親スコープの文脈で依存を解決します。
+
+<Code title="case3-parent-owned.ts" code={case3Code} />
+
+## 4. 利用側と依存先をセットで再バインドする
+
+では、ルートアプリ側ですでに `rendererRef` が使われている状況で、`previewRef` にだけ `'local'` を見せる `rendererRef` を渡したいときはどうすればいいでしょうか？答えは、**`labelToken` と `rendererRef` の両方を `previewRef` の `{ providers }` 内で再バインドすること** です。
+
+これで `previewRef` は `'local'` トークン上書きのすぐ隣に「自分専用のローカル `rendererRef`」を持つことになるため、`previewRef` からは `'local'` が読まれ、ルート側の `rendererRef` は引き続き `'app'` を読み続けます。
+
+<Code title="case4-rebind-both.ts" code={case4Code} />
+
+## スコープ挙動の早見表
+
+| ケース | ルートの `providers` | `previewRef` の `providers` | `previewRef` の結果 | 理由 |
+| --- | --- | --- | --- | --- |
+| **1. フォールバック** | `label = 'app'` | `rendererRef` | `'app'` | ローカルの `rendererRef` が `labelToken` を探してルートまで遡るため。 |
+| **2. ローカル上書き** | `label = 'app'` | `rendererRef`, `label = 'local'` | `'local'` | ローカルの `rendererRef` が同じプライベートスコープ内の `'local'` を見つけるため。 |
+| **3. 親スコープ所有** | `label = 'app'`, `rendererRef` | `label = 'local'` | `'app'` | `rendererRef` がルート所有なので、その `inject(labelToken)` もルートで解決されるため。 |
+| **4. 両方を再バインド** | `label = 'app'`, `rendererRef` | `label = 'local'`, `provideFor(rendererRef, ...)` | `'local'` | 利用側と依存先の両方が `previewRef` のプライベートスコープに所有されるため。 |
+
+<Callout kind="note" title="ネストした providers のバリデーションは遅延実行されます">
+
+`bootstrapApp()` が即座に検証するルートの `providers` とは異なり、プロバイダに付けたネスト `{ providers }` 配列は、そのサブツリーが実際に初めて解決されるタイミングで検証されます。不正な要素が含まれていた場合、その `inject()` 呼び出しで `Invalid provider input received` が投げられます。
+
+</Callout>

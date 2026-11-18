@@ -1,0 +1,64 @@
+---
+title: "5분 빠른 시작"
+slug: "quickstart"
+part: start
+order: 3
+summary: "프로바이더 정의, 앱 기동, 그리고 테스트에서 비동기 의존성 갈아끼우기까지 세 단계로 첫 의존성 그래프를 완성해 봐요."
+---
+import step1Code from '../../examples/quickstart/step1-provide.ts' with { type: 'text' }
+import step2Code from '../../examples/quickstart/step2-compose.ts' with { type: 'text' }
+import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with { type: 'text' }
+
+처음 시작할 때부터 거창한 폴더 구조를 잡거나 중앙 설정 파일에 클래스를 일일이 등록할 필요는 없어요. 평범한 함수를 `provide()`로 감싸고, `bootstrapApp()`으로 띄우고, 테스트에서 비동기 의존성을 가짜 객체(fake)로 바꿔 끼우는 세 단계를 바로 따라 해 볼게요.
+
+## 1. provide()로 프로바이더 정의하기
+
+그냥 함수 하나 넘기면 끝이에요. 팩토리 함수를 `provide()`에 전달하면 타입이 꽉 잡힌 `Ref<T>` 핸들이 돌아오거든요. `step1-provide.ts`를 보면 `configRef`는 평범한 객체를 반환하고, `greeterRef`는 `{ inject }`로 그 설정을 받아와 `greet()` 헬퍼를 만들어 내요.
+
+여기서 눈여겨볼 점이 두 가지 있어요.
+
+- **수동 타입 주석이 전혀 없어요:** `greeterRef` 안의 `config` 타입은 `configRef`의 반환 타입을 보고 TypeScript가 알아서 추론해 줘요.
+- **아직 아무 코드도 실행되지 않았어요:** `provide()`를 호출하는 건 나중에 앱이 이 값을 달라고 할 때 *어떻게* 만들지 레시피만 적어 두는 일이에요.
+
+<Code title="step1-provide.ts" code={step1Code} />
+
+## 2. bootstrapApp()으로 그래프 띄우기
+
+이제 루트 함수를 `bootstrapApp()`에 넘기고 `await app.start()`를 호출해 볼 차례예요. `bootstrapApp()`은 격리된 앱 스코프를 만들고 즉시 `app` 핸들을 돌려주는데, 이때도 아직 팩토리는 돌지 않아요.
+
+`await app.start()`가 실행되면 아래 순서대로 일이 일어나요.
+
+1. 루트 함수가 `inject(greeterRef)`를 요청해요.
+2. `greeterRef`가 앱 스코프에 스스로 등록되면서 내부에서 `inject(configRef)`를 요청해요.
+3. `configRef`가 딱 한 번 실행되어 `{ greeting: 'hello' }`를 캐시하고, 이어서 `greeterRef`도 `{ greet }` 객체를 캐시한 뒤 `hello, world`를 출력해요.
+
+이 작은 그래프는 열어 둔 소켓도, 타이머도, DB 커넥션 풀도 없기 때문에 `app.stop()`을 호출할 필요도 없어요. `start()`가 끝나면 일반 가비지 컬렉션이 깔끔하게 정리해 주거든요.
+
+<CodeTabs
+  files={[
+    { title: 'step2-compose.ts', code: step2Code },
+    { title: 'step1-provide.ts', code: step1Code },
+  ]}
+/>
+
+## 3. 비동기 전환과 테스트 대역 갈아끼우기
+
+실무 서비스는 대개 네트워크로 설정을 불러오거나 DB와 통신하고, 테스트에서는 그 부분을 깔끔하게 가짜로 바꿔야 하죠. 둘 다 딱 한 줄이면 충분해요.
+
+- **비동기 프로바이더는 그냥 `async` 함수로 작성해요:** `settingsRef`를 `async`로 만들면 `inject(settingsRef)`가 공유된 `Promise`를 반환하고, `greeterRef`에서 이를 `await`하면 돼요. `bootstrapApp`의 루트 함수도 `async`로 표시하고 `inject(greeterRef)`를 `await`해 두면, `await testApp.start()`가 초기 구동이 끝날 때까지 확실하게 기다려 줘요.
+- **`provideFor()`로 원하는 의존성만 제자리에서 교체해요:** `{ providers }` 옵션에 `provideFor(settingsRef, async () => ({ greeting: 'test-hello' }))`를 넣어 주면, `greeterRef` 코드는 손끝 하나 안 대고도 `testApp` 안에서 `settingsRef`만 쏙 갈아끼울 수 있어요.
+- **깔끔한 테스트 뒷정리:** `await testApp.stop()`을 호출하면 추가 주입을 닫고 등록된 정리 훅을 모두 실행해서 다음 테스트로 리소스가 새어 나가지 않아요.
+
+<Code title="step3-async-and-fake.ts" code={step3Code} />
+
+## 매일 쓰게 될 세 가지 습관
+
+<Callout kind="note" title="이 세 가지만 기억해 두면 든든해요">
+
+- **리스너 등록은 `start()` 전에 하세요:** `bootstrapApp()`은 아무것도 미리 실행하지 않아서 소켓이나 타이머가 열리기 전에 `app` 핸들이 먼저 생겨요. 그러니 종료 시그널 리스너는 `await app.start()`를 부르기 전에 연결해 두는 게 안전해요.
+- **`start()`는 멱등성을 보장해요:** `app.start()`를 여러 번 호출해도 정확히 같은 `Promise`를 돌려주고 루트 팩토리는 딱 한 번만 실행돼요.
+- **루트 함수는 `void`를 반환해요:** 시작할 때 필요한 작업은 값을 밖으로 반환하지 말고 `bootstrapApp()` 콜백 안에서 마무리해 주세요.
+
+</Callout>
+
+다음 장에서는 커널 내부 동작인 [프로바이더와 Ref](/ko/providers/) 및 [Token과 구현체 바인딩](/ko/tokens/)을 자세히 살펴볼게요. 당장 실전 프로젝트 폴더 구조부터 보고 싶다면 [실전 MVC 패턴](/ko/mvc/)이나 [DDD와 클린 아키텍처](/ko/ddd/) 가이드로 바로 건너뛰어도 좋아요!

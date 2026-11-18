@@ -1,0 +1,64 @@
+---
+title: "5分クイックスタート"
+slug: "quickstart"
+part: start
+order: 3
+summary: "3つの小さなステップで依存グラフを動かしてみましょう。プロバイダを定義し、アプリを起動し、テストで非同期の依存を差し替えます。"
+---
+import step1Code from '../../examples/quickstart/step1-provide.ts' with { type: 'text' }
+import step2Code from '../../examples/quickstart/step2-compose.ts' with { type: 'text' }
+import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with { type: 'text' }
+
+使い始めるにあたって、いきなりディレクトリ構成を練ったり、巨大な設定ファイルにクラスを登録して回ったりする必要はありません。ただの関数を `provide()` で包み、`bootstrapApp()` で起動し、テストで非同期の依存をフェイクに差し替える――この3ステップを一気に動かしてみましょう。
+
+## 1. provide() でプロバイダを定義する
+
+任意のファクトリ関数を `provide()` に渡すだけで、型付きの `Ref<T>` ハンドルが返ってきます。`step1-provide.ts` では、`configRef` がプレーンなオブジェクトを返し、`greeterRef` が `{ inject }` 経由でそれを受け取って `greet()` ヘルパーを組み立てています。
+
+ここで注目してほしいポイントが2つあります。
+
+- **手動の型注釈はゼロ:** `greeterRef` の中にある `config` の型は、`configRef` の戻り値から TypeScript が自動で推論してくれます。
+- **まだ1行も実行されていない:** `provide()` を呼んだ時点では、「将来アプリに要求されたらどう組み立てるか」というレシピを記録しただけです。
+
+<Code title="step1-provide.ts" code={step1Code} />
+
+## 2. bootstrapApp() でグラフを起動する
+
+次に、ルート関数を `bootstrapApp()` に渡して `await app.start()` を呼びます。`bootstrapApp()` は隔離されたアプリスコープを作ってすぐに `app` ハンドルを返しますが、ここでもまだファクトリは走りません。
+
+`await app.start()` を呼ぶと、次の順番で処理が進みます。
+
+1. ルート関数が `inject(greeterRef)` を要求します。
+2. `greeterRef` がアプリスコープに自動登録され、内部で `inject(configRef)` を要求します。
+3. `configRef` が1回だけ実行されて `{ greeting: 'hello' }` をキャッシュし、続けて `greeterRef` も `{ greet }` オブジェクトをキャッシュして `hello, world` を出力します。
+
+この小さなグラフはソケットもタイマーも DB プールも握っていないので、`app.stop()` を呼ぶ必要すらありません。`start()` が終われば、通常のガベージコレクションがきれいに片付けてくれます。
+
+<CodeTabs
+  files={[
+    { title: 'step2-compose.ts', code: step2Code },
+    { title: 'step1-provide.ts', code: step1Code },
+  ]}
+/>
+
+## 3. 非同期化とテストでのフェイク差し替え
+
+実際の開発では、ネットワーク越しに設定を読んだり DB につないだりしますし、テストではそれを安全に差し替えたくなりますよね。どちらもたった1行で書けます。
+
+- **非同期プロバイダは普通の `async` 関数で書くだけ:** `settingsRef` を `async` にすると、`inject(settingsRef)` は共有された `Promise` を返し、`greeterRef` 側でそれを `await` できます。`bootstrapApp` のルート関数も `async` にして `inject(greeterRef)` を `await` しておけば、`await testApp.start()` は起動処理が完了するまでしっかり待ってくれます。
+- **`provideFor()` でどんな依存もその場で差し替え:** `{ providers }` に `provideFor(settingsRef, async () => ({ greeting: 'test-hello' }))` を渡すだけで、`greeterRef` のコードを1文字も触らずに `testApp` 内の `settingsRef` だけをテスト用に置き換えられます。
+- **テスト後の後片付けも確実:** `await testApp.stop()` を呼べば `inject()` が閉じられ、登録済みのクリーンアップフックが走るので、次のテストへリソースが漏れる心配もありません。
+
+<Code title="step3-async-and-fake.ts" code={step3Code} />
+
+## 毎日使う3つの基本ルール
+
+<Callout kind="note" title="ここだけ覚えておけば迷いません">
+
+- **リスナー登録は `start()` の前に:** `bootstrapApp()` の時点ではまだ何も実行されないため、ソケットやタイマーが開く前に `app` ハンドルを手元で受け取れます。シャットダウン用のシグナルリスナーは `await app.start()` の前に登録しておくのが安全です。
+- **`start()` は冪等（べきとう）:** `app.start()` を何回呼んでもまったく同じ `Promise` が返り、ルート関数が二重に走ることはありません。
+- **ルート関数の戻り値は `void`:** 起動時の処理は、値を外に返すのではなく `bootstrapApp()` のコールバック内で完結させましょう。
+
+</Callout>
+
+次はカーネルの仕組みをもう少し掘り下げて [プロバイダと Ref](/ja/providers/) や [Token と実装のバインド](/ja/tokens/) を見ていきましょう。「先に実戦的なディレクトリ構成を見たい！」という方は、そのまま [実践 MVC パターン](/ja/mvc/) や [DDD とクリーンアーキテクチャ](/ja/ddd/) に飛んでも大丈夫です。

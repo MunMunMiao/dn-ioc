@@ -1,0 +1,67 @@
+---
+title: "에러 메시지와 해결 가이드"
+slug: "errors"
+part: reference
+order: 14
+summary: "dn-ioc가 던지는 모든 런타임 Error 및 AggregateError 원문 메시지를 찾아보고, 검사 우선순위와 즉각적인 해결법을 확인해 보세요."
+---
+import disposeCode from '../../examples/lifecycle/dispose-and-using.ts' with { type: 'text' }
+import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { type: 'text' }
+
+의존성 연결이 꼬였을 때 `dn-ioc`는 알 수 없는 내부 스택 프레임이나 조용한 `undefined` 대신, 명확하고 예측 가능한 `Error` 메시지와 함께 즉시 실패해요. 커널이 만들어 내는 모든 런타임 에러 원문 메시지와 검사 우선순위, 전파 규칙, 그리고 구체적인 해결 레시피를 아래에 모두 모았어요.
+
+<Code title="unbound-token.ts" code={tokenBindingCode} region="unbound" />
+
+## 런타임 에러 메시지 전체 목록
+
+`dn-ioc`는 여덟 가지 표준 `Error` 메시지와, 정리 과정에서 여러 실패가 동시에 겹칠 때 쓰는 두 가지 `AggregateError` 래퍼를 던져요.
+
+| `Error.message` 원문 | 발생 위치 (throw / reject) | 원인 |
+| --- | --- | --- |
+| `No provider for token: Name` | `inject()` | `token('Name')`을 주입하려 했지만 현재 활성 스코프와 상위 조상 스코프 어디에도 `provideFor()` 바인딩이 없어요. 토큰에 설명이 없으면 `<anonymous>`가 출력돼요. |
+| `Circular dependency detected: A -> B -> A` | `inject()` | 동기 프로바이더 또는 대기 중인 비동기 프로바이더들이 서로 꼬리를 물고 의존하고 있어요. 경로는 순환을 닫는 키에서 시작하며(자기 자신을 주입하면 `A -> A`), 이름 없는 키는 `<anonymous>`로 표시돼요. |
+| `Invalid inject key received` | `inject()`, `provideFor()` | 전달한 키가 진짜 `Token`이나 `Ref`가 아니에요 — 예를 들어 `null`, 원시 값, `ProviderDef`, `ProviderBundle`, 또는 얕은 복사본(`{ ...myToken }`)을 넘긴 경우예요. |
+| `Invalid provider input received` | `bootstrapApp()` (루트) 또는 `inject()` (중첩) | `providers`나 설치된 `bundleProviders()` 안의 항목이 `Ref`, `ProviderDef`, `ProviderBundle` 또는 이들의 배열이 아니에요(예: `provideFor()` 없이 생 `Token`을 바로 넣은 경우). |
+| `Cannot inject after the app has stopped` | `inject()` | `app.stop()` 도중이나 완료된 이후에 `inject()`를 호출했어요 — `onDispose` 훅 내부, 분리된 비동기 후속 작업, 이미 캐시된 키 조회도 모두 포함돼요. |
+| `onDispose can only be called while the factory is running` | `onDispose()` | 팩토리가 동기적으로 반환했거나 예외를 던진 뒤, 혹은 반환한 `Promise`가 확정(settle)된 뒤에 `onDispose()`를 호출했어요(예: `setTimeout`, 요청 핸들러, 다른 정리 훅 내부). |
+| `Cannot register cleanup after the app has stopped` | `onDispose()` | `async` 팩토리가 `await` 구간에 멈춰 있는 동안 `app.stop()`이 실행됐고, 이후 깨어난 팩토리가 `onDispose()`를 호출했어요. |
+| `Cannot start an app that has been stopped` | `app.start()` (reject) | `app.stop()`이 이미 시작됐거나 완료된 뒤에 `app.start()`를 다시 호출했어요. |
+| `App stop failed` (`AggregateError`) | `app.stop()` (reject) | 종료 도중 두 개 이상의 `onDispose` 훅이 예외를 던지거나 reject했어요(`error.errors`에 LIFO 실행 순서대로 각 에러가 담겨요). |
+| `App startup and stop failed` (`AggregateError`) | `app.start()` (reject) | `app.start()`가 실패했고 자동으로 이어진 `stop()` 롤백마저 함께 실패했어요(`error.errors`에 `[startupError, cleanupError]`가 담겨요). |
+
+## 검사 우선순위와 타이밍 디테일
+
+까다로운 엣지 케이스를 디버깅할 때 알아 두면 큰 도움이 되는 커널 내부 검사 순서예요.
+
+1. **`inject()`에서는 정지 상태 검사가 가장 먼저 실행돼요:** `Cannot inject after the app has stopped` 검사는 키 유효성 검사, 순환 참조 감지, 스코프 탐색, 캐시 조회보다 *앞서* 실행돼요. `app.stop()` 이후에는 이미 캐시된 인스턴스나 잘못된 키를 넣더라도 무조건 `Cannot inject after the app has stopped`를 던져요.
+2. **루트 vs 중첩 `Invalid provider input received` 시점:** `bootstrapApp()`에 넘긴 루트 `providers`는 `App` 핸들이 만들어지기 전에 **동기적으로** 평탄화되고 검증돼요. 반면 `provide()`나 `provideFor()`의 중첩 `{ providers }`는 해당 프라이빗 자식 서브트리가 처음 해석될 때 `inject()` 안에서 **지연** 검증돼요.
+3. **`onDispose()`에서는 실행 구간 검사가 정지 검사보다 앞서요:** 팩토리가 일단 끝나면(반환, 예외 발생, 또는 Promise 확정) 그 `onDispose` 핸들은 영구히 비활성화되어, 설령 나중에 앱이 정지되더라도 항상 `onDispose can only be called while the factory is running`을 던져요.
+4. **`start()`의 멱등 캐시보다 정지 상태 검사가 앞서요:** 앱이 시작 전이거나 실행 중일 때 `app.start()`는 같은 `Promise`를 캐시해 돌려줘요. 하지만 일단 `app.stop()`이 호출되면 캐시보다 정지 상태를 먼저 확인해서, 예전에 완료된 결과를 재사용하는 대신 `Cannot start an app that has been stopped`로 거부해요.
+
+<Code title="dispose.ts" code={disposeCode} region="dispose" />
+
+## 실패 전파 및 사후 상태 매트릭스
+
+어느 단계에서 에러가 발생했는지에 따라 에러가 밖으로 드러나는 방식과 캐시·리소스의 사후 상태가 결정돼요.
+
+| 실패 시나리오 | 에러가 드러나는 방식 | 이후 캐시 및 앱 상태 |
+| --- | --- | --- |
+| 루트 `bootstrapApp(..., { providers })`에 잘못된 항목 포함 | `bootstrapApp()`에서 동기적으로 throw | `App` 핸들이 생성되지 않아요. |
+| 중첩 `{ providers }`에 잘못된 항목 포함 | 서브트리 첫 해석 시 `inject()`에서 동기적으로 throw | 서브트리가 만들어지지 않고 호출자에게 전파돼요(기동 중이었다면 `start()`가 롤백해요). |
+| `inject()` 도중 동기 팩토리가 예외 throw | `inject()`에서 동기적으로 throw | 아무것도 캐시되지 않으며, 앱 실행 중 다시 `inject()`하면 팩토리를 재실행해요. |
+| `inject()` 도중 비동기 팩토리가 reject | 반환된 공유 `Promise`가 reject | 대기 캐시 항목이 제거되며, 앱 실행 중 다시 `inject()`하면 새로 재시도해요. |
+| 루트 콜백(또는 기동 시 `await`한 `Promise`) 실패 | `app.start()`가 `await app.stop()`을 실행한 뒤 reject | 앱은 영구 정지 상태가 돼요. 단일 에러는 그대로, 정리까지 실패했다면 `AggregateError`로 거부돼요. |
+| `await`하지 않은 백그라운드 `Promise`가 reject | 해당 `Promise`에서 직접 reject (`start()`는 관여하지 않음) | 앱은 계속 실행 상태를 유지하고, 실패한 비동기 프로바이더만 캐시에서 제거돼요. |
+| `app.stop()` 도중 `onDispose` 훅 하나가 실패 | 나머지 훅들은 끝까지 실행되고, `app.stop()`은 그 에러 그대로 reject | 앱은 영구 정지 상태로 남아요. |
+| `app.stop()` 도중 여러 `onDispose` 훅이 실패 | 모든 훅이 실행되고, `app.stop()`은 `AggregateError` (`App stop failed`)로 reject | 앱은 영구 정지 상태로 남아요. |
+
+## 빠른 해결 레시피
+
+- **`No provider for token: Name`:** 루트 `providers`나 `infraProviders` 번들 안에서 `provideFor(myToken, ...)`로 토큰을 바인딩해 주세요. 통합 테스트에서 발생했다면 `infraProviders`를 빠뜨리지 않았는지 확인하고, 자식 서브트리에서 발생했다면 소비자가 바인딩 없는 부모 스코프 소유로 되어 있지 않은지 [스코프와 프라이빗 서브트리](/ko/scopes/)를 확인해 보세요.
+- **`Circular dependency detected: A -> B -> A`:** `A`와 `B`가 공통으로 필요로 하는 상태나 헬퍼를 제3의 프로바이더 `C`로 분리해 주세요(`A -> C`, `B -> C`). 경로에 `<anonymous>`가 보인다면 `provide(({ inject }) => ...)`를 `provide(function MyService({ inject }) { ... })`로 바꿔 정확한 원인을 찾아내세요.
+- **`Invalid provider input received`:** `providers: [...]` 배열이나 `bundleProviders(...)` 안에 `provideFor(myToken, factory)` 대신 생 `token()`을 그대로 넣었거나, ES 모듈 순환 참조로 인한 `undefined`, 혹은 복사된 객체가 들어가지 않았는지 점검해 보세요.
+- **`Invalid inject key received`:** `inject()`나 `provideFor()`에 `provideFor()`가 반환한 `ProviderDef`나 `bundleProviders()`가 반환한 `ProviderBundle`이 아니라 진짜 `Token` 또는 `Ref`를 넘겼는지 확인해 주세요.
+- **`Cannot inject after the app has stopped`:** 종료 시점에 `inject()`를 부르지 않도록 `onDispose(() => { ... })`를 등록하기 *전에* 팩토리 상단에서 `const dep = inject(depRef)`로 값을 미리 받아 두세요([생명주기와 리소스 정리](/ko/lifecycle/) 참고). 우아한 종료 도중 요청 핸들러에서 이 에러가 났다면 `app.stop()`을 호출하기 전에 신규 요청 유입부터 먼저 닫아 주세요.
+- **`onDispose can only be called while the factory is running`:** 정리 훅은 타이머 콜백이나 이벤트 리스너, 지연 메서드가 아니라 팩토리 최상단(혹은 `async` 팩토리의 반환 `Promise`가 이행되기 전)에서 등록해 주세요.
+- **`Cannot register cleanup after the app has stopped`:** `async` 팩토리가 아직 `await` 구간을 지나는 도중에 앱에서 `stop()`을 호출한 상황이에요. 가능하면 `await`로 제어권을 넘기기 전에 `onDispose()`를 먼저 등록하거나, 종료가 시작될 때 진행 중인 초기화 작업을 깔끔히 중단하도록 `AbortSignal`을 연결해 주세요([비동기 프로바이더](/ko/async/) 참고).
+- **`Cannot start an app that has been stopped`:** 이미 멈춘 `App`은 정리 훅이 리소스를 모두 해제했기 때문에 일회용이에요. [테스트와 대역 갈아끼우기](/ko/testing/)의 테스트별 설정처럼 `bootstrapApp(...)`을 다시 호출해 새 `App` 인스턴스를 만들어 주세요.

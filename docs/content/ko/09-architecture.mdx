@@ -1,0 +1,59 @@
+---
+title: "Ref vs Token 선택 기준"
+slug: "architecture"
+part: patterns
+order: 9
+summary: "개인 취향으로 고민할 필요 없이, 오직 '모듈 import 방향' 하나로 Ref와 Token 중 무엇을 쓸지 명쾌하게 결정하는 기준을 소개해요."
+---
+import dddAppServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
+import dddDomainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
+import mvcUserRepoCode from '../../examples/mvc/repositories/user-repository.ts' with { type: 'text' }
+import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' with { type: 'text' }
+
+실제 프로젝트 구조를 `dn-ioc`로 잡기 시작하면 가장 먼저 마주치는 설계 고민이 있어요. "이 의존성은 `provide()`가 만드는 `Ref<T>`로 할까, 아니면 `token()`이 만드는 `Token<T>`로 할까?" 하는 질문이죠. 취향 문제로 고민할 필요 전혀 없어요. **모듈의 `import` 방향만 보면 매번 고민 없이 답이 나오거든요.**
+
+<CodeTabs
+  files={[
+    { title: 'mvc/services/user-service.ts', code: mvcUserServiceCode },
+    { title: 'mvc/repositories/user-repository.ts', code: mvcUserRepoCode },
+    { title: 'ddd/application/order-service.ts', code: dddAppServiceCode },
+    { title: 'ddd/domain/order.ts', code: dddDomainOrderCode },
+  ]}
+/>
+
+## 결정 기준은 오직 'import 방향' 하나예요
+
+`inject()`를 호출하는 파일에서 딱 한 가지만 자문해 보세요. **"이 파일이 실제 구체 구현체 파일을 직접 `import`해도 괜찮은가?"**
+
+- **네 → `provide()` (`Ref<T>`)를 쓰세요:** `Ref`는 키와 팩토리 함수를 하나의 export로 묶어 줘요. `user-service.ts`에서 `userRepositoryRef`를 `import`하면 `user-repository.ts`와 그 안의 `databaseRef`까지 자연스럽게 모듈 그래프에 딸려 들어오죠. 컨트롤러가 서비스를 부르고 서비스가 리포지토리를 부르는 계층형 **MVC** 서비스에서는 이게 딱 원하던 모습이에요. 불필요한 파일도 없고, 중앙 컨테이너 등록 보일러플레이트도 없으며, 타입 추론도 100% 자동으로 동작해요.
+- **아니요 → `token<T>()` (`Token<T>`)를 쓰세요:** `Token`은 TypeScript 타입과 선택적인 진단 문자열만 품고 있을 뿐 런타임 코드가 전혀 없어요. **DDD / 클린 아키텍처**에서는 안쪽 `domain/` 계층이 `OrderRepository` 인터페이스와 `orderRepositoryToken`을 내보내고, 바깥쪽 `infra/` 계층이 `domain/`을 `import`해서 `provideFor()`로 SQL 구현체를 연결해요. 덕분에 핵심 비즈니스 로직은 DB 드라이버나 HTTP SDK, `infra/` 폴더를 절대 건드리지 않아요.
+
+또한 환경 변수 URL, API 인증 키, 서브트리별 설정값처럼 애초에 기본 팩토리로 적어 둘 수 없고 앱이 뜰 때 외부에서 주입해야 하는 값에도 `token()`이 제격이에요.
+
+## 한눈에 보는 장단점 비교
+
+위 코드 탭의 네 파일(`mvc/` vs `ddd/`)을 아래 실무 트레이드오프 표와 함께 비교해 보세요.
+
+| 비교 항목 | `Ref<T>` (`provide()`) | `Token<T>` (`token()` + `provideFor()`) |
+| --- | --- | --- |
+| **컴파일 타임 결합도** | 사용하는 쪽이 구체 모듈을 직접 `import`해요. | 사용하는 쪽은 계약만 `import`하고, 바깥 계층이 계약을 `import`해 바인딩해요. |
+| **배선 보일러플레이트** | 없어요 — 활성 스코프에서 첫 `inject()` 시 자동 설치돼요. | 명시적이에요 — `{ providers }`나 번들 안에서 `provideFor()`로 연결해야 해요. |
+| **테스트 대역 교체** | `provideFor(ref, fakeFactory)` | `provideFor(token, fakeFactory)` — 완전히 똑같은 함수를 써요. |
+| **단위 테스트에서 모킹을 깜빡했을 때** | **조용히 폴백:** 실제 구현체를 그대로 생성해 실행해요. | **즉시 실패:** `start()`가 `No provider for token: Name`으로 거부돼요. |
+| **에러 메시지의 진단 이름** | 함수 이름(`provide(function UserService(...) {})`), 없으면 `<anonymous>`. | 설명 문자열(`token('OrderRepository')`), 없으면 `<anonymous>`. |
+| **잘 어울리는 곳** | MVC 컨트롤러, 서비스, 리포지토리, 유스케이스, 내부 헬퍼. | DDD 도메인 포트, 횡단 관심사 포트(`Clock`, `Mailer`), 런타임 설정/시크릿. |
+
+## 한 프로젝트 안에서 둘을 자연스럽게 섞어 쓰세요
+
+`Ref`와 `Token` 중 하나만 골라 저장소 전체에 강제할 필요는 전혀 없어요. 실무 서비스 대부분은 두 도구를 나란히 함께 써요.
+
+- 엄격한 DDD 서비스라 하더라도 **애플리케이션 유스케이스**(`orderServiceRef`)나 **인프라 내부 전용 클라이언트**(`sqlTableRef`)는 평범한 `Ref`로 만들어요. 이들을 호출하는 쪽은 이미 바깥 계층이거나 같은 계층에 있어서 직접 `import`하는 게 자연스럽기 때문이에요. 안쪽 계층에서 바깥쪽 어댑터로 향하는 경계 포트에만 `token()`을 쓰면 충분해요.
+- 반대로 단순한 MVC 앱이라도 런타임 `DatabaseUrl` 문자열이나 단위 테스트에서 실수로 실제 결제를 호출하면 큰일 나는 외부 결제 게이트웨이에는 언제든 `token()`을 섞어 쓸 수 있어요.
+
+<Callout kind="note" title="아키텍처 경계는 린터(Linter)로 함께 잠가 두세요">
+
+`dn-ioc`는 런타임에 핸들을 해석할 뿐 TypeScript의 `import` 구문 자체를 검사하지는 않아요. `domain/`이 `infra/`에 의존하지 않도록 `Token`을 선택했다면, Biome나 ESLint의 `noRestrictedImports` 규칙을 함께 걸어서 실수로 들어간 역방향 `import`가 CI에서 바로 잡히게 만들어 두세요.
+
+</Callout>
+
+이제 완성된 멀티 파일 프로젝트를 따라가며 두 패턴을 직접 확인해 볼까요? 위에서 아래로 직관적으로 조립하는 [실전 MVC 패턴](/ko/mvc/)부터 보셔도 좋고, 포트와 어댑터로 의존성을 역전시키는 [DDD와 클린 아키텍처](/ko/ddd/)로 바로 넘어가셔도 좋아요.

@@ -1,0 +1,62 @@
+---
+title: "테스트와 대역 갈아끼우기"
+slug: "testing"
+part: patterns
+order: 12
+summary: "모듈 모킹 꼼수 없이 provideFor(), 마지막 등록 우선 번들 오버라이드, 그리고 await using으로 격리된 단위·통합 테스트를 병렬로 돌려 봐요."
+---
+import mvcFakeCode from '../../examples/mvc/user-service-fake-example.ts' with { type: 'text' }
+import testingCode from '../../examples/testing/unit-and-integration.ts' with { type: 'text' }
+
+`dn-ioc`와 함께라면 `vi.mock()`이나 `mock.module()`도, 깨지기 쉬운 `afterEach(() => container.reset())` 초기화 코드도 전혀 필요 없어요. **전역 컨테이너가 아예 없기 때문에** `bootstrapApp()`을 호출할 때마다 메모리 위에 완전히 새로운 격리된 의존성 그래프가 만들어지거든요. 수십 개의 테스트 파일을 동시에 병렬로 돌려도 서로 상태를 건드릴 일이 없고, `provideFor()` 한 줄이면 어떤 `Token<T>`나 `Ref<T>`든 깔끔하게 바꿔 끼울 수 있어요.
+
+<Code title="order-service.unit.test.ts" code={testingCode} region="unit" />
+
+## 격리된 가짜 객체(Fake)로 단위 테스트하기
+
+단위 테스트에서는 테스트 전용 `bootstrapApp()`을 하나 만들고 테스트 대상이 **꼭 필요로 하는 가짜 객체만** 설치해요(`order-service.unit.test.ts`에서는 `fakeOrders`, 고정된 `Clock`, `fakeMailer` 세 가지예요).
+
+`provideFor(key, fakeFactory)` 사용법 자체는 `key`가 `Token<T>`이든 `Ref<T>`이든 완전히 똑같지만, **실수로 의존성 대역 등록을 깜빡했을 때 일어나는 일은 키 종류에 따라 확연히 달라져요.**
+
+| 키 종류 | 단위 테스트에서 `provideFor()`를 빠뜨렸을 때 | 실무에 미치는 영향 |
+| --- | --- | --- |
+| **`Token<T>`** | `app.start()`가 즉시 `No provider for token: Name`으로 거부돼요. | **빠른 실패(Fail-fast):** 단위 테스트가 실수로 실제 소켓을 열거나 진짜 이메일을 발송할 일이 절대 없어요. |
+| **`Ref<T>`** | 에러가 나지 않고 `Ref`의 실제 기본 팩토리가 자동 설치되어 실행돼요. | **조용한 폴백:** 순수 인메모리 헬퍼에는 편하지만, 미처 모킹하지 않은 `Ref`가 외부 I/O를 건드리면 실제 요청이 날아가요. |
+
+위의 DDD 단위 테스트와 아래의 MVC 테스트(`services/user-service.test.ts`)를 비교해 보세요. `provideFor(userRepositoryRef, fakeUserRepository)`로 리포지토리를 교체하는 코드는 똑같이 깔끔하지만, MVC에서는 `userServiceRef`가 닿는 외부 I/O `Ref`들을 빠짐없이 덮어썼는지 한 번 더 챙기는 게 중요해요.
+
+<Callout kind="tip" title="테스트 실패 시 에러 추적을 읽기 쉽게 유지하세요">
+
+토큰에는 인터페이스 이름을 그대로 붙여 주고(`token<Mailer>('Mailer')`), `provide()` 팩토리에는 실제 함수 이름을 적어 주세요(`provide(function OrderService({ inject }) { ... })`). 테스트에서 바인딩을 빼먹거나 순환 참조를 만들었을 때 `<anonymous>` 대신 `OrderService`와 `Mailer`가 또렷하게 찍혀서 원인을 금방 찾을 수 있어요.
+
+</Callout>
+
+<Code title="services/user-service.test.ts" code={mvcFakeCode} />
+
+## 번들 오버라이드로 통합 테스트하기
+
+단위 테스트가 가짜 객체를 상대로 비즈니스 로직을 검증한다면, 통합 테스트는 실제 SQL 리포지토리와 직렬화, 도메인 서비스가 제대로 맞물려 돌아가는지 확인하면서 SMTP나 Stripe 같은 외부 서드파티만 스텁으로 대체해요.
+
+`dn-ioc`는 배열과 `ProviderBundle`을 코드 작성 순서대로 평탄화하고 **같은 스코프에서는 나중에 등록된 바인딩이 이전 바인딩을 조용히 덮어쓰기 때문에**, 운영용 `infraProviders` 번들 전체를 먼저 설치하고 바로 뒤에 원하는 포트 하나만 덮어쓰면 돼요.
+
+- **올바른 순서 (`[infraProviders, provideFor(mailerToken, fakeMailer)]`):** 먼저 `sqlTableRef`, `sqlOrderRepositoryProvider`, `systemClockProvider`, `smtpMailerProvider`를 설치한 뒤 `mailerToken`만 `fakeMailer`로 교체해요.
+- **잘못된 순서 (`[provideFor(mailerToken, fakeMailer), infraProviders]`):** 가짜 구현 *뒤에* `infraProviders`가 풀리면서 `mailerToken`을 다시 실제 `smtpMailerProvider`로 덮어써 버려요!
+
+<Callout kind="note" title="중첩된 서브트리 안에서 덮어쓸 때 기억할 점">
+
+`bootstrapApp(..., { providers })`의 루트에서 덮어쓰면 루트 소유 서비스 전체에 자동으로 적용돼요. 만약 소비자 서비스는 이미 루트 스코프에 등록되어 있는데 자식 `{ providers }` 서브트리 안에서만 의존성을 덮어쓰고 싶다면, 자식 스코프에 소비자와 의존성을 둘 다 다시 바인딩해야 한다는 점을 잊지 마세요([스코프와 프라이빗 서브트리](/ko/scopes/) 참고).
+
+</Callout>
+
+<Code title="order-service.integration.test.ts" code={testingCode} region="integration" />
+
+## await using으로 테스트별 리소스 자동 정리하기
+
+`testOrderSubmitUnit()`과 `testOrderSubmitIntegration()` 양쪽에 적힌 `await using app = bootstrapApp(...)` 구문을 눈여겨보세요.
+
+- `App`이 `AsyncDisposable`을 구현하고 있어서 실행 흐름이 함수 블록을 빠져나갈 때 TypeScript가 자동으로 `app.stop()`을 `await`해 줘요 — **테스트 도중 `expect()` 단언문이 실패해 예외가 던져지더라도 빠짐없이 실행돼요.**
+- 테스트 함수가 끝나기 전에 `sqlTableRef`의 `onDispose` 훅이 돌아서 커넥션 풀, 타이머, 임시 서버를 `try / finally` 보일러플레이트 없이 깔끔하게 닫아 줘요.
+
+아직 `await using`을 쓰지 않는 코드베이스라면 `try { await app.start() } finally { await app.stop() }`로 감싸도 완전히 똑같이 동작해요. 게다가 `app.stop()`은 멱등성을 보장해서 정리 훅에서 두 번 호출되더라도 언제나 안전해요.
+
+정확한 타입 시그니처를 확인하거나 런타임 에러 메시지를 찾아보고 싶다면 파트 IV의 [공개 API 레퍼런스](/ko/api/)와 [에러 메시지와 해결 가이드](/ko/errors/)로 넘어가 보세요.
