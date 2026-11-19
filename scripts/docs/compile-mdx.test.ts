@@ -16,7 +16,7 @@ describe('slugifyHeading', () => {
 })
 
 describe('compileMdxFile & renderChapterPage', () => {
-  test('imports .ts files, splits ## sections into left steps + right decks, and carries forward active deck on prose-only sections', async () => {
+  test('imports .ts files, renders code blocks inline between surrounding paragraphs without duplication, and emits borderless rail + hreflang', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dn-mdx-'))
     try {
       await writeFile(join(dir, 'sample.ts'), `import { x } from '../domain/order'\nexport const k = 42 // [!hl]\n`)
@@ -24,18 +24,17 @@ describe('compileMdxFile & renderChapterPage', () => {
       const mdxPath = join(dir, '01-test.mdx')
       await writeFile(
         mdxPath,
-        `---\ntitle: DDD Guide\nslug: ddd\npart: patterns\norder: 11\nsummary: Clean layers.\n---\nimport sample from './sample.ts' with { type: 'text' }\nimport second from './second.ts' with { type: 'text' }\n\nLead text.\n\n## Wiring Layers\n\nExplain wiring.\n\n<CodeTabs files={[{ title: 'domain/order.ts', code: sample }, { title: 'main.ts', code: second }]} />\n\n## Pure Prose Rules\n\nNo code block in this section.\n`,
+        `---\ntitle: DDD Guide\nslug: ddd\npart: patterns\norder: 11\nsummary: Clean layers.\n---\nimport sample from './sample.ts' with { type: 'text' }\nimport second from './second.ts' with { type: 'text' }\n\nLead text.\n\n## Wiring Layers\n\nBefore code paragraph.\n\n<CodeTabs files={[{ title: 'domain/order.ts', code: sample }, { title: 'main.ts', code: second }]} />\n\nAfter code paragraph.\n\n## Pure Prose Rules\n\nNo code block in this section.\n`,
       )
       const ch = await compileMdxFile(mdxPath, 'en-US')
-      expect(ch.steps).toHaveLength(3)
-      expect(ch.decks).toHaveLength(1)
-      expect(ch.steps[0]?.deckIndex).toBe(0)
-      expect(ch.steps[0]?.inlineDeckHtml).toBe('')
-      expect(ch.steps[1]?.deckIndex).toBe(0)
-      expect(ch.steps[1]?.inlineDeckHtml).toContain('domain/order.ts')
-      expect(ch.steps[1]?.inlineDeckHtml).toContain('../domain/order')
-      expect(ch.steps[2]?.deckIndex).toBe(0) // carried forward so right page never blanks
-      expect(ch.steps[2]?.inlineDeckHtml).toBe('') // mobile does not duplicate carried-forward deck
+      expect(ch.sections).toHaveLength(3)
+      const wiringHtml = ch.sections[1]?.html ?? ''
+      const beforeIdx = wiringHtml.indexOf('Before code paragraph.')
+      const codeIdx = wiringHtml.indexOf('class="paper-code"')
+      const afterIdx = wiringHtml.indexOf('After code paragraph.')
+      expect(beforeIdx).toBeGreaterThan(-1)
+      expect(codeIdx).toBeGreaterThan(beforeIdx)
+      expect(afterIdx).toBeGreaterThan(codeIdx)
 
       const html = renderChapterPage(ch, [ch], '0.3.1')
       expect(html).toContain('lang="en-US"')
@@ -45,15 +44,23 @@ describe('compileMdxFile & renderChapterPage', () => {
       expect(html).toContain('domain/order.ts')
       expect(html).toContain('main.ts')
       expect(html).toContain('../domain/order')
+      expect(html).toContain('class="doc-shell"')
+      expect(html).toContain('id="doc-rail"')
+      expect(html).toContain('class="doc-article"')
+      expect(html).toContain('data-toggle-contents')
+      expect(html).toContain('aria-controls="doc-rail"')
+      expect(html).not.toContain('notebook-open')
+      expect(html).not.toContain('spread-right')
+      expect(html).not.toContain('mobile-deck')
+      expect(html).not.toContain('folio-page-num')
       expect(html).not.toContain('[!hl]')
-      // Exactly one mobile-deck emitted (only on step 1, not on step 0 or step 2)
-      expect(html.match(/class="mobile-deck"/g)).toHaveLength(1)
+      expect(html.match(/class="paper-code"/g)).toHaveLength(1)
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
   })
 
-  test('supports ?raw imports, <Code region>, fenced code blocks, <Callout>, GFM tables, and preserves import text inside fences', async () => {
+  test('supports ?raw imports, <Code region>, fenced code blocks, nested <Code> inside <Callout>, and GFM tables inline', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dn-mdx-features-'))
     try {
       await writeFile(
@@ -88,36 +95,31 @@ describe('compileMdxFile & renderChapterPage', () => {
           '',
           '<Callout kind="caution" title="Heads <Up>">',
           '  Keep `Token<Order>` pure.',
-          '</Callout>',
           '',
-          '<Code title="boot.ts" code={snippet} region="boot" />',
+          '  <Code title="boot.ts" code={snippet} region="boot" />',
+          '</Callout>',
           '',
         ].join('\n'),
       )
 
       const ch = await compileMdxFile(mdxPath, 'zh-Hans')
-      expect(ch.steps).toHaveLength(2)
-      expect(ch.decks).toHaveLength(2)
+      expect(ch.sections).toHaveLength(2)
 
-      // Step 0 is ## Shell Install with GFM table on left and fenced bash block on right
-      expect(ch.steps[0]?.leftHtml).toContain('<table>')
-      expect(ch.steps[0]?.leftHtml).toContain('style="text-align:right"')
-      expect(ch.steps[0]?.leftHtml).not.toContain('<pre')
-      expect(ch.decks[0]?.label).toBe('bash')
-      expect(ch.decks[0]?.html).toContain('bun')
-      expect(ch.decks[0]?.html).toContain('./missing.ts')
+      expect(ch.sections[0]?.html).toContain('<table>')
+      expect(ch.sections[0]?.html).toContain('style="text-align:right"')
+      expect(ch.sections[0]?.html).toContain('class="paper-code"')
+      expect(ch.sections[0]?.html).toContain('./missing.ts')
 
-      // Step 1 has Callout on left (HTML-escaped) and sliced #region boot on right
-      expect(ch.steps[1]?.leftHtml).toContain('class="callout callout-caution"')
-      expect(ch.steps[1]?.leftHtml).toContain('Heads &lt;Up&gt;')
-      expect(ch.steps[1]?.leftHtml).toContain('Token&lt;Order&gt;')
-      expect(ch.decks[1]?.label).toBe('boot.ts')
-      expect(ch.decks[1]?.html).toContain('&lt;unsafe&gt;')
-      expect(ch.decks[1]?.html).not.toContain('unused')
-      expect(ch.decks[1]?.html).toContain('data-copy="复制"')
-      expect(ch.decks[1]?.html).toContain('data-copied="已复制"')
+      expect(ch.sections[1]?.html).toContain('class="callout callout-caution"')
+      expect(ch.sections[1]?.html).toContain('Heads &lt;Up&gt;')
+      expect(ch.sections[1]?.html).toContain('Token&lt;Order&gt;')
+      expect(ch.sections[1]?.html).toContain('boot.ts')
+      expect(ch.sections[1]?.html).toContain('&lt;unsafe&gt;')
+      expect(ch.sections[1]?.html).not.toContain('unused')
+      expect(ch.sections[1]?.html).not.toContain('#region')
+      expect(ch.sections[1]?.html).toContain('data-copy="复制"')
+      expect(ch.sections[1]?.html).toContain('data-copied="已复制"')
 
-      // Search entries include chapter entry + both ## section anchors
       expect(ch.searchEntries.map(e => e.href)).toEqual([
         '/zh-hans/installation/',
         '/zh-hans/installation/#shell-install',
@@ -128,7 +130,7 @@ describe('compileMdxFile & renderChapterPage', () => {
     }
   })
 
-  test('renders multi-chapter contents drawer, prev/next folio navigation, and search modal hooks', async () => {
+  test('renders transparent multi-part rail navigation, prev/next chapter pager without page numbers, and search modal hooks', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dn-mdx-nav-'))
     try {
       const ch1Path = join(dir, '01-overview.mdx')
@@ -139,14 +141,15 @@ describe('compileMdxFile & renderChapterPage', () => {
       const ch1 = await compileMdxFile(ch1Path, 'zh-Hans')
       const ch2 = await compileMdxFile(ch2Path, 'zh-Hans')
 
-      expect(ch1.decks).toHaveLength(0)
-      expect(ch1.steps[0]?.deckIndex).toBe(-1)
-
       const html1 = renderChapterPage(ch1, [ch2, ch1], '0.3.1')
-      expect(html1).toContain('dn-ioc v0.3.1')
+      expect(html1).toContain('<strong>dn-ioc</strong><span>v0.3.1</span>')
+      expect(html1).toContain('class="rail-nav"')
+      expect(html1).toContain('class="rail-foot"')
+      expect(html1).toContain('class="rail-link is-current"')
       expect(html1).toContain('href="/zh-hans/tokens/"')
       expect(html1).toContain('下一章: Token 绑定 →')
       expect(html1).not.toContain('上一章:')
+      expect(html1).not.toContain('folio-page-num')
       expect(html1).toContain('data-search-url="/search-index.zh-Hans.json"')
 
       const html2 = renderChapterPage(ch2, [ch2, ch1], '0.3.1')

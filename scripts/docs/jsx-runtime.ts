@@ -110,21 +110,21 @@ function serializeProps(props: Record<string, unknown>): string {
   return out
 }
 
-export function renderVChildToHtml(node: VChild): string {
+export function renderVChildToHtml(node: VChild, renderDeck?: (tabs: readonly RenderedCodeTab[], label: string) => string): string {
   if (typeof node === 'string') {
     return escapeHtml(node)
   }
   if (node.kind === 'deck') {
-    return ''
+    return renderDeck ? renderDeck(node.tabs, node.label) : ''
   }
   if (node.tag === '') {
-    return node.children.map(renderVChildToHtml).join('')
+    return node.children.map(child => renderVChildToHtml(child, renderDeck)).join('')
   }
   const attrs = serializeProps(node.props)
   if (VOID_TAGS.has(node.tag)) {
     return `<${node.tag}${attrs}>`
   }
-  const inner = node.children.map(renderVChildToHtml).join('')
+  const inner = node.children.map(child => renderVChildToHtml(child, renderDeck)).join('')
   return `<${node.tag}${attrs}>${inner}</${node.tag}>`
 }
 

@@ -24,18 +24,10 @@ export interface ChapterFrontmatter {
   summary: string
 }
 
-export interface SpreadStep {
+export interface CompiledSection {
   id: string
   heading: string
   level: 0 | 2
-  leftHtml: string
-  deckIndex: number
-  inlineDeckHtml: string
-}
-
-export interface CodeDeck {
-  index: number
-  label: string
   html: string
 }
 
@@ -49,8 +41,7 @@ export interface SearchEntry {
 export interface CompiledChapter {
   locale: LocaleCode
   meta: ChapterFrontmatter
-  steps: SpreadStep[]
-  decks: CodeDeck[]
+  sections: CompiledSection[]
   searchEntries: SearchEntry[]
 }
 
@@ -331,37 +322,28 @@ function tryConvertFencedPreToDeck(node: VNode): VNode | null {
   return Code({ title: titleProp, code: rawCode, lang })
 }
 
-function separateProseAndDecks(nodes: readonly VChild[], seenHeadings: Set<string>): { prose: VChild[]; deckNodes: VNode[] } {
-  const prose: VChild[] = []
-  const deckNodes: VNode[] = []
-
-  for (const node of nodes) {
-    if (typeof node === 'string') {
-      prose.push(node)
-      continue
-    }
-    if (node.kind === 'deck') {
-      deckNodes.push(node)
-      continue
-    }
-    const fencedDeck = tryConvertFencedPreToDeck(node)
-    if (fencedDeck && fencedDeck.kind === 'deck') {
-      deckNodes.push(fencedDeck)
-      continue
-    }
-    if (node.tag === 'h3' || node.tag === 'h4') {
-      const headingText = extractPlainText(node.children).trim()
-      const existingId = typeof node.props.id === 'string' && node.props.id ? node.props.id : slugifyHeading(headingText, seenHeadings)
-      prose.push({
-        ...node,
-        props: { ...node.props, id: existingId },
-      })
-      continue
-    }
-    prose.push(node)
+function transformSectionNode(node: VChild, seenHeadings: Set<string>): VChild {
+  if (typeof node === 'string' || node.kind === 'deck') {
+    return node
   }
-
-  return { prose, deckNodes }
+  const fencedDeck = tryConvertFencedPreToDeck(node)
+  if (fencedDeck && fencedDeck.kind === 'deck') {
+    return fencedDeck
+  }
+  const transformedChildren = node.children.map(child => transformSectionNode(child, seenHeadings))
+  if (node.tag === 'h3' || node.tag === 'h4') {
+    const headingText = extractPlainText(transformedChildren).trim()
+    const existingId = typeof node.props.id === 'string' && node.props.id ? node.props.id : slugifyHeading(headingText, seenHeadings)
+    return {
+      ...node,
+      props: { ...node.props, id: existingId },
+      children: transformedChildren,
+    }
+  }
+  return {
+    ...node,
+    children: transformedChildren,
+  }
 }
 
 function extractExcerptText(nodes: readonly VChild[]): string {
@@ -453,73 +435,35 @@ export async function compileMdxFile(filePath: string, locale: LocaleCode): Prom
     })
   }
 
-  const decks: CodeDeck[] = []
-  const rawSteps: Array<{
-    id: string
-    heading: string
-    level: 0 | 2
-    leftHtml: string
-    ownDeckIndex: number | null
-    inlineDeckHtml: string
-    proseExcerpt: string
-  }> = []
+  const rawSections: Array<{ section: CompiledSection; proseExcerpt: string }> = []
+  const renderInlineDeck = (tabs: readonly RenderedCodeTab[]) => renderPaperCode(tabs, localeCfg)
 
   for (const bucket of buckets) {
-    const { prose, deckNodes } = separateProseAndDecks(bucket.nodes, seenIds)
-    const leftHtml = prose.map(renderVChildToHtml).join('\n').trim()
-    const proseWithoutH2 = bucket.level === 2 ? prose.slice(1) : prose
-    const proseExcerpt = extractExcerptText(proseWithoutH2)
+    const transformedNodes = bucket.nodes.map(node => transformSectionNode(node, seenIds))
+    const html = transformedNodes
+      .map(node => renderVChildToHtml(node, renderInlineDeck))
+      .join('\n')
+      .trim()
+    const nodesWithoutH2 = bucket.level === 2 ? transformedNodes.slice(1) : transformedNodes
+    const proseExcerpt = extractExcerptText(nodesWithoutH2)
 
-    let ownDeckIndex: number | null = null
-    let inlineDeckHtml = ''
-
-    if (deckNodes.length > 0) {
-      const deckHtml = deckNodes
-        .map(d => (d.kind === 'deck' ? renderPaperCode(d.tabs, localeCfg) : ''))
-        .filter(Boolean)
-        .join('\n')
-      const firstDeck = deckNodes[0]!
-      const label = firstDeck.kind === 'deck' ? firstDeck.label : ''
-      ownDeckIndex = decks.length
-      inlineDeckHtml = deckHtml
-      decks.push({
-        index: ownDeckIndex,
-        label,
-        html: deckHtml,
-      })
-    }
-
-    rawSteps.push({
-      id: bucket.id,
-      heading: bucket.heading,
-      level: bucket.level,
-      leftHtml,
-      ownDeckIndex,
-      inlineDeckHtml,
+    rawSections.push({
+      section: {
+        id: bucket.id,
+        heading: bucket.heading,
+        level: bucket.level,
+        html,
+      },
       proseExcerpt,
     })
   }
 
-  let activeDeck = decks.length > 0 ? 0 : -1
-  const steps: SpreadStep[] = rawSteps.map(raw => {
-    if (raw.ownDeckIndex !== null) {
-      activeDeck = raw.ownDeckIndex
-    }
-    return {
-      id: raw.id,
-      heading: raw.heading,
-      level: raw.level,
-      leftHtml: raw.leftHtml,
-      deckIndex: activeDeck,
-      inlineDeckHtml: raw.inlineDeckHtml,
-    }
-  })
-
+  const sections = rawSections.map(item => item.section)
   const baseHref = chapterHref(locale, meta.slug)
   const searchEntries: SearchEntry[] = []
-  const hasIntroStep = rawSteps[0]?.level === 0
+  const hasIntroSection = rawSections[0]?.section.level === 0
 
-  if (!hasIntroStep) {
+  if (!hasIntroSection) {
     searchEntries.push({
       title: meta.title,
       chapterTitle: meta.title,
@@ -528,9 +472,9 @@ export async function compileMdxFile(filePath: string, locale: LocaleCode): Prom
     })
   }
 
-  for (const raw of rawSteps) {
-    if (raw.level === 0) {
-      const combined = raw.proseExcerpt ? `${meta.summary} ${raw.proseExcerpt}`.trim() : meta.summary
+  for (const { section, proseExcerpt } of rawSections) {
+    if (section.level === 0) {
+      const combined = proseExcerpt ? `${meta.summary} ${proseExcerpt}`.trim() : meta.summary
       searchEntries.push({
         title: meta.title,
         chapterTitle: meta.title,
@@ -539,10 +483,10 @@ export async function compileMdxFile(filePath: string, locale: LocaleCode): Prom
       })
     } else {
       searchEntries.push({
-        title: raw.heading,
+        title: section.heading,
         chapterTitle: meta.title,
-        href: `${baseHref}#${raw.id}`,
-        excerpt: raw.proseExcerpt || meta.summary,
+        href: `${baseHref}#${section.id}`,
+        excerpt: proseExcerpt || meta.summary,
       })
     }
   }
@@ -550,8 +494,7 @@ export async function compileMdxFile(filePath: string, locale: LocaleCode): Prom
   return {
     locale,
     meta,
-    steps,
-    decks,
+    sections,
     searchEntries,
   }
 }
@@ -564,9 +507,7 @@ export function renderChapterPage(chapter: CompiledChapter, allChapters: readonl
   const prevChapter = currentIdx > 0 ? sortedChapters[currentIdx - 1] : undefined
   const nextChapter = currentIdx >= 0 && currentIdx < sortedChapters.length - 1 ? sortedChapters[currentIdx + 1] : undefined
 
-  const leftPageNum = Math.max(1, chapter.meta.order * 2 - 1)
-  const rightPageNum = leftPageNum + 1
-
+  const homeHref = chapterHref(chapter.locale, '')
   const pageTitle = chapter.meta.slug === '' ? `dn-ioc — ${chapter.meta.title}` : `${chapter.meta.title} — dn-ioc`
   const canonicalUrl = absoluteChapterUrl(chapter.locale, chapter.meta.slug)
   const defaultEnUrl = absoluteChapterUrl('en-US', chapter.meta.slug)
@@ -580,34 +521,22 @@ export function renderChapterPage(chapter: CompiledChapter, allChapters: readonl
     `  <link rel="alternate" hreflang="x-default" href="${escapeAttr(defaultEnUrl)}">`,
   ].join('\n')
 
-  const contentsColumns = PART_ORDER.map(partId => {
+  const railGroupsHtml = PART_ORDER.map(partId => {
     const partChapters = sortedChapters.filter(c => c.meta.part === partId)
     const items = partChapters
       .map(c => {
         const isCurrent = c.meta.slug === chapter.meta.slug
-        return `<li class="contents-item"><a class="contents-link${isCurrent ? ' is-current' : ''}" href="${escapeAttr(chapterHref(chapter.locale, c.meta.slug))}"${isCurrent ? ' aria-current="page"' : ''}><span class="contents-num">${String(c.meta.order).padStart(2, '0')}</span><span class="contents-title">${escapeHtml(c.meta.title)}</span></a></li>`
+        return `<li class="rail-item"><a class="rail-link${isCurrent ? ' is-current' : ''}" href="${escapeAttr(chapterHref(chapter.locale, c.meta.slug))}"${isCurrent ? ' aria-current="page"' : ''}><span class="rail-num">${String(c.meta.order).padStart(2, '0')}</span><span class="rail-title">${escapeHtml(c.meta.title)}</span></a></li>`
       })
       .join('')
-    return `<div class="contents-part" data-part="${partId}"><h2 class="contents-part-title">${escapeHtml(ui.parts[partId])}</h2><ol class="contents-list">${items}</ol></div>`
+    return `<div class="rail-group" data-part="${partId}"><h2 class="rail-group-title">${escapeHtml(ui.parts[partId])}</h2><ol class="rail-list">${items}</ol></div>`
   }).join('')
 
-  const stepsHtml = chapter.steps
-    .map((step, i) => {
-      const mobileSlot = step.inlineDeckHtml ? `\n          <div class="mobile-deck">${step.inlineDeckHtml}</div>` : ''
-      return `        <section class="nb-step${i === 0 ? ' is-active' : ''}" id="${escapeAttr(step.id)}" data-step="${i}" data-deck="${step.deckIndex}">
-          <div class="step-prose">${step.leftHtml}</div>${mobileSlot}
-        </section>`
-    })
-    .join('\n')
-
-  const initialDeckIndex = chapter.steps[0]?.deckIndex ?? -1
-  const activeDeckForInit = initialDeckIndex >= 0 ? initialDeckIndex : 0
-  const initialDeckLabel = initialDeckIndex >= 0 ? (chapter.decks[initialDeckIndex]?.label ?? '') : ''
-
-  const decksHtml = chapter.decks
+  const sectionsHtml = chapter.sections
     .map(
-      deck =>
-        `        <div class="nb-deck${deck.index === activeDeckForInit ? ' is-active' : ''}" data-deck="${deck.index}" data-label="${escapeAttr(deck.label)}">${deck.html}</div>`,
+      section => `        <section class="doc-section" id="${escapeAttr(section.id)}">
+${section.html}
+        </section>`,
     )
     .join('\n')
 
@@ -617,12 +546,12 @@ export function renderChapterPage(chapter: CompiledChapter, allChapters: readonl
   }).join('')
 
   const prevLinkHtml = prevChapter
-    ? `<a class="folio-nav folio-prev" href="${escapeAttr(chapterHref(chapter.locale, prevChapter.meta.slug))}">← ${escapeHtml(ui.prev)}: ${escapeHtml(prevChapter.meta.title)}</a>`
-    : `<span class="folio-nav-spacer"></span>`
+    ? `<a class="chapter-pager-link chapter-pager-prev" href="${escapeAttr(chapterHref(chapter.locale, prevChapter.meta.slug))}">← ${escapeHtml(ui.prev)}: ${escapeHtml(prevChapter.meta.title)}</a>`
+    : `<span class="chapter-pager-spacer"></span>`
 
   const nextLinkHtml = nextChapter
-    ? `<a class="folio-nav folio-next" href="${escapeAttr(chapterHref(chapter.locale, nextChapter.meta.slug))}">${escapeHtml(ui.next)}: ${escapeHtml(nextChapter.meta.title)} →</a>`
-    : `<span class="folio-nav-spacer"></span>`
+    ? `<a class="chapter-pager-link chapter-pager-next" href="${escapeAttr(chapterHref(chapter.locale, nextChapter.meta.slug))}">${escapeHtml(ui.next)}: ${escapeHtml(nextChapter.meta.title)} →</a>`
+    : `<span class="chapter-pager-spacer"></span>`
 
   return `<!DOCTYPE html>
 <html lang="${escapeAttr(localeCfg.htmlLang)}" data-locale="${escapeAttr(chapter.locale)}" data-mode="light">
@@ -641,53 +570,44 @@ ${hreflangLinks}
   <script>${THEME_INIT_SCRIPT}</script>
 </head>
 <body>
-  <div class="notebook-stage">
-    <div class="notebook-open">
-      <article class="spread-left">
-        <header class="folio-top folio-top-left">
-          <a class="folio-brand" href="${escapeAttr(chapterHref(chapter.locale, ''))}">dn-ioc v${escapeHtml(version)}</a>
-          <div class="folio-actions">
-            <button type="button" class="folio-btn" data-toggle-contents aria-expanded="false" aria-controls="contents-drawer">☰ ${escapeHtml(ui.contents)}</button>
-            <button type="button" class="folio-btn" data-open-search>${escapeHtml(ui.search)} <kbd>⌘K</kbd></button>
-          </div>
-        </header>
-        <nav class="contents-drawer" id="contents-drawer" aria-label="${escapeAttr(ui.contents)}" hidden>
-          <div class="contents-grid">${contentsColumns}</div>
-        </nav>
-        <header class="chapter-header">
-          <p class="chapter-eyebrow">${String(chapter.meta.order).padStart(2, '0')} · ${escapeHtml(ui.parts[chapter.meta.part])}</p>
-          <h1 class="chapter-title">${escapeHtml(chapter.meta.title)}</h1>
-        </header>
-        <div class="nb-steps">
-${stepsHtml}
-        </div>
-        <footer class="folio-bottom folio-bottom-left">
-          ${prevLinkHtml}
-          <span class="folio-page-num">${escapeHtml(ui.page)} ${leftPageNum}</span>
-        </footer>
-      </article>
-      <aside class="spread-right">
-        <header class="folio-top folio-top-right">
-          <span class="active-file-label" id="active-deck-label">${escapeHtml(initialDeckLabel)}</span>
-          <div class="folio-controls">
-            <details class="lang-menu">
-              <summary class="folio-btn lang-summary" aria-label="${escapeAttr(ui.language)}">🌐 ${escapeHtml(localeCfg.label)}</summary>
-              <ul class="lang-list">${langOptionsHtml}</ul>
-            </details>
-            <button type="button" class="folio-btn theme-toggle" data-toggle-theme data-light-label="${escapeAttr(ui.lightPaper)}" data-dark-label="${escapeAttr(ui.darkCard)}" aria-label="${escapeAttr(ui.lightPaper)} / ${escapeAttr(ui.darkCard)}">☀ / ☾</button>
-            <a class="folio-link" href="https://github.com/MunMunMiao/dn-ioc" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
-            <a class="folio-link" href="/llms.txt">llms.txt</a>
-          </div>
-        </header>
-        <div class="deck-stage">
-${decksHtml}
-        </div>
-        <footer class="folio-bottom folio-bottom-right">
-          <span class="folio-page-num">${escapeHtml(ui.page)} ${rightPageNum}</span>
-          ${nextLinkHtml}
-        </footer>
-      </aside>
+  <header class="mobile-bar">
+    <a class="mobile-brand" href="${escapeAttr(homeHref)}">dn-ioc v${escapeHtml(version)}</a>
+    <div class="mobile-actions">
+      <button type="button" class="mobile-btn" data-toggle-contents aria-expanded="false" aria-controls="doc-rail">☰ ${escapeHtml(ui.contents)}</button>
+      <button type="button" class="mobile-btn" data-open-search>${escapeHtml(ui.search)} <kbd>⌘K</kbd></button>
     </div>
+  </header>
+  <div class="rail-backdrop" data-close-contents hidden></div>
+  <div class="doc-shell">
+    <aside class="doc-rail" id="doc-rail" aria-label="${escapeAttr(ui.contents)}">
+      <a class="rail-brand" href="${escapeAttr(homeHref)}"><strong>dn-ioc</strong><span>v${escapeHtml(version)}</span></a>
+      <nav class="rail-nav">${railGroupsHtml}</nav>
+      <div class="rail-foot">
+        <button type="button" class="rail-tool" data-open-search>${escapeHtml(ui.search)} <kbd>⌘K</kbd></button>
+        <details class="lang-menu">
+          <summary class="rail-tool lang-summary" aria-label="${escapeAttr(ui.language)}">🌐 ${escapeHtml(localeCfg.label)}</summary>
+          <ul class="lang-list">${langOptionsHtml}</ul>
+        </details>
+        <div class="rail-foot-links">
+          <button type="button" class="rail-tool theme-toggle" data-toggle-theme data-light-label="${escapeAttr(ui.lightPaper)}" data-dark-label="${escapeAttr(ui.darkCard)}" aria-label="${escapeAttr(ui.lightPaper)} / ${escapeAttr(ui.darkCard)}">☀ / ☾</button>
+          <a class="rail-tool" href="https://github.com/MunMunMiao/dn-ioc" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+          <a class="rail-tool" href="/llms.txt">llms.txt</a>
+        </div>
+      </div>
+    </aside>
+    <main class="doc-article">
+      <header class="chapter-header">
+        <p class="chapter-eyebrow">${String(chapter.meta.order).padStart(2, '0')} · ${escapeHtml(ui.parts[chapter.meta.part])}</p>
+        <h1 class="chapter-title">${escapeHtml(chapter.meta.title)}</h1>
+      </header>
+      <div class="doc-sections">
+${sectionsHtml}
+      </div>
+      <nav class="chapter-pager">
+        ${prevLinkHtml}
+        ${nextLinkHtml}
+      </nav>
+    </main>
   </div>
   <dialog class="search-modal" id="search-modal" data-search-url="/search-index.${escapeAttr(chapter.locale)}.json" data-no-results="${escapeAttr(ui.noResults)}" aria-label="${escapeAttr(ui.search)}">
     <div class="search-dialog-inner">
