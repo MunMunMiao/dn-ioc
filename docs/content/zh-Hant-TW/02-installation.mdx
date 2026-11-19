@@ -20,25 +20,25 @@ summary: "用習慣的套件管理工具安裝 dn-ioc、在 Deno 或瀏覽器 CD
 
 ## 在 Deno 免安裝直接匯入
 
-只是想隨手寫一支單檔 Deno 腳本，懶得先建 `deno.json` 嗎？Deno 可以直接透過 `npm:` 前綴匯入 `dn-ioc`——建議順手鎖定 `@0.3.1` 版本號，確保之後每次執行都會抓到跟你測試時一模一樣的版本。
+只是想隨手寫一支單檔 Deno 腳本，懶得先建 `deno.json` 嗎？Deno 可以直接透過 `npm:` 前綴匯入 `dn-ioc`。
 
 <Code
   title="deno-import.ts"
   lang="ts"
-  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc@0.3.1'`}
+  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc'`}
 />
 
 ## 瀏覽器 CDN 與 Import Maps
 
 在網頁前端使用 `dn-ioc` 不見得非得先架設打包工具（bundler）不可。現代瀏覽器可以直接從 CDN 載入壓縮好的 ESM 建置產物：
 
-| CDN | 鎖定版本網址 | 實際提供的檔案 |
+| CDN | 網址 | 實際提供的檔案 |
 | --- | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1` | `index.min.js`（`4.8 kB`，gzip 後 `1.9 kB`） |
-| unpkg | `https://unpkg.com/dn-ioc@0.3.1` | `index.min.js` —— 與上方為完全同一個檔案 |
-| esm.sh | `https://esm.sh/dn-ioc@0.3.1` | esm.sh 自行轉譯打包的版本 |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js`（`4.8 kB`，gzip 後 `1.9 kB`） |
+| unpkg | `https://unpkg.com/dn-ioc` | `index.min.js` —— 與上方為完全同一個檔案 |
+| esm.sh | `https://esm.sh/dn-ioc` | esm.sh 自行轉譯打包的版本 |
 
-在瀏覽器裡引用 CDN 網址時，千萬記得鎖定像 `@0.3.1` 這樣的明確版本號——如果省略版本標籤，CDN 就會直接回應當下最新發布的版本，很容易讓正式環境的網頁在不知不覺間踩雷。
+不加版本號時，CDN 會直接回應最新版本；正式環境如果想鎖定特定版本，再自行於套件名稱後補上版本標籤即可。
 
 搭配 `<script type="importmap">` 使用，就能在模組裡保留乾淨的 `'dn-ioc'` 裸模組匯入寫法，不論有沒有經過打包工具都能共用同一份程式碼。
 
@@ -53,7 +53,7 @@ summary: "用習慣的套件管理工具安裝 dn-ioc、在 Deno 或瀏覽器 CD
     <script type="importmap">
       {
         "imports": {
-          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1"
+          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc"
         }
       }
     </script>
@@ -79,7 +79,7 @@ summary: "用習慣的套件管理工具安裝 dn-ioc、在 Deno 或瀏覽器 CD
 <html lang="en">
   <body>
     <script type="module">
-      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1'
+      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc'
 
       const greetingRef = provide(() => 'hello, browser')
       const app = bootstrapApp(({ inject }) => {

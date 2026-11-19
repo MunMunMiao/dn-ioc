@@ -20,25 +20,25 @@ summary: "Instala dn-ioc con tu gestor de paquetes habitual, impórtalo directo 
 
 ## Sin instalación previa en Deno
 
-¿Quieres levantar un script rápido de un solo archivo en Deno sin ponerte a configurar primero un `deno.json`? Deno puede importar `dn-ioc` directamente mediante el especificador `npm:`. Fija la versión `@0.3.1` para asegurarte de ejecutar siempre la misma versión que probaste.
+¿Quieres levantar un script rápido de un solo archivo en Deno sin ponerte a configurar primero un `deno.json`? Deno puede importar `dn-ioc` directamente mediante el especificador `npm:`.
 
 <Code
   title="deno-import.ts"
   lang="ts"
-  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc@0.3.1'`}
+  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc'`}
 />
 
 ## CDN en navegador e Import Maps
 
 Tampoco necesitas un bundler para usar `dn-ioc` en una página web. Los navegadores modernos cargan la versión ESM minificada directamente desde un CDN:
 
-| CDN | URL con versión fija | Qué sirve |
+| CDN | URL | Qué sirve |
 | --- | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1` | `index.min.js` (`4.8 kB`, `1.9 kB` con gzip) |
-| unpkg | `https://unpkg.com/dn-ioc@0.3.1` | `index.min.js` — exactamente el mismo archivo |
-| esm.sh | `https://esm.sh/dn-ioc@0.3.1` | Build transpilado propio de esm.sh |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js` (`4.8 kB`, `1.9 kB` con gzip) |
+| unpkg | `https://unpkg.com/dn-ioc` | `index.min.js` — exactamente el mismo archivo |
+| esm.sh | `https://esm.sh/dn-ioc` | Build transpilado propio de esm.sh |
 
-Fija siempre una versión concreta como `@0.3.1` en las URLs de navegador: si omites la versión, el CDN servirá la última publicada y cualquier cambio futuro podría sorprenderte en producción.
+Sin sufijo de versión, el CDN sirve la última publicación; en producción, añade una etiqueta de versión explícita si quieres fijar una entrega concreta.
 
 Si añades un `<script type="importmap">`, podrás seguir escribiendo imports limpios con `'dn-ioc'` en tus módulos, de modo que el mismo código funcione con o sin bundler.
 
@@ -53,7 +53,7 @@ Si añades un `<script type="importmap">`, podrás seguir escribiendo imports li
     <script type="importmap">
       {
         "imports": {
-          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1"
+          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc"
         }
       }
     </script>
@@ -79,7 +79,7 @@ Si añades un `<script type="importmap">`, podrás seguir escribiendo imports li
 <html lang="en">
   <body>
     <script type="module">
-      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1'
+      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc'
 
       const greetingRef = provide(() => 'hello, browser')
       const app = bootstrapApp(({ inject }) => {

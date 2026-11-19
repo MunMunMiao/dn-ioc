@@ -20,25 +20,25 @@ summary: "普段使いのパッケージマネージャでの導入から、Deno
 
 ## Deno ならインストールすら不要
 
-ちょっとした単一ファイルの Deno スクリプトを試したいだけで、わざわざ `deno.json` を作りたくないときもありますよね。Deno なら `npm:` 指定子でそのまま `dn-ioc` を import できます。あとから実行したときにバージョンが変わって驚かないよう、`@0.3.1` のようにバージョンを固定しておくのがおすすめです。
+ちょっとした単一ファイルの Deno スクリプトを試したいだけで、わざわざ `deno.json` を作りたくないときもありますよね。Deno なら `npm:` 指定子でそのまま `dn-ioc` を import できます。
 
 <Code
   title="deno-import.ts"
   lang="ts"
-  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc@0.3.1'`}
+  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc'`}
 />
 
 ## ブラウザ CDN と Import Maps
 
 Web ページで `dn-ioc` を使うのにバンドラは必須ではありません。モダンブラウザなら、CDN から配信されている minify 済み ESM ビルドをそのまま読み込めます。
 
-| CDN | バージョン固定 URL | 配信される中身 |
+| CDN | URL | 配信される中身 |
 | --- | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1` | `index.min.js`（`4.8 kB`、gzip `1.9 kB`） |
-| unpkg | `https://unpkg.com/dn-ioc@0.3.1` | `index.min.js` — 上とまったく同じファイル |
-| esm.sh | `https://esm.sh/dn-ioc@0.3.1` | esm.sh 側でトランスパイルされたビルド |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js`（`4.8 kB`、gzip `1.9 kB`） |
+| unpkg | `https://unpkg.com/dn-ioc` | `index.min.js` — 上とまったく同じファイル |
+| esm.sh | `https://esm.sh/dn-ioc` | esm.sh 側でトランスパイルされたビルド |
 
-ブラウザ向けの URL では、必ず `@0.3.1` のようにバージョンをピン留めしてください。バージョン指定を省くと常に最新リリースが降ってくるため、公開中のページがある日突然変わる原因になります。
+バージョン指定を省くと CDN は常に最新リリースを配信します。本番ページで特定バージョンに固定したい場合は、パッケージ名の後ろにバージョンタグを付けてください。
 
 また、`<script type="importmap">` を書いておけば、モジュール側のコードを `'dn-ioc'` のベア指定子のまま統一できるので、バンドラあり・なしのどちらでも同じコードがそのまま動きます。
 
@@ -53,7 +53,7 @@ Web ページで `dn-ioc` を使うのにバンドラは必須ではありませ
     <script type="importmap">
       {
         "imports": {
-          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1"
+          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc"
         }
       }
     </script>
@@ -79,7 +79,7 @@ Web ページで `dn-ioc` を使うのにバンドラは必須ではありませ
 <html lang="en">
   <body>
     <script type="module">
-      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1'
+      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc'
 
       const greetingRef = provide(() => 'hello, browser')
       const app = bootstrapApp(({ inject }) => {

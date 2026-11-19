@@ -659,6 +659,7 @@ describe('buildDocsSite', () => {
 
       const llmsOut = await readFile(join(outDir, 'llms.txt'), 'utf8')
       expect(llmsOut).toContain('https://dn-ioc.lyz.cloud/')
+      expect(llmsOut).not.toMatch(/dn-ioc@\d|Version \d+\.\d+/i)
       await access(join(outDir, '_redirects'))
 
       const collectHtmlFiles = async (dir: string): Promise<string[]> => {
@@ -687,6 +688,7 @@ describe('buildDocsSite', () => {
         expect(html).not.toContain('notebook-open')
         expect(html).not.toContain('spread-right')
         expect(html).not.toContain('mobile-deck')
+        expect(html).not.toMatch(/dn-ioc@\d|@0\.\d+\.\d+|v0\.\d+\.\d+/)
 
         const matches = Array.from(html.matchAll(localeLinkRe))
         expect(matches).toHaveLength(9)

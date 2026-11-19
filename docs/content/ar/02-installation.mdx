@@ -20,25 +20,25 @@ summary: "ثبّت dn-ioc بمدير الحزم الذي تستخدمه، أو �
 
 ## التشغيل المباشر على Deno بدون تثبيت
 
-تكتب سكربت Deno في ملف واحد وما تريد تجهّز ملف `deno.json` أول؟ تقدر في Deno تستورد `dn-ioc` مباشرة عبر صيغة `npm:` — بس ثبّت رقم النسخة `@0.3.1` حتى تضمن كل تشغيل يسحب نفس الإصدار الذي اختبرته.
+تكتب سكربت Deno في ملف واحد وما تريد تجهّز ملف `deno.json` أول؟ تقدر في Deno تستورد `dn-ioc` مباشرة عبر صيغة `npm:`.
 
 <Code
   title="deno-import.ts"
   lang="ts"
-  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc@0.3.1'`}
+  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc'`}
 />
 
 ## التشغيل في المتصفح عبر CDN و Import Maps
 
 ما تحتاج bundler حتى تستخدم `dn-ioc` في صفحة ويب. المتصفحات الحديثة تقدر تحمّل نسخة ESM المضغوطة مباشرة من الـ CDN:
 
-| الـ CDN | الرابط المثبّت | ماذا يقدّم |
+| الـ CDN | الرابط | ماذا يقدّم |
 | --- | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1` | `index.min.js` (`4.8 kB`، `1.9 kB` بـ gzip) |
-| unpkg | `https://unpkg.com/dn-ioc@0.3.1` | `index.min.js` — نفس الملف بالضبط |
-| esm.sh | `https://esm.sh/dn-ioc@0.3.1` | نسخة esm.sh المحوّلة الخاصة بها |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js` (`4.8 kB`، `1.9 kB` بـ gzip) |
+| unpkg | `https://unpkg.com/dn-ioc` | `index.min.js` — نفس الملف بالضبط |
+| esm.sh | `https://esm.sh/dn-ioc` | نسخة esm.sh المحوّلة الخاصة بها |
 
-احرص دائماً تثبّت رقم الإصدار مثل `@0.3.1` في روابط المتصفح — لو حذفت رقم النسخة راح يرجّع الـ CDN أحدث إصدار نازل، وهذا ممكن يفاجئ صفحة شغّالة في الإنتاج.
+بدون تحديد رقم إصدار، يرجّع الـ CDN أحدث نسخة منشورة؛ وفي بيئة الإنتاج تقدر تضيف رقم الإصدار بعد اسم الحزمة إذا حبيت تثبّت الصفحة على نسخة محددة.
 
 إضافة `<script type="importmap">` تخليك تكتب استيراد `'dn-ioc'` مباشرة في ملفاتك، فيشتغل نفس الكود بالضبط سواء بوجود bundler أو بدونه.
 
@@ -53,7 +53,7 @@ summary: "ثبّت dn-ioc بمدير الحزم الذي تستخدمه، أو �
     <script type="importmap">
       {
         "imports": {
-          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1"
+          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc"
         }
       }
     </script>
@@ -79,7 +79,7 @@ summary: "ثبّت dn-ioc بمدير الحزم الذي تستخدمه، أو �
 <html lang="en">
   <body>
     <script type="module">
-      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1'
+      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc'
 
       const greetingRef = provide(() => 'hello, browser')
       const app = bootstrapApp(({ inject }) => {

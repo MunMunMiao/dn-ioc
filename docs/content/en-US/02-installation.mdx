@@ -20,25 +20,25 @@ summary: "Install dn-ioc with your package manager, import it directly on Deno o
 
 ## Zero-Install on Deno
 
-Spinning up a single-file Deno script and don't feel like setting up a `deno.json` first? Deno can import `dn-ioc` straight through its `npm:` specifier—pin `@0.3.1` so future runs always pull the exact version you tested against.
+Spinning up a single-file Deno script and don't feel like setting up a `deno.json` first? Deno can import `dn-ioc` straight through its `npm:` specifier.
 
 <Code
   title="deno-import.ts"
   lang="ts"
-  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc@0.3.1'`}
+  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc'`}
 />
 
 ## Browser CDN & Import Maps
 
 You don't need a bundler to use `dn-ioc` in a web page. Modern browsers can load the minified ESM build directly from a CDN:
 
-| CDN | Pinned URL | What it serves |
+| CDN | URL | What it serves |
 | --- | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1` | `index.min.js` (`4.8 kB`, `1.9 kB` gzipped) |
-| unpkg | `https://unpkg.com/dn-ioc@0.3.1` | `index.min.js` — exact same file |
-| esm.sh | `https://esm.sh/dn-ioc@0.3.1` | esm.sh's own transpiled build |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js` (`4.8 kB`, `1.9 kB` gzipped) |
+| unpkg | `https://unpkg.com/dn-ioc` | `index.min.js` — exact same file |
+| esm.sh | `https://esm.sh/dn-ioc` | esm.sh's own transpiled build |
 
-Always pin a version like `@0.3.1` in browser URLs—dropping the version tag tells the CDN to serve whatever release is newest, which can surprise a live page.
+Without a version suffix, CDNs serve the latest release; in production, append an explicit version tag if you want to lock a page to a specific release.
 
 Adding a `<script type="importmap">` lets you keep bare `'dn-ioc'` imports in your modules, so the exact same code runs with or without a bundler.
 
@@ -53,7 +53,7 @@ Adding a `<script type="importmap">` lets you keep bare `'dn-ioc'` imports in yo
     <script type="importmap">
       {
         "imports": {
-          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1"
+          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc"
         }
       }
     </script>
@@ -79,7 +79,7 @@ Adding a `<script type="importmap">` lets you keep bare `'dn-ioc'` imports in yo
 <html lang="en">
   <body>
     <script type="module">
-      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1'
+      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc'
 
       const greetingRef = provide(() => 'hello, browser')
       const app = bootstrapApp(({ inject }) => {
