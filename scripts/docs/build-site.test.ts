@@ -1259,4 +1259,31 @@ describe('buildDocsSite', () => {
     page2.setOsDark(false)
     expect(page2.rootEl.getAttribute('data-mode')).toBe('light')
   })
+
+  test('ignores superpowers artifacts in .gitignore and tracks zero superpowers files in git', async () => {
+    const repoRoot = join(import.meta.dir, '../..')
+    const gitignore = await readFile(join(repoRoot, '.gitignore'), 'utf8')
+    expect(gitignore).toContain('.superpowers')
+    expect(gitignore).toContain('superpowers/')
+    expect(gitignore).toContain('docs/superpowers/')
+
+    let hasGitDir = false
+    try {
+      await access(join(repoRoot, '.git'))
+      hasGitDir = true
+    } catch {
+      hasGitDir = false
+    }
+
+    if (hasGitDir) {
+      const tracked = Bun.spawnSync(['git', 'ls-files', '*superpowers*'], { cwd: repoRoot })
+      expect(tracked.exitCode).toBe(0)
+      expect(tracked.stdout.toString().trim()).toBe('')
+
+      for (const candidate of ['.superpowers/scratch.md', 'superpowers/plan.md', 'docs/superpowers/specs/design.md']) {
+        const check = Bun.spawnSync(['git', 'check-ignore', '-q', candidate], { cwd: repoRoot })
+        expect(check.exitCode, `${candidate} must be ignored by .gitignore`).toBe(0)
+      }
+    }
+  })
 })

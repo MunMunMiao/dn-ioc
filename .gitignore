@@ -48,5 +48,7 @@ test-out
 junit.xml
 
 .superpowers
+superpowers/
+docs/superpowers/
 .claude/
 docs/dist
