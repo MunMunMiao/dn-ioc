@@ -225,28 +225,41 @@ describe('buildDocsSite', () => {
     }
   })
 
-  test('ships field-notebook CSS tokens and vanilla client synchronization script', async () => {
+  test('ships borderless neutral-white paper CSS tokens and streamlined client script', async () => {
     const repoRoot = join(import.meta.dir, '../..')
     const css = await readFile(join(repoRoot, 'docs/assets/notebook.css'), 'utf8')
     const js = await readFile(join(repoRoot, 'docs/assets/notebook.js'), 'utf8')
 
-    expect(css).toMatch(/--desk:\s*#e8e2d5/i)
-    expect(css).toMatch(/--sheet:\s*#fcfaf5/i)
-    expect(css).toMatch(/--vellum:\s*#efeae0/i)
+    expect(css).toMatch(/--sheet:\s*#f8f8f7/i)
+    expect(css).toMatch(/--vellum:\s*#f0f0ee/i)
+    expect(css).toMatch(/--vellum-tab:\s*#e8e8e5/i)
+    expect(css).toMatch(/--ink-primary:\s*#161615/i)
     expect(css).toMatch(/--accent:\s*#c94628/i)
-    expect(css).toMatch(/--desk:\s*#0d0c0b/i)
-    expect(css).toMatch(/--sheet:\s*#1a1816/i)
-    expect(css).toMatch(/--vellum:\s*#131110/i)
-    expect(css).toMatch(/--accent:\s*#e56b4e/i)
-    expect(css).toContain('@media (max-width: 960px)')
+    expect(css).toMatch(/--grain-opacity:\s*0\.042/)
 
-    expect(js).toContain('IntersectionObserver')
+    expect(css).toMatch(/--sheet:\s*#161617/i)
+    expect(css).toMatch(/--vellum:\s*#111112/i)
+    expect(css).toMatch(/--vellum-tab:\s*#1c1c1e/i)
+    expect(css).toMatch(/--ink-primary:\s*#efefef/i)
+    expect(css).toMatch(/--accent:\s*#e56b4e/i)
+    expect(css).toMatch(/--grain-opacity:\s*0\.028/)
+
+    expect(css).not.toContain('--desk:')
+    expect(css).not.toContain('--spine-gradient')
+    expect(css).not.toContain('.notebook-open')
+    expect(css).not.toContain('.spread-right')
+    expect(css).not.toContain('.mobile-deck')
+    expect(css).toContain('@media (max-width: 920px)')
+
     expect(js).toContain('dn-ioc-theme')
     expect(js).toContain('data-raw')
     expect(js).toContain('data-search-url')
+    expect(js).toContain('doc-rail')
+    expect(js).not.toContain('IntersectionObserver')
+    expect(js).not.toContain('spread-right')
   })
 
-  test('keeps .spread-left/.spread-right out of grid-item stacking contexts and guards IME composition in search keydown', async () => {
+  test('keeps .doc-rail non-clipping for upward language popup, wires mobile drawer toggle, and guards IME composition including keyCode 229', async () => {
     const repoRoot = join(import.meta.dir, '../..')
     const css = await readFile(join(repoRoot, 'docs/assets/notebook.css'), 'utf8')
     const js = await readFile(join(repoRoot, 'docs/assets/notebook.js'), 'utf8')
@@ -257,29 +270,52 @@ describe('buildDocsSite', () => {
       return Array.from(css.matchAll(re), m => m[1] ?? '')
     }
 
-    const notebookOpenCss = extractBlocks('.notebook-open').join('\n')
-    expect(notebookOpenCss).toMatch(/position:\s*relative/)
-    expect(notebookOpenCss).toMatch(/isolation:\s*isolate/)
-
-    for (const gridPageSelector of ['.spread-left', '.spread-right']) {
-      const blocks = extractBlocks(gridPageSelector)
-      expect(blocks.length).toBeGreaterThan(0)
-      for (const decls of blocks) {
-        expect(decls).not.toMatch(/(?:^|[\s;{])z-index\s*:/)
-        expect(decls).not.toMatch(/(?:^|[\s;{])position\s*:/)
-        expect(decls).not.toMatch(/(?:^|[\s;{])isolation\s*:/)
-      }
+    const docRailBlocks = extractBlocks('.doc-rail')
+    expect(docRailBlocks.length).toBeGreaterThan(0)
+    for (const decls of docRailBlocks) {
+      expect(decls).not.toMatch(/overflow-y\s*:\s*auto/i)
+      expect(decls).not.toMatch(/overflow\s*:\s*hidden/i)
     }
 
-    const grainZ = Number(extractBlocks('.notebook-open::after')[0]?.match(/z-index:\s*(\d+)/)?.[1] ?? '0')
-    const drawerZ = Number(extractBlocks('.contents-drawer')[0]?.match(/z-index:\s*(\d+)/)?.[1] ?? '0')
-    expect(drawerZ).toBeGreaterThan(grainZ)
+    const railNavCss = extractBlocks('.rail-nav').join('\n')
+    expect(railNavCss).toMatch(/overflow-y:\s*auto/)
+
+    const langListCss = extractBlocks('.lang-list').join('\n')
+    expect(langListCss).toMatch(/bottom:\s*calc\(100%\s*\+\s*6px\)/)
+
+    const bodyAfterCss = extractBlocks('body::after').join('\n')
+    expect(bodyAfterCss).toMatch(/pointer-events:\s*none/)
+    expect(bodyAfterCss).toMatch(/background-repeat:\s*repeat/)
 
     const noop = () => undefined
 
     class MockElement {
       attrs = new Map<string, string>()
+      classes = new Set<string>()
+      hidden = false
       listeners = new Map<string, ((event: Record<string, unknown>) => void)[]>()
+      classList = {
+        add: (...names: string[]) => {
+          for (const name of names) {
+            this.classes.add(name)
+          }
+        },
+        remove: (...names: string[]) => {
+          for (const name of names) {
+            this.classes.delete(name)
+          }
+        },
+        contains: (name: string) => this.classes.has(name),
+        toggle: (name: string, force?: boolean) => {
+          const shouldAdd = force ?? !this.classes.has(name)
+          if (shouldAdd) {
+            this.classes.add(name)
+          } else {
+            this.classes.delete(name)
+          }
+          return shouldAdd
+        },
+      }
       addEventListener(type: string, handler: (event: Record<string, unknown>) => void) {
         const list = this.listeners.get(type) ?? []
         list.push(handler)
@@ -296,6 +332,12 @@ describe('buildDocsSite', () => {
       }
       removeAttribute(name: string) {
         this.attrs.delete(name)
+      }
+      contains(target: unknown) {
+        return target === this
+      }
+      closest() {
+        return null
       }
     }
     class MockHTMLElement extends MockElement {
@@ -318,14 +360,38 @@ describe('buildDocsSite', () => {
       }
     }
 
+    const mockDocRail = new MockHTMLElement()
+    const mockToggleContents = new MockHTMLElement()
+    const mockBackdrop = new MockHTMLElement()
+    mockBackdrop.hidden = true
+    const mockOpenSearchMobile = new MockHTMLElement()
+    const mockOpenSearchRail = new MockHTMLElement()
     const mockSearchInput = new MockHTMLInputElement()
     const mockDialog = new MockHTMLDialogElement()
+    const docListeners = new Map<string, ((event: Record<string, unknown>) => void)[]>()
+
     const mockDoc = {
       documentElement: new MockHTMLElement(),
       activeElement: mockSearchInput,
-      querySelectorAll: () => [],
-      querySelector: () => null,
+      querySelectorAll: (selector: string) => {
+        if (selector === '[data-open-search]') {
+          return [mockOpenSearchMobile, mockOpenSearchRail]
+        }
+        return []
+      },
+      querySelector: (selector: string) => {
+        if (selector === '[data-toggle-contents]') {
+          return mockToggleContents
+        }
+        if (selector === '[data-close-contents]' || selector === '.rail-backdrop') {
+          return mockBackdrop
+        }
+        return null
+      },
       getElementById: (id: string) => {
+        if (id === 'doc-rail') {
+          return mockDocRail
+        }
         if (id === 'search-input') {
           return mockSearchInput
         }
@@ -334,7 +400,11 @@ describe('buildDocsSite', () => {
         }
         return null
       },
-      addEventListener: noop,
+      addEventListener: (type: string, handler: (event: Record<string, unknown>) => void) => {
+        const list = docListeners.get(type) ?? []
+        list.push(handler)
+        docListeners.set(type, list)
+      },
     }
     const mockWin = {
       location: { hash: '', href: '/' },
@@ -367,10 +437,10 @@ describe('buildDocsSite', () => {
 
     const keydownHandlers = mockSearchInput.listeners.get('keydown') ?? []
     expect(keydownHandlers.length).toBe(1)
-    const onKeydown = keydownHandlers[0]!
+    const onSearchKeydown = keydownHandlers[0]!
 
     let preventedDuringComposing = false
-    onKeydown({
+    onSearchKeydown({
       key: 'ArrowDown',
       isComposing: true,
       keyCode: 40,
@@ -381,8 +451,8 @@ describe('buildDocsSite', () => {
     expect(preventedDuringComposing).toBe(false)
 
     let preventedDuring229 = false
-    onKeydown({
-      key: 'Enter',
+    onSearchKeydown({
+      key: 'ArrowDown',
       isComposing: false,
       keyCode: 229,
       preventDefault() {
@@ -392,7 +462,7 @@ describe('buildDocsSite', () => {
     expect(preventedDuring229).toBe(false)
 
     let preventedNormal = false
-    onKeydown({
+    onSearchKeydown({
       key: 'ArrowDown',
       isComposing: false,
       keyCode: 40,
@@ -401,6 +471,37 @@ describe('buildDocsSite', () => {
       },
     })
     expect(preventedNormal).toBe(true)
+
+    const toggleClickHandlers = mockToggleContents.listeners.get('click') ?? []
+    expect(toggleClickHandlers.length).toBe(1)
+    toggleClickHandlers[0]!({})
+    expect(mockDocRail.classList.contains('is-open')).toBe(true)
+    expect(mockToggleContents.getAttribute('aria-expanded')).toBe('true')
+    expect(mockBackdrop.hidden).toBe(false)
+
+    const docKeydownHandlers = docListeners.get('keydown') ?? []
+    expect(docKeydownHandlers.length).toBe(1)
+    docKeydownHandlers[0]!({
+      key: 'Escape',
+      isComposing: false,
+      keyCode: 27,
+      preventDefault: noop,
+    })
+    expect(mockDocRail.classList.contains('is-open')).toBe(false)
+    expect(mockToggleContents.getAttribute('aria-expanded')).toBe('false')
+    expect(mockBackdrop.hidden).toBe(true)
+
+    for (const openSearchBtn of [mockOpenSearchMobile, mockOpenSearchRail]) {
+      toggleClickHandlers[0]!({})
+      expect(mockDocRail.classList.contains('is-open')).toBe(true)
+      const searchClickHandlers = openSearchBtn.listeners.get('click') ?? []
+      expect(searchClickHandlers.length).toBe(1)
+      searchClickHandlers[0]!({})
+      expect(mockDialog.open).toBe(true)
+      expect(mockDocRail.classList.contains('is-open')).toBe(false)
+      expect(mockBackdrop.hidden).toBe(true)
+      mockDialog.close()
+    }
   })
 
   test('builds all 8 real locales (112 pages), 8 search indices, llms.txt, and verified cross-locale links end-to-end', async () => {
@@ -449,6 +550,13 @@ describe('buildDocsSite', () => {
       const localeLinkRe = /<a\b[^>]*\bdata-locale-link="([^"]+)"[^>]*\bhref="([^"]+)"[^>]*>/gi
       for (const htmlFile of htmlFiles) {
         const html = await readFile(htmlFile, 'utf8')
+        expect(html).toContain('class="doc-shell"')
+        expect(html).toContain('id="doc-rail"')
+        expect(html).toContain('class="doc-article"')
+        expect(html).not.toContain('notebook-open')
+        expect(html).not.toContain('spread-right')
+        expect(html).not.toContain('mobile-deck')
+
         const matches = Array.from(html.matchAll(localeLinkRe))
         expect(matches).toHaveLength(8)
         for (const m of matches) {

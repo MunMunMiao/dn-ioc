@@ -1,120 +1,16 @@
 ;(() => {
   const root = document.documentElement
-  const steps = Array.from(document.querySelectorAll('.nb-step'))
-  const rightDecks = Array.from(document.querySelectorAll('.spread-right .nb-deck'))
-  const activeDeckLabel = document.getElementById('active-deck-label')
+  const docRail = document.getElementById('doc-rail')
   const contentsToggle = document.querySelector('[data-toggle-contents]')
-  const contentsDrawer = document.getElementById('contents-drawer')
+  const railBackdrop = document.querySelector('[data-close-contents]')
   const langMenu = document.querySelector('details.lang-menu')
   const themeToggle = document.querySelector('[data-toggle-theme]')
-  const searchOpenBtn = document.querySelector('[data-open-search]')
+  const searchOpenBtns = Array.from(document.querySelectorAll('[data-open-search]'))
   const searchModal = document.getElementById('search-modal')
   const searchInput = document.getElementById('search-input')
   const searchResults = document.getElementById('search-results')
   const searchCloseBtn = document.querySelector('[data-close-search]')
   const copyTimers = new WeakMap()
-
-  const getDeckActiveLabel = deckEl => {
-    const activeTab = deckEl.querySelector('.p-tab.is-active')
-    if (activeTab?.textContent) {
-      return activeTab.textContent.trim()
-    }
-    return deckEl.getAttribute('data-label') || ''
-  }
-
-  const activateDeckByIndex = deckIdx => {
-    if (deckIdx === null || deckIdx === '-1' || rightDecks.length === 0) {
-      return
-    }
-    let matched = null
-    for (const deck of rightDecks) {
-      const isTarget = deck.getAttribute('data-deck') === deckIdx
-      deck.classList.toggle('is-active', isTarget)
-      if (isTarget) {
-        matched = deck
-      }
-    }
-    if (matched && activeDeckLabel) {
-      activeDeckLabel.textContent = getDeckActiveLabel(matched)
-    }
-  }
-
-  const activateStep = stepEl => {
-    for (const step of steps) {
-      step.classList.toggle('is-active', step === stepEl)
-    }
-    activateDeckByIndex(stepEl.getAttribute('data-deck'))
-  }
-
-  for (const step of steps) {
-    step.addEventListener('click', event => {
-      const target = event.target
-      if (target instanceof Element && target.closest('.mobile-deck')) {
-        return
-      }
-      activateStep(step)
-    })
-  }
-
-  if (steps.length > 0 && 'IntersectionObserver' in window) {
-    const visibleRatios = new Map()
-    const observer = new IntersectionObserver(
-      entries => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            visibleRatios.set(entry.target, entry.intersectionRatio)
-          } else {
-            visibleRatios.delete(entry.target)
-          }
-        }
-        let bestStep = null
-        let bestTop = Number.POSITIVE_INFINITY
-        for (const step of steps) {
-          if (visibleRatios.has(step)) {
-            const rect = step.getBoundingClientRect()
-            const dist = Math.abs(rect.top - window.innerHeight * 0.22)
-            if (dist < bestTop) {
-              bestTop = dist
-              bestStep = step
-            }
-          }
-        }
-        if (bestStep) {
-          activateStep(bestStep)
-        }
-      },
-      {
-        rootMargin: '-15% 0px -52% 0px',
-        threshold: [0, 0.2, 0.5, 1],
-      },
-    )
-    for (const step of steps) {
-      observer.observe(step)
-    }
-  }
-
-  const syncStepFromHash = () => {
-    const rawHash = window.location.hash.slice(1)
-    if (!rawHash) {
-      return
-    }
-    let decoded = rawHash
-    try {
-      decoded = decodeURIComponent(rawHash)
-    } catch (_err) {
-      decoded = rawHash
-    }
-    const targetEl = document.getElementById(decoded)
-    if (targetEl) {
-      const stepEl = targetEl.closest('.nb-step')
-      if (stepEl) {
-        activateStep(stepEl)
-      }
-    }
-  }
-
-  syncStepFromHash()
-  window.addEventListener('hashchange', syncStepFromHash)
 
   const copyTextToClipboard = async text => {
     if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
@@ -152,9 +48,6 @@
         const panels = paperCode.querySelectorAll('.p-pre')
         for (const panel of panels) {
           panel.classList.toggle('is-active', panel.getAttribute('data-panel') === tabIndex)
-        }
-        if (paperCode.closest('.spread-right') && activeDeckLabel && tabBtn.textContent) {
-          activeDeckLabel.textContent = tabBtn.textContent.trim()
         }
       }
       return
@@ -218,22 +111,32 @@
   }
 
   const setContentsOpen = open => {
-    if (!contentsDrawer || !contentsToggle) {
-      return
+    if (docRail) {
+      docRail.classList.toggle('is-open', open)
     }
-    contentsDrawer.hidden = !open
-    contentsToggle.setAttribute('aria-expanded', open ? 'true' : 'false')
+    if (contentsToggle) {
+      contentsToggle.setAttribute('aria-expanded', open ? 'true' : 'false')
+    }
+    if (railBackdrop) {
+      railBackdrop.hidden = !open
+    }
   }
 
-  if (contentsToggle && contentsDrawer) {
+  if (contentsToggle && docRail) {
     contentsToggle.addEventListener('click', () => {
-      setContentsOpen(contentsDrawer.hidden)
+      setContentsOpen(!docRail.classList.contains('is-open'))
     })
-    contentsDrawer.addEventListener('click', event => {
+    docRail.addEventListener('click', event => {
       const target = event.target
       if (target instanceof Element && target.closest('a')) {
         setContentsOpen(false)
       }
+    })
+  }
+
+  if (railBackdrop) {
+    railBackdrop.addEventListener('click', () => {
+      setContentsOpen(false)
     })
   }
 
@@ -242,7 +145,7 @@
     if (!(target instanceof Element)) {
       return
     }
-    if (contentsDrawer && !contentsDrawer.hidden && !contentsDrawer.contains(target) && !contentsToggle?.contains(target)) {
+    if (docRail?.classList.contains('is-open') && !docRail.contains(target) && !contentsToggle?.contains(target)) {
       setContentsOpen(false)
     }
     if (langMenu?.hasAttribute('open') && !langMenu.contains(target)) {
@@ -468,8 +371,8 @@
     }
   }
 
-  if (searchOpenBtn) {
-    searchOpenBtn.addEventListener('click', openSearch)
+  for (const btn of searchOpenBtns) {
+    btn.addEventListener('click', openSearch)
   }
 
   if (searchCloseBtn) {
@@ -543,7 +446,7 @@
       return
     }
     if (event.key === 'Escape') {
-      if (contentsDrawer && !contentsDrawer.hidden) {
+      if (docRail?.classList.contains('is-open')) {
         setContentsOpen(false)
       }
       if (langMenu?.hasAttribute('open')) {
