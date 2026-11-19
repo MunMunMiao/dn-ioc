@@ -5,6 +5,7 @@ import { renderCodeLines } from './highlight'
 
 const EXAMPLES_DIR = join(import.meta.dir, '../../docs/examples')
 const LLMS_TXT_PATH = join(import.meta.dir, '../../docs/llms.txt')
+const SKILL_MD_PATH = join(import.meta.dir, '../../skills/dn-ioc/SKILL.md')
 
 const EXPECTED_EXAMPLES = [
   'api/signatures.ts',
@@ -140,12 +141,20 @@ describe('docs/examples suite', () => {
     expect(nodeShutdown).not.toMatch(/catch[\s\S]*app\.stop\s*\(/)
   })
 
-  test('preserves updated site URL and all 8 verbatim runtime error messages in docs/llms.txt', async () => {
+  test('preserves updated site URL, public API, and all 8 verbatim runtime error messages in docs/llms.txt and skills/dn-ioc/SKILL.md', async () => {
     const llms = await readFile(LLMS_TXT_PATH, 'utf8')
-    const lines = llms.split('\n')
-    expect(lines[8]).toContain('Human reference: https://dn-ioc.lyz.cloud/')
-    expect(llms).not.toContain('[index.html](index.html)')
+    const skill = await readFile(SKILL_MD_PATH, 'utf8')
 
+    expect(llms).toContain('Human reference: https://dn-ioc.lyz.cloud/')
+    expect(llms).not.toContain('[index.html](index.html)')
+    expect(llms).not.toMatch(/dn-ioc@\d|Version \d+\.\d+/i)
+
+    expect(skill).toMatch(/^---\nname: dn-ioc\ndescription: Use when [^\n]+\n---/)
+    expect(skill).not.toMatch(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\u0600-\u06ff]/)
+    expect(skill).not.toMatch(/dn-ioc@\d|Version \d+\.\d+/i)
+    expect(skill.split('\n').length).toBeLessThanOrEqual(120)
+
+    const requiredFunctions = ['token', 'provide', 'provideFor', 'bundleProviders', 'isProvideRef', 'bootstrapApp']
     const requiredErrors = [
       'No provider for token: Name',
       'Circular dependency detected: A -> B -> A',
@@ -156,8 +165,14 @@ describe('docs/examples suite', () => {
       'Cannot register cleanup after the app has stopped',
       'Cannot start an app that has been stopped',
     ]
-    for (const msg of requiredErrors) {
-      expect(llms).toContain(msg)
+
+    for (const doc of [llms, skill]) {
+      for (const fnName of requiredFunctions) {
+        expect(doc).toContain(fnName)
+      }
+      for (const msg of requiredErrors) {
+        expect(doc).toContain(msg)
+      }
     }
   })
 })

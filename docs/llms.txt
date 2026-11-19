@@ -1,24 +1,22 @@
 # dn-ioc
 
-> A small TypeScript dependency-injection kernel. A provider is a factory that creates a value. No decorators, reflection, runtime dependencies, or global container.
+> Small, zero-dependency TypeScript dependency-injection kernel. A provider is a factory function. No decorators, reflection, runtime dependencies, or global container.
 
-ESM only. TypeScript consumers need `moduleResolution: "bundler"`. NodeNext and Node16 declaration resolution are not supported. The kernel uses no platform APIs (`process`, DOM, timers), so the same graph runs on Node.js, Bun, Deno, browsers, workers, and edge runtimes. Shutdown signals have no common subset across runtimes; the caller owns them.
+- **Runtime:** ESM-only. TypeScript requires `"moduleResolution": "bundler"` (`NodeNext` / `Node16` unsupported). Uses no platform APIs (`process`, DOM, timers); runs identically on Node.js, Bun, Deno, browsers, workers, and edge runtimes.
+- **Install:** `npm install dn-ioc` | `pnpm add dn-ioc` | `yarn add dn-ioc` | `bun add dn-ioc` | `deno add npm:dn-ioc` (or direct `import ... from 'npm:dn-ioc'`).
+- **Browser CDN:** `https://cdn.jsdelivr.net/npm/dn-ioc` or `https://unpkg.com/dn-ioc` (`index.min.js`, 4.8 kB / 1.9 kB gzipped), or `https://esm.sh/dn-ioc`. Append a version tag in production to pin a release.
+- **Links:** Human reference: https://dn-ioc.lyz.cloud/ — Repository: https://github.com/MunMunMiao/dn-ioc
 
-Install: `npm install dn-ioc` (also pnpm, yarn, bun, `deno add npm:dn-ioc`). Deno may import `npm:dn-ioc` directly. Browser CDN: `https://cdn.jsdelivr.net/npm/dn-ioc` serves `index.min.js` (4.8 kB, 1.9 kB gzipped). unpkg serves the same file. esm.sh serves its own build. Append a version tag in production if you want to pin a specific release.
+## Constraints (Do Not Invent)
 
-Human reference: https://dn-ioc.lyz.cloud/ — Repository: https://github.com/MunMunMiao/dn-ioc
-
-## Do not invent these
-
-The kernel does not have: decorators, reflection, a global container, modules, request-scoped containers, multi-bindings, or runtime signal listeners.
-
-It does not wait for unfinished factories, cancel their I/O, or revoke already-held JavaScript objects. Request admission, task cancellation, and shutdown ordering stay with the application.
-
-Handles from `token`, `provide`, `provideFor`, and `bundleProviders` are frozen opaque objects. A copied object is rejected. This is an in-process kernel for trusted application code, not a sandbox.
+- Does **not** have: decorators, reflection, a global container, modules, request-scoped containers, multi-bindings, or OS/browser signal listeners.
+- `stop()` does **not** await unfinished detached factories, cancel their I/O, or revoke already-held JS references. Request admission, cancellation (`AbortController`), and graceful drain stay in application code.
+- Handles from `token`, `provide`, `provideFor`, and `bundleProviders` are frozen opaque objects tracked by identity. Copied/cloned objects are rejected. Trusted in-process kernel, not a sandbox.
 
 ## Public API
 
 ```ts
+// 6 runtime functions
 function token<T>(description?: string): Token<T>
 function provide<T>(factory: Factory<T>, options?: ProviderOptions): Ref<T>
 function provideFor<T>(key: InjectKey<T>, factory: Factory<T>, options?: ProviderOptions): ProviderDef<T>
@@ -26,125 +24,87 @@ function bundleProviders(...inputs: ProviderInput[]): ProviderBundle
 function isProvideRef(value: unknown): value is Ref<unknown>
 function bootstrapApp(fn: BootstrapAppFn, options?: BootstrapAppOptions): App
 
+// 15 exported types
+interface Token<T> { readonly [TOKEN_TYPE]: T }
+interface Ref<T> extends Token<T> { readonly [REF_TYPE]: true }
+interface ProviderDef<T> { readonly [PROVIDER_DEF_TYPE]: T }
+interface ProviderBundle { readonly [PROVIDER_BUNDLE_TYPE]: true }
+type RefType<T> = T extends Ref<infer U> ? U : never
+type InjectKey<T> = Token<T> | Ref<T>
+type ProviderInput = Ref<unknown> | ProviderDef<unknown> | ProviderBundle | readonly ProviderInput[]
+type ProviderOptions = { providers?: readonly ProviderInput[] }
+type InjectFn = <T>(key: InjectKey<T>) => T
+type OnDisposeFn = (fn: () => void | Promise<void>) => void
 interface Context { inject: InjectFn; onDispose: OnDisposeFn }
 type Factory<T> = (ctx: Context) => T
 type BootstrapAppFn = (ctx: Context) => void | Promise<void>
 interface BootstrapAppOptions { providers?: readonly ProviderInput[] }
-interface App extends AsyncDisposable {
-  start(): Promise<void>  // idempotent; rejects once the app is stopped
-  stop(): Promise<void>   // idempotent
-}
-type ProviderOptions = { providers?: readonly ProviderInput[] }
-type ProviderInput = Ref<unknown> | ProviderDef<unknown> | ProviderBundle | readonly ProviderInput[]
+interface App extends AsyncDisposable { start(): Promise<void>; stop(): Promise<void> }
 ```
 
-`isProvideRef` is true only for a `Ref` created by `provide()`. It is false for tokens, bindings, bundles, and copied objects.
+- `isProvideRef(v)` returns `true` only for an authentic `Ref` from `provide()` (false for tokens, bindings, bundles, copies).
+- `BootstrapAppFn` must return `void | Promise<void>` (wires and runs the graph; does not return a value).
 
-The root factory must return `void` or `Promise<void>`. It wires the graph and does the work. It is not an expression that produces a value.
+## Resolution & Scoping
 
-## Resolution
+- **`bootstrapApp()` is lazy:** Builds the root scope and validates root `providers` immediately, runs no factories. `start()` runs the root factory once, is idempotent (returns the same `Promise`), and rejects if already stopped.
+- **`Ref<T>` vs `Token<T>`:**
+  - `Ref<T>` (`provide()`) carries a default factory and self-installs on first `inject()` in the active scope. Not a global singleton: list shared/stateful refs in bootstrap `providers` so sibling subtrees share one instance.
+  - `Token<T>` (`token()`) has no default and must be bound via `provideFor()`. Use `description` for diagnostics (`No provider for token: Name`); unnamed tokens and anonymous arrow factories report `<anonymous>`.
+- **Scope lookup & caching:** Searches active scope up to root. Instances cache on their owning scope, or on their private child scope when the provider declares nested `providers`.
+- **Private subtrees (`options.providers`):** Visible only to that provider and its descendants; sibling subtrees stay isolated. Nested inputs are validated on first resolution of that subtree.
+- **Parent-owned consumers:** A consumer installed/bound in a parent scope resolves its dependencies in that parent scope. Overriding a dependency in a child scope does **not** rewire a parent-bound consumer; rebind both consumer and dependency in the child scope when both must change.
+- **Snapshots & precedence:** Provider arrays/bundles are snapshotted at creation time (later array mutations have no effect) and flattened in source order. Duplicate keys in the same scope: **later binding silently wins** (including nested `providers`).
+- **Async factories:** `inject()` returns sync values directly and a shared `Promise` for async factories. A rejected async factory is evicted from cache so a later `inject()` can retry while running. Put `Promise<...>` in async token types: `token<Promise<Settings>>('Settings')`.
+- **Startup scope:** `start()` tracks only Promises returned or awaited by the root factory; unawaited fire-and-forget Promises are not part of startup.
 
-- `bootstrapApp()` builds the graph and returns a handle. It runs nothing. `start()` runs the root factory and rejects if it fails. Repeated `start()` calls return the same Promise and run the root once.
-- A `Ref<T>` from `provide()` has a default factory and self-installs the first time it is injected in a scope. It is not a global singleton. Install shared providers at bootstrap so sibling subtrees reuse the same instance.
-- A `Token<T>` from `token()` has no default and must be bound with `provideFor()`. The optional description is the name in `No provider for token: Name`. A ref with no description is reported as `<anonymous>`.
-- Bindings are searched from the active scope toward its parents. Each binding is cached in its owning scope, or in its attached private scope when it has nested `providers`.
-- A provider's `providers` option installs a private subtree, visible to that provider and its descendants. Sibling subtrees stay isolated. A local binding is not visible outside its subtree.
-- A consumer already installed or bound in a parent scope resolves its dependencies there. A child override does not change that consumer. Rebind the consumer and its dependency together in the child scope when both need to change.
-- Installation copies provider arrays and bundles when the owning ref, binding, or bundle is created. Later edits do not change that definition.
-- Provider inputs are flattened in source order, nested arrays and bundles included.
-- If the same key is installed twice in one scope, the later binding silently replaces the earlier one, including its nested providers.
-- `inject()` returns synchronous values as values, and a shared Promise for an async provider. A rejected provider is removed from the cache so a later injection can retry while the app is running.
-- `start()` follows the root factory and the Promises it actually awaits or returns. A Promise started without being awaited is not part of startup. Give it an owner outside the root factory if the caller still needs to observe it.
-- For an async token, put the Promise in the token type: `token<Promise<{ ready: boolean }>>('Settings')`.
-- Nested provider inputs are validated when their subtree is first resolved. Invalid nested input throws from that `inject()` call.
+## Lifecycle & Cleanup
 
-## Cleanup
+- Call `stop()` only when something outlives the graph (servers, DB pools, timers, tests, unmounted browser sub-apps). Short-lived scripts and full-page browser graphs do not need it.
+- `stop()` synchronously closes `inject()` app-wide (even for cached instances and private subtrees), then awaits `onDispose` hooks newest-first (LIFO). **Capture needed dependencies into local variables before calling `onDispose()`.**
+- `onDispose` is callable only while its factory is running and before `stop()`. Hooks must return `void | Promise<void>` (wrap non-void calls like `{ server.close() }`). Never `await app.stop()` inside a hook (deadlocks).
+- Repeated/concurrent `stop()` calls share one `Promise` and run each hook once. All hooks run even if one fails: single failure rethrows unchanged; multiple failures throw `AggregateError('App stop failed')`.
+- `start()` failure automatically runs `stop()` before rejecting (combined failures throw `AggregateError('App startup and stop failed')`). Successful `start()` and post-start runtime errors never auto-stop the app.
+- `App` implements `AsyncDisposable` (`Symbol.asyncDispose` + `Symbol.for('Symbol.asyncDispose')`) for `await using app = bootstrapApp(...)`.
+- Wire shutdown yourself: `SIGINT`/`SIGTERM` (Node/Bun), `Deno.addSignalListener` (Deno), framework unmount (browser sub-apps), or synchronous-only `pagehide` hooks (`navigator.sendBeacon`) for tab unload.
 
-Call `stop()` when something outlives the graph: a long-running process holding sockets, timers, or files; a test; a sub-app unmounted while the page lives on. A short-lived script or a page-wide graph that ends when the tab closes does not need it.
+## Layered Architecture & Testing
 
-`stop()` synchronously closes `inject()` across the entire app, then runs `onDispose` hooks newest-first. Further injection throws `Cannot inject after the app has stopped`, including cached instances and private subtrees. Capture dependencies before registering a hook.
+Import direction decides `Ref` vs `Token`:
+- **MVC (inward/downward imports):** Layers import the layer below → use `Ref` (`provide()`). List stateful/connection refs in bootstrap `providers` to share one instance.
+- **DDD / Clean Architecture (inverted imports):** `domain/` declares interfaces + `token()` ports (imports no other project layer); `application/` uses `provide()` and injects domain tokens; `infra/` imports `domain/`, binds adapters with `provideFor()`, and exports one `bundleProviders(...)`; entrypoints (`main.ts`) install the bundle once.
+- Never export a DDD adapter as a `Ref` imported by `domain/` or `application/` (creates an outward dependency / module cycle). Adding a new adapter is two edits in `infra/`: its `provideFor()` + one entry in the bundle.
+- Inject entry dependencies inside the root factory so missing bindings reject `start()` instead of failing mid-request. Enforce layer import rules with Biome or ESLint.
+- **Testing:** `provideFor()` overrides both refs and tokens identically.
+  - Unit tests: install only fakes. Missing token fake fails fast (`No provider for token: Name`); missing ref fake silently builds the real ref.
+  - Integration tests: list real bundle **first**, overrides **after**: `[infraProviders, provideFor(orderRepositoryToken, fake)]`.
+  - Name tokens after their interface; use named functions in `provide(function OrderService(ctx) { ... })` for readable cycle traces.
 
-`onDispose` is callable only while its own factory is running, and only before `stop()`. A hook must resolve to nothing (`void` or `Promise<void>`). Returning anything else is a type error. Concurrent and repeated `stop()` calls return the same Promise and run each hook once. If a hook fails, the remaining hooks still run. One failure is rethrown unchanged. Several produce an `AggregateError`. A hook must not await `app.stop()`.
+## Exact Runtime Errors
 
-`start()` failure stops the app, then rejects. A successful `start()` never stops the app on its own. Runtime failures after a successful start do not stop the app either.
+- `No provider for token: Name` — unbound token
+- `Circular dependency detected: A -> B -> A` — sync or async cycle
+- `Invalid inject key received` — non-handle or copied object passed to `inject()` / `provideFor()`
+- `Invalid provider input received` — invalid entry in `providers` (thrown synchronously by `bootstrapApp()` for root inputs, or on subtree first `inject()`)
+- `Cannot inject after the app has stopped` — `inject()` after `stop()` (checked before cache or key validation)
+- `onDispose can only be called while the factory is running` — `onDispose()` called after factory returns/settles
+- `Cannot register cleanup after the app has stopped` — `onDispose()` called after `stop()`
+- `Cannot start an app that has been stopped` — `start()` called after `stop()`
 
-`App` implements `AsyncDisposable` (`Symbol.asyncDispose` and `Symbol.for('Symbol.asyncDispose')`), so `await using` calls `stop()` when the scope exits.
-
-The kernel installs no listeners. Wire `stop()` yourself: `SIGINT` / `SIGTERM` on Node and Bun, `Deno.addSignalListener` on Deno, your framework's unmount on a browser sub-app. `pagehide` is the least-bad page unload event and still may not run an async hook. Keep unload hooks synchronous.
-
-## Layered apps
-
-Import direction decides between a ref and a token. A `Ref` carries its factory, so importing it imports the implementation. A `Token` carries only a type, so the implementation can live in any module that imports the token.
-
-- Ref when the code that injects it may import the implementation. MVC: each layer imports the one below, so repositories, services, and controllers are refs. List connection-holding refs in the bootstrap `providers` so the whole app shares one instance.
-- Token when the implementation lives in an outer layer that imports the inner one. DDD: the domain declares the interface and its token, infrastructure imports the domain and binds an adapter to the token, a bundle collects the adapters, and each entry installs the bundle once. The domain imports no other layer.
-- Do not export a DDD adapter as a ref for the domain or application to import. That import points outward: infrastructure already imports the domain's types, so the two modules form a cycle.
-- A new DDD adapter is two edits in infrastructure: its `provideFor()` and one line in the bundle. Entries do not change.
-- Inject what an entry uses inside its root factory, so a missing binding rejects `start()`. A token first injected from a request handler fails on that request instead.
-- The kernel never sees imports. Enforce layer direction with a lint rule.
-
-```ts
-// domain/order.ts — imports no other layer
-export interface OrderRepository {
-  find(id: string): Promise<Order | undefined>
-  save(order: Order): Promise<void>
-}
-export const orderRepositoryToken = token<OrderRepository>('OrderRepository')
-
-// application/order-service.ts — imports domain
-export const orderServiceRef = provide(function OrderService({ inject }) {
-  const orders = inject(orderRepositoryToken)
-  return { submit: async (id: string) => { /* orders.find, orders.save */ } }
-})
-
-// infra/order-repository.ts — imports domain
-export const orderRepositoryProvider = provideFor(orderRepositoryToken, ({ inject }) => ({ /* find, save */ }))
-
-// infra/providers.ts
-export const infraProviders = bundleProviders(orderRepositoryProvider)
-
-// main.ts — the only module that imports both sides
-const app = bootstrapApp(async ({ inject }) => {
-  await inject(orderServiceRef).submit('o-1')
-}, { providers: [infraProviders] })
-```
-
-Testing:
-
-- `provideFor()` replaces a ref or a token the same way.
-- Unit tests install only fakes. A forgotten token fake rejects `start()` with `No provider for token: Name`. A forgotten ref fake is not an error: the ref builds its real implementation.
-- Integration tests list the real bundle first and overrides after it: `[infraProviders, provideFor(orderRepositoryToken, fake)]`. The bundle silently replaces an override listed before it.
-- Name a token after its interface. A ref's name in errors is its factory's function name: `provide(function OrderService(ctx) { ... })`. An inline arrow reports `<anonymous>`. A minifier that renames functions changes the name.
-
-## Errors
-
-Exact messages:
-
-- Unbound token: `No provider for token: Name`
-- Cycle: `Circular dependency detected: A -> B -> A`
-- Invalid inject key: `Invalid inject key received`
-- Invalid root provider input: `Invalid provider input received` (thrown by `bootstrapApp()` before an `App` exists)
-- Inject after stop: `Cannot inject after the app has stopped` (before cache lookup or key validation)
-- `onDispose` after the factory finishes: `onDispose can only be called while the factory is running`
-- `onDispose` after stop: `Cannot register cleanup after the app has stopped`
-- `start()` after stop: `Cannot start an app that has been stopped`
-
-## Smallest app
+## Minimal Example
 
 ```ts
 import { bootstrapApp, provide } from 'dn-ioc'
 
 const configRef = provide(() => ({ greeting: 'hello' }))
-const greeterRef = provide(({ inject }) => {
+const greeterRef = provide(function Greeter({ inject }) {
   const config = inject(configRef)
   return { greet: (name: string) => `${config.greeting}, ${name}` }
 })
 
 const app = bootstrapApp(({ inject }) => {
-  console.log(inject(greeterRef).greet('world')) // hello, world
+  console.log(inject(greeterRef).greet('world'))
 })
 
 await app.start()
 ```
-
-This graph holds no resources. It does not need `stop()`.
