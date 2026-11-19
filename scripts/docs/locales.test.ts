@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import { absoluteChapterUrl, chapterHref, DEFAULT_LOCALE, getLocale, LOCALES, type LocaleCode, SITE_ORIGIN } from '../../docs/locales'
 
 describe('locales registry', () => {
-  test('registers all 8 required locales with en-US as default and native labels', () => {
+  test('registers all 9 required locales with en-US as default, dir, and native labels', () => {
     expect(SITE_ORIGIN).toBe('https://dn-ioc.lyz.cloud')
     expect(DEFAULT_LOCALE).toBe('en-US')
-    expect(LOCALES.map(l => l.code)).toEqual(['en-US', 'zh-Hans', 'zh-Hant-HK', 'zh-Hant-TW', 'ja', 'ko', 'es', 'fr'])
+    expect(LOCALES.map(l => l.code)).toEqual(['en-US', 'zh-Hans', 'zh-Hant-HK', 'zh-Hant-TW', 'ja', 'ko', 'es', 'fr', 'ar'])
     expect(LOCALES.map(l => l.label)).toEqual([
       'English (US)',
       '简体中文',
@@ -15,11 +15,13 @@ describe('locales registry', () => {
       '한국어',
       'Español',
       'Français',
+      'العربية',
     ])
 
     for (const loc of LOCALES) {
       const resolved = getLocale(loc.code)
       expect(resolved.htmlLang).toBe(loc.code)
+      expect(resolved.dir).toBe(loc.code === 'ar' ? 'rtl' : 'ltr')
       expect(resolved.ui.contents.length).toBeGreaterThan(0)
       expect(resolved.ui.search.length).toBeGreaterThan(0)
       expect(resolved.ui.searchPlaceholder.length).toBeGreaterThan(0)
@@ -36,6 +38,11 @@ describe('locales registry', () => {
       expect(resolved.ui.parts.kernel.length).toBeGreaterThan(0)
       expect(resolved.ui.parts.patterns.length).toBeGreaterThan(0)
       expect(resolved.ui.parts.reference.length).toBeGreaterThan(0)
+    }
+
+    expect(getLocale('ar').dir).toBe('rtl')
+    for (const code of ['en-US', 'zh-Hans', 'zh-Hant-HK', 'zh-Hant-TW', 'ja', 'ko', 'es', 'fr'] as const) {
+      expect(getLocale(code).dir).toBe('ltr')
     }
 
     const hk = getLocale('zh-Hant-HK')
@@ -57,9 +64,12 @@ describe('locales registry', () => {
     expect(chapterHref('ko', 'async')).toBe('/ko/async/')
     expect(chapterHref('es', 'scopes')).toBe('/es/scopes/')
     expect(chapterHref('fr', 'errors')).toBe('/fr/errors/')
+    expect(chapterHref('ar', '')).toBe('/ar/')
+    expect(chapterHref('ar', 'ddd')).toBe('/ar/ddd/')
 
     expect(absoluteChapterUrl('en-US', '')).toBe('https://dn-ioc.lyz.cloud/')
     expect(absoluteChapterUrl('en-US', 'ddd')).toBe('https://dn-ioc.lyz.cloud/ddd/')
     expect(absoluteChapterUrl('zh-Hant-HK', 'ddd')).toBe('https://dn-ioc.lyz.cloud/zh-hant-hk/ddd/')
+    expect(absoluteChapterUrl('ar', 'ddd')).toBe('https://dn-ioc.lyz.cloud/ar/ddd/')
   })
 })

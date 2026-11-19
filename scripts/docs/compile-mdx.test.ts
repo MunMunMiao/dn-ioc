@@ -182,4 +182,61 @@ describe('compileMdxFile & renderChapterPage', () => {
       await rm(dir, { recursive: true, force: true })
     }
   })
+
+  test('emits dir="rtl", IBM Plex Sans Arabic font, LTR code blocks, Arabic slug anchors, and RTL pager arrows for ar', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dn-mdx-ar-'))
+    try {
+      await writeFile(join(dir, 'sample.ts'), `export const value = 1\n`)
+      const ch1Path = join(dir, '01-overview.mdx')
+      const ch2Path = join(dir, '02-install.mdx')
+      const enPath = join(dir, '01-en.mdx')
+      await writeFile(ch1Path, `---\ntitle: نظرة عامة\nslug: ""\npart: start\norder: 1\nsummary: مقدمة سريعة.\n---\nمرحباً بك.\n`)
+      await writeFile(
+        ch2Path,
+        [
+          '---',
+          'title: التثبيت السريع',
+          'slug: installation',
+          'part: start',
+          'order: 2',
+          'summary: تثبيت الحزمة.',
+          '---',
+          `import sample from './sample.ts' with { type: 'text' }`,
+          '',
+          '## تثبيت عبر Bun',
+          '',
+          '<Code title="sample.ts" code={sample} />',
+          '',
+        ].join('\n'),
+      )
+      await writeFile(enPath, `---\ntitle: Overview\nslug: ""\npart: start\norder: 1\nsummary: Intro.\n---\nHello.\n`)
+
+      const ch1 = await compileMdxFile(ch1Path, 'ar')
+      const ch2 = await compileMdxFile(ch2Path, 'ar')
+      const enCh = await compileMdxFile(enPath, 'en-US')
+
+      expect(ch2.sections.find(s => s.level === 2)?.id).toBe('تثبيت-عبر-bun')
+      expect(ch2.searchEntries.map(e => e.href)).toEqual(['/ar/installation/', '/ar/installation/#تثبيت-عبر-bun'])
+
+      const html1 = renderChapterPage(ch1, [ch2, ch1], '0.3.1')
+      const html2 = renderChapterPage(ch2, [ch2, ch1], '0.3.1')
+      const htmlEn = renderChapterPage(enCh, [enCh], '0.3.1')
+
+      expect(html1).toContain('<html lang="ar" dir="rtl" data-locale="ar" data-mode="light">')
+      expect(html1).toContain('IBM+Plex+Sans+Arabic')
+      expect(htmlEn).toContain('<html lang="en-US" dir="ltr" data-locale="en-US" data-mode="light">')
+      expect(htmlEn).not.toContain('IBM+Plex+Sans+Arabic')
+
+      expect(html2).toContain('<div class="paper-code" dir="ltr">')
+      expect(html2).toContain('<section class="doc-section" id="تثبيت-عبر-bun">')
+      expect(html1).toContain('التالي: التثبيت السريع ←')
+      expect(html1).not.toContain('السابق:')
+      expect(html2).toContain('→ السابق: نظرة عامة')
+      expect(html2).not.toContain('التالي:')
+      expect(html1).toContain('hreflang="ar" href="https://dn-ioc.lyz.cloud/ar/"')
+      expect(html2).toContain('hreflang="ar" href="https://dn-ioc.lyz.cloud/ar/installation/"')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })

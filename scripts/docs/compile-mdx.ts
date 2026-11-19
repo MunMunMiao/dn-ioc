@@ -289,7 +289,7 @@ function renderPaperCode(tabs: readonly RenderedCodeTab[], localeCfg: LocaleConf
     )
     .join('')
 
-  return `<div class="paper-code"><div class="p-tabs"><div class="p-tablist" role="tablist">${tabButtons}</div><button type="button" class="p-copy" data-copy="${escapeAttr(ui.copy)}" data-copied="${escapeAttr(ui.copied)}">${escapeHtml(ui.copy)}</button></div>${prePanels}</div>`
+  return `<div class="paper-code" dir="ltr"><div class="p-tabs"><div class="p-tablist" role="tablist">${tabButtons}</div><button type="button" class="p-copy" data-copy="${escapeAttr(ui.copy)}" data-copied="${escapeAttr(ui.copied)}">${escapeHtml(ui.copy)}</button></div>${prePanels}</div>`
 }
 
 function flattenTopLevel(node: VChild): VChild[] {
@@ -545,16 +545,22 @@ ${section.html}
     return `<li><a class="lang-option${isCurrent ? ' is-current' : ''}" data-locale-link="${escapeAttr(loc.code)}" href="${escapeAttr(chapterHref(loc.code, chapter.meta.slug))}" lang="${escapeAttr(loc.htmlLang)}" hreflang="${escapeAttr(loc.htmlLang)}"${isCurrent ? ' aria-current="page"' : ''}>${escapeHtml(loc.label)}</a></li>`
   }).join('')
 
+  const prevArrow = localeCfg.dir === 'rtl' ? '→' : '←'
+  const nextArrow = localeCfg.dir === 'rtl' ? '←' : '→'
+
   const prevLinkHtml = prevChapter
-    ? `<a class="chapter-pager-link chapter-pager-prev" href="${escapeAttr(chapterHref(chapter.locale, prevChapter.meta.slug))}">← ${escapeHtml(ui.prev)}: ${escapeHtml(prevChapter.meta.title)}</a>`
+    ? `<a class="chapter-pager-link chapter-pager-prev" href="${escapeAttr(chapterHref(chapter.locale, prevChapter.meta.slug))}">${prevArrow} ${escapeHtml(ui.prev)}: ${escapeHtml(prevChapter.meta.title)}</a>`
     : `<span class="chapter-pager-spacer"></span>`
 
   const nextLinkHtml = nextChapter
-    ? `<a class="chapter-pager-link chapter-pager-next" href="${escapeAttr(chapterHref(chapter.locale, nextChapter.meta.slug))}">${escapeHtml(ui.next)}: ${escapeHtml(nextChapter.meta.title)} →</a>`
+    ? `<a class="chapter-pager-link chapter-pager-next" href="${escapeAttr(chapterHref(chapter.locale, nextChapter.meta.slug))}">${escapeHtml(ui.next)}: ${escapeHtml(nextChapter.meta.title)} ${nextArrow}</a>`
     : `<span class="chapter-pager-spacer"></span>`
 
+  const arabicFontParam = chapter.locale === 'ar' ? '&family=IBM+Plex+Sans+Arabic:wght@400;500;600' : ''
+  const fontsUrl = `https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400${arabicFontParam}&display=swap`
+
   return `<!DOCTYPE html>
-<html lang="${escapeAttr(localeCfg.htmlLang)}" data-locale="${escapeAttr(chapter.locale)}" data-mode="light">
+<html lang="${escapeAttr(localeCfg.htmlLang)}" dir="${localeCfg.dir}" data-locale="${escapeAttr(chapter.locale)}" data-mode="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -565,7 +571,7 @@ ${hreflangLinks}
   <link rel="alternate" type="text/plain" href="/llms.txt" title="dn-ioc LLM Reference">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
+  <link rel="stylesheet" href="${fontsUrl}">
   <link rel="stylesheet" href="/assets/notebook.css">
   <script>${THEME_INIT_SCRIPT}</script>
 </head>

@@ -156,16 +156,25 @@
   const escapeHtml = text =>
     text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 
+  const COMBINING_MARKS_RE = /[\u0300-\u036f\u064B-\u065F\u0670\u0640]/g
+  const TRAILING_MARK_RE = /[\u0300-\u036f\u064B-\u065F\u0670]/
+
+  const normalizeTextChunk = value =>
+    value
+      .normalize('NFD')
+      .replace(COMBINING_MARKS_RE, '')
+      .normalize('NFC')
+      .replace(/[أإآٱ]/g, 'ا')
+      .replace(/ى/g, 'ي')
+      .replace(/ة/g, 'ه')
+      .toLowerCase()
+
   const foldWithOffsets = text => {
     let folded = ''
     const offsets = []
     let idx = 0
     for (const ch of text) {
-      const piece = ch
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .normalize('NFC')
-        .toLowerCase()
+      const piece = normalizeTextChunk(ch)
       const nextIdx = idx + ch.length
       let units = piece.length
       while (units > 0) {
@@ -178,13 +187,7 @@
     return { folded, offsets }
   }
 
-  const foldQuery = query =>
-    query
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .normalize('NFC')
-      .toLowerCase()
-      .trim()
+  const foldQuery = query => normalizeTextChunk(query).trim()
 
   const highlightText = (text, terms) => {
     if (terms.length === 0 || !text) {
@@ -205,7 +208,11 @@
         const startPair = offsets[hit]
         const endPair = offsets[hit + term.length - 1]
         if (startPair && endPair) {
-          ranges.push([startPair[0], endPair[1]])
+          let end = endPair[1]
+          while (end < text.length && TRAILING_MARK_RE.test(text[end])) {
+            end += 1
+          }
+          ranges.push([startPair[0], end])
         }
         from = hit + Math.max(1, term.length)
       }

@@ -1,9 +1,10 @@
-export type LocaleCode = 'en-US' | 'zh-Hans' | 'zh-Hant-HK' | 'zh-Hant-TW' | 'ja' | 'ko' | 'es' | 'fr'
+export type LocaleCode = 'en-US' | 'zh-Hans' | 'zh-Hant-HK' | 'zh-Hant-TW' | 'ja' | 'ko' | 'es' | 'fr' | 'ar'
 export type PartId = 'start' | 'kernel' | 'patterns' | 'reference'
 
 export interface LocaleConfig {
   code: LocaleCode
   htmlLang: string
+  dir: 'ltr' | 'rtl'
   label: string
   urlPrefix: string
   ui: {
@@ -30,6 +31,7 @@ export const LOCALES: readonly LocaleConfig[] = [
   {
     code: 'en-US',
     htmlLang: 'en-US',
+    dir: 'ltr',
     label: 'English (US)',
     urlPrefix: '/',
     ui: {
@@ -56,6 +58,7 @@ export const LOCALES: readonly LocaleConfig[] = [
   {
     code: 'zh-Hans',
     htmlLang: 'zh-Hans',
+    dir: 'ltr',
     label: '简体中文',
     urlPrefix: '/zh-hans/',
     ui: {
@@ -82,6 +85,7 @@ export const LOCALES: readonly LocaleConfig[] = [
   {
     code: 'zh-Hant-HK',
     htmlLang: 'zh-Hant-HK',
+    dir: 'ltr',
     label: '繁體中文（香港）',
     urlPrefix: '/zh-hant-hk/',
     ui: {
@@ -108,6 +112,7 @@ export const LOCALES: readonly LocaleConfig[] = [
   {
     code: 'zh-Hant-TW',
     htmlLang: 'zh-Hant-TW',
+    dir: 'ltr',
     label: '繁體中文（台灣）',
     urlPrefix: '/zh-hant-tw/',
     ui: {
@@ -134,6 +139,7 @@ export const LOCALES: readonly LocaleConfig[] = [
   {
     code: 'ja',
     htmlLang: 'ja',
+    dir: 'ltr',
     label: '日本語',
     urlPrefix: '/ja/',
     ui: {
@@ -160,6 +166,7 @@ export const LOCALES: readonly LocaleConfig[] = [
   {
     code: 'ko',
     htmlLang: 'ko',
+    dir: 'ltr',
     label: '한국어',
     urlPrefix: '/ko/',
     ui: {
@@ -186,6 +193,7 @@ export const LOCALES: readonly LocaleConfig[] = [
   {
     code: 'es',
     htmlLang: 'es',
+    dir: 'ltr',
     label: 'Español',
     urlPrefix: '/es/',
     ui: {
@@ -212,6 +220,7 @@ export const LOCALES: readonly LocaleConfig[] = [
   {
     code: 'fr',
     htmlLang: 'fr',
+    dir: 'ltr',
     label: 'Français',
     urlPrefix: '/fr/',
     ui: {
@@ -232,6 +241,33 @@ export const LOCALES: readonly LocaleConfig[] = [
         kernel: 'Noyau de base',
         patterns: 'Patterns d’architecture',
         reference: 'Référence',
+      },
+    },
+  },
+  {
+    code: 'ar',
+    htmlLang: 'ar',
+    dir: 'rtl',
+    label: 'العربية',
+    urlPrefix: '/ar/',
+    ui: {
+      contents: 'المحتويات',
+      search: 'بحث',
+      searchPlaceholder: 'ابحث عن موضوع أو API أو رسالة خطأ…',
+      noResults: 'ما لقينا نتيجة مطابقة، جرّب كلمة ثانية.',
+      copy: 'نسخ',
+      copied: 'تم النسخ',
+      prev: 'السابق',
+      next: 'التالي',
+      page: 'صفحة',
+      language: 'اللغة',
+      lightPaper: 'ورق فاتح',
+      darkCard: 'ورق داكن',
+      parts: {
+        start: 'البداية السريعة',
+        kernel: 'النواة الأساسية',
+        patterns: 'أنماط وهندسة عملية',
+        reference: 'المرجع السريع',
       },
     },
   },

@@ -80,6 +80,12 @@ html[lang="ko"] {
   --prose-lh: 1.88;
 }
 
+html[lang="ar"] {
+  --font-display: "IBM Plex Sans Arabic", "Noto Sans Arabic", "Geeza Pro", "Segoe UI", Tahoma, sans-serif;
+  --font-sans: "IBM Plex Sans Arabic", "Noto Sans Arabic", "Geeza Pro", "Segoe UI", Tahoma, sans-serif;
+  --prose-lh: 1.92;
+}
+
 *,
 *::before,
 *::after {
@@ -211,7 +217,7 @@ body::after {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  padding-right: 4px;
+  padding-inline-end: 4px;
 }
 
 .rail-group {
@@ -247,8 +253,9 @@ body::after {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 4px 0 4px 10px;
-  border-left: 2px solid transparent;
+  padding-block: 4px;
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid transparent;
   color: var(--ink-body);
   text-decoration: none;
   font-size: 0.875rem;
@@ -263,7 +270,7 @@ body::after {
 }
 
 .rail-link.is-current {
-  border-left-color: var(--accent);
+  border-inline-start-color: var(--accent);
   color: var(--ink-primary);
   font-weight: 600;
 }
@@ -358,7 +365,7 @@ body::after {
 .lang-list {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: 0;
+  inset-inline-start: 0;
   z-index: 60;
   min-width: 196px;
   margin: 0;
@@ -494,7 +501,7 @@ body::after {
 .doc-section ul,
 .doc-section ol {
   margin: 0 0 18px;
-  padding-left: 1.4rem;
+  padding-inline-start: 1.4rem;
 }
 
 .doc-section li {
@@ -515,10 +522,17 @@ body::after {
   font-size: 0.84em;
 }
 
+.doc-section code,
+.callout code {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
 .doc-section blockquote {
   margin: 18px 0;
-  padding: 4px 0 4px 16px;
-  border-left: 2px solid var(--rule-strong);
+  padding-block: 4px;
+  padding-inline-start: 16px;
+  border-inline-start: 2px solid var(--rule-strong);
   color: var(--ink-muted);
 }
 
@@ -540,7 +554,7 @@ body::after {
 
 .doc-section th {
   padding: 8px 10px;
-  text-align: left;
+  text-align: start;
   border-bottom: 1.5px solid var(--rule-strong);
   color: var(--ink-primary);
   font-family: var(--font-mono);
@@ -559,18 +573,22 @@ body::after {
 .callout {
   margin: 20px 0;
   padding: 11px 16px;
-  border-left: 3px solid var(--note-border);
+  border-inline-start: 3px solid var(--note-border);
   background: var(--note-bg);
   border-radius: 0 4px 4px 0;
 }
 
+html[dir="rtl"] .callout {
+  border-radius: 4px 0 0 4px;
+}
+
 .callout-tip {
-  border-left-color: var(--tip-border);
+  border-inline-start-color: var(--tip-border);
   background: var(--tip-bg);
 }
 
 .callout-caution {
-  border-left-color: var(--caution-border);
+  border-inline-start-color: var(--caution-border);
   background: var(--caution-bg);
 }
 
@@ -598,6 +616,8 @@ body::after {
   border-radius: 5px;
   background: var(--vellum);
   overflow: hidden;
+  direction: ltr;
+  text-align: left;
 }
 
 .callout-body .paper-code {
@@ -759,8 +779,8 @@ body::after {
 }
 
 .chapter-pager-next {
-  margin-left: auto;
-  text-align: right;
+  margin-inline-start: auto;
+  text-align: end;
 }
 
 .chapter-pager-spacer {
@@ -1001,6 +1021,17 @@ body::after {
       visibility 0s;
   }
 
+  html[dir="rtl"] .doc-rail {
+    inset: 0 0 0 auto;
+    border-right: 0;
+    border-left: 1px solid var(--rule-strong);
+    transform: translateX(100%);
+  }
+
+  html[dir="rtl"] .doc-rail.is-open {
+    transform: translateX(0);
+  }
+
   .doc-section,
   .doc-section h2,
   .doc-section h3,
@@ -1029,4 +1060,13 @@ body::after {
   .chapter-pager {
     flex-wrap: wrap;
   }
+}
+
+html[dir="rtl"] .rail-brand strong,
+html[dir="rtl"] .rail-group-title,
+html[dir="rtl"] .chapter-eyebrow,
+html[dir="rtl"] .chapter-title,
+html[dir="rtl"] .doc-section h2,
+html[dir="rtl"] .mobile-brand {
+  letter-spacing: 0;
 }

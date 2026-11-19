@@ -192,7 +192,7 @@ describe('buildDocsSite', () => {
     }
   })
 
-  test('resolveActiveLocales and runDocsBuild detect present locale folders and require en-US or all 8 in strict mode', async () => {
+  test('resolveActiveLocales and runDocsBuild detect present locale folders and require en-US or all 9 in strict mode', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dn-docs-cli-'))
     try {
       await mkdir(join(root, 'docs/assets'), { recursive: true })
@@ -623,7 +623,7 @@ describe('buildDocsSite', () => {
     mockDialog.close()
   })
 
-  test('builds all 8 real locales (112 pages), 8 search indices, llms.txt, and verified cross-locale links end-to-end', async () => {
+  test('builds all 9 real locales (126 pages), 9 search indices, llms.txt, and verified cross-locale links end-to-end', async () => {
     const repoRoot = join(import.meta.dir, '../..')
     const outDir = await mkdtemp(join(tmpdir(), 'dn-site-e2e-'))
     try {
@@ -636,14 +636,23 @@ describe('buildDocsSite', () => {
       })
 
       const expectedLocales = LOCALES.map(loc => loc.code)
+      expect(expectedLocales).toHaveLength(9)
       expect(res.localesBuilt).toEqual(expectedLocales)
-      expect(res.pagesWritten).toBe(112)
+      expect(res.pagesWritten).toBe(126)
 
       for (const locale of expectedLocales) {
         const rawIdx = await readFile(join(outDir, `search-index.${locale}.json`), 'utf8')
         const parsed = JSON.parse(rawIdx) as Array<{ title: string; href: string }>
         expect(parsed.length).toBeGreaterThanOrEqual(14)
+        if (locale === 'ar') {
+          expect(parsed.some(entry => /[\u0600-\u06FF]/.test(entry.title))).toBe(true)
+        }
       }
+
+      const arIndexHtml = await readFile(join(outDir, 'ar/index.html'), 'utf8')
+      expect(arIndexHtml).toContain('<html lang="ar" dir="rtl" data-locale="ar"')
+      expect(arIndexHtml).toContain('<div class="paper-code" dir="ltr">')
+      expect(arIndexHtml).toContain('IBM+Plex+Sans+Arabic')
 
       const llmsOut = await readFile(join(outDir, 'llms.txt'), 'utf8')
       expect(llmsOut).toContain('https://dn-ioc.lyz.cloud/')
@@ -664,7 +673,7 @@ describe('buildDocsSite', () => {
       }
 
       const htmlFiles = await collectHtmlFiles(outDir)
-      expect(htmlFiles).toHaveLength(112)
+      expect(htmlFiles).toHaveLength(126)
 
       const localeLinkRe = /<a\b[^>]*\bdata-locale-link="([^"]+)"[^>]*\bhref="([^"]+)"[^>]*>/gi
       for (const htmlFile of htmlFiles) {
@@ -677,7 +686,7 @@ describe('buildDocsSite', () => {
         expect(html).not.toContain('mobile-deck')
 
         const matches = Array.from(html.matchAll(localeLinkRe))
-        expect(matches).toHaveLength(8)
+        expect(matches).toHaveLength(9)
         for (const m of matches) {
           const href = m[2]!
           const relRoute = href.replace(/^\/+|\/+$/g, '')
@@ -689,4 +698,236 @@ describe('buildDocsSite', () => {
       await rm(outDir, { recursive: true, force: true })
     }
   }, 20_000)
+
+  test('includes Arabic typography, RTL logical properties, BiDi code isolation, and mirrored mobile drawer CSS', async () => {
+    const repoRoot = join(import.meta.dir, '../..')
+    const css = await readFile(join(repoRoot, 'docs/assets/notebook.css'), 'utf8')
+
+    const extractBlocks = (selector: string): string[] => {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const re = new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]*)\\}`, 'g')
+      return Array.from(css.matchAll(re), m => m[1] ?? '')
+    }
+
+    const arHtmlCss = extractBlocks('html[lang="ar"]').join('\n')
+    expect(arHtmlCss).toContain('IBM Plex Sans Arabic')
+    expect(arHtmlCss).toMatch(/--prose-lh:\s*1\.92/)
+
+    expect(css).toMatch(/html\[dir="rtl"\]\s+\.rail-brand strong[\s\S]*?letter-spacing:\s*0/)
+    expect(css).toMatch(/html\[dir="rtl"\]\s+\.rail-group-title/)
+    expect(css).toMatch(/html\[dir="rtl"\]\s+\.chapter-eyebrow/)
+    expect(css).toMatch(/html\[dir="rtl"\]\s+\.chapter-title/)
+    expect(css).toMatch(/html\[dir="rtl"\]\s+\.doc-section h2/)
+    expect(css).toMatch(/html\[dir="rtl"\]\s+\.mobile-brand/)
+
+    const rtlCalloutCss = extractBlocks('html[dir="rtl"] .callout').join('\n')
+    expect(rtlCalloutCss).toMatch(/border-radius:\s*4px 0 0 4px/)
+
+    const rtlDrawerCss = extractBlocks('html[dir="rtl"] .doc-rail').join('\n')
+    expect(rtlDrawerCss).toMatch(/inset:\s*0 0 0 auto/)
+    expect(rtlDrawerCss).toMatch(/transform:\s*translateX\(100%\)/)
+    expect(extractBlocks('html[dir="rtl"] .doc-rail.is-open').join('\n')).toMatch(/transform:\s*translateX\(0\)/)
+
+    const paperCodeCss = extractBlocks('.paper-code').join('\n')
+    expect(paperCodeCss).toMatch(/direction:\s*ltr/)
+    expect(paperCodeCss).toMatch(/text-align:\s*left/)
+
+    const inlineCodeCss =
+      extractBlocks('.doc-section code,\n.callout code').join('\n') || extractBlocks('.doc-section code, .callout code').join('\n')
+    expect(inlineCodeCss).toMatch(/direction:\s*ltr/)
+    expect(inlineCodeCss).toMatch(/unicode-bidi:\s*isolate/)
+
+    const railLinkCss = extractBlocks('.rail-link').join('\n')
+    expect(railLinkCss).toContain('border-inline-start')
+    expect(railLinkCss).toContain('padding-inline-start')
+
+    const langListCss = extractBlocks('.lang-list').join('\n')
+    expect(langListCss).toMatch(/inset-inline-start:\s*0/)
+  })
+
+  test('normalizes Arabic harakat, Alef, Alef Maqsura, and Ta Marbuta in search and preserves trailing combining marks inside <mark>', async () => {
+    const repoRoot = join(import.meta.dir, '../..')
+    const js = await readFile(join(repoRoot, 'docs/assets/notebook.js'), 'utf8')
+    const noop = () => undefined
+
+    class MockElement {
+      tagName = ''
+      parentElement: MockElement | null = null
+      attrs = new Map<string, string>()
+      classes = new Set<string>()
+      hidden = false
+      innerHTML = ''
+      listeners = new Map<string, ((event: Record<string, unknown>) => void)[]>()
+      classList = {
+        add: (...names: string[]) => {
+          for (const name of names) {
+            this.classes.add(name)
+          }
+        },
+        remove: (...names: string[]) => {
+          for (const name of names) {
+            this.classes.delete(name)
+          }
+        },
+        contains: (name: string) => this.classes.has(name),
+        toggle: (name: string, force?: boolean) => {
+          const shouldAdd = force ?? !this.classes.has(name)
+          if (shouldAdd) {
+            this.classes.add(name)
+          } else {
+            this.classes.delete(name)
+          }
+          return shouldAdd
+        },
+      }
+      addEventListener(type: string, handler: (event: Record<string, unknown>) => void) {
+        const list = this.listeners.get(type) ?? []
+        list.push(handler)
+        this.listeners.set(type, list)
+      }
+      getAttribute(name: string) {
+        return this.attrs.get(name) ?? null
+      }
+      setAttribute(name: string, value: string) {
+        this.attrs.set(name, value)
+      }
+      hasAttribute(name: string) {
+        return this.attrs.has(name)
+      }
+      removeAttribute(name: string) {
+        this.attrs.delete(name)
+      }
+      contains(target: unknown) {
+        let cur = target
+        while (cur instanceof MockElement) {
+          if (cur === this) {
+            return true
+          }
+          cur = cur.parentElement
+        }
+        return false
+      }
+      closest() {
+        return null
+      }
+    }
+    class MockHTMLElement extends MockElement {
+      isContentEditable = false
+      focus = noop
+    }
+    class MockHTMLInputElement extends MockHTMLElement {
+      value = ''
+      select = noop
+    }
+    class MockHTMLTextAreaElement extends MockHTMLElement {}
+    class MockHTMLSelectElement extends MockHTMLElement {}
+    class MockHTMLDialogElement extends MockHTMLElement {
+      open = false
+      showModal() {
+        this.open = true
+      }
+      close() {
+        this.open = false
+      }
+    }
+
+    const mockSearchInput = new MockHTMLInputElement()
+    const mockSearchResults = new MockHTMLElement()
+    const mockDialog = new MockHTMLDialogElement()
+    mockDialog.setAttribute('data-search-url', '/search-index.ar.json')
+    mockDialog.setAttribute('data-no-results', 'ما لقينا نتيجة مطابقة، جرّب كلمة ثانية.')
+
+    const mockDoc = {
+      documentElement: new MockHTMLElement(),
+      activeElement: mockSearchInput,
+      querySelectorAll: () => [],
+      querySelector: () => null,
+      getElementById: (id: string) => {
+        if (id === 'search-input') {
+          return mockSearchInput
+        }
+        if (id === 'search-results') {
+          return mockSearchResults
+        }
+        if (id === 'search-modal') {
+          return mockDialog
+        }
+        return null
+      },
+      addEventListener: noop,
+    }
+    const mockWin = {
+      location: { hash: '', href: '/' },
+      addEventListener: noop,
+      setTimeout,
+      clearTimeout,
+    }
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => [
+        {
+          title: 'إنشاء وإدارة التبعيات',
+          chapterTitle: 'البداية',
+          href: '/ar/quickstart/',
+          excerpt: 'إِنْشَاءٌ بسيط بدون تعقيد',
+        },
+        {
+          title: 'مُوسَى والتـطـبيق العملي',
+          chapterTitle: 'أمثلة',
+          href: '/ar/examples/',
+          excerpt: 'شرح عملي لحقن التبعيات',
+        },
+      ],
+    })
+
+    const runner = new Function(
+      'window',
+      'document',
+      'fetch',
+      'Element',
+      'HTMLElement',
+      'HTMLInputElement',
+      'HTMLTextAreaElement',
+      'HTMLSelectElement',
+      'HTMLDialogElement',
+      js,
+    )
+    runner(
+      mockWin,
+      mockDoc,
+      mockFetch,
+      MockElement,
+      MockHTMLElement,
+      MockHTMLInputElement,
+      MockHTMLTextAreaElement,
+      MockHTMLSelectElement,
+      MockHTMLDialogElement,
+    )
+
+    const inputHandlers = mockSearchInput.listeners.get('input') ?? []
+    expect(inputHandlers).toHaveLength(1)
+    const triggerSearch = async (value: string) => {
+      mockSearchInput.value = value
+      inputHandlers[0]!({})
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+
+    await triggerSearch('انشاء اداره')
+    expect(mockSearchResults.innerHTML).toContain('href="/ar/quickstart/"')
+    expect(mockSearchResults.innerHTML).toContain('<mark class="search-hit">إنشاء</mark>')
+    expect(mockSearchResults.innerHTML).toContain('<mark class="search-hit">إدارة</mark>')
+    expect(mockSearchResults.innerHTML).toContain('<mark class="search-hit">إِنْشَاءٌ</mark>')
+    expect(mockSearchResults.innerHTML).not.toContain('<mark class="search-hit">إِنْشَاء</mark>ٌ')
+
+    await triggerSearch('انشاء')
+    expect(mockSearchResults.innerHTML).toContain('<mark class="search-hit">إِنْشَاءٌ</mark>')
+
+    await triggerSearch('موسي تطبيق')
+    expect(mockSearchResults.innerHTML).toContain('href="/ar/examples/"')
+    expect(mockSearchResults.innerHTML).toContain('<mark class="search-hit">مُوسَى</mark>')
+    expect(mockSearchResults.innerHTML).toContain('<mark class="search-hit">تـطـبيق</mark>')
+
+    await triggerSearch('كلمةغيرموجودة')
+    expect(mockSearchResults.innerHTML).toContain('<p class="search-empty">ما لقينا نتيجة مطابقة، جرّب كلمة ثانية.</p>')
+  })
 })
