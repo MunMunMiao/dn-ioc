@@ -596,7 +596,7 @@ ${hreflangLinks}
         </details>
         <div class="rail-foot-links">
           <button type="button" class="rail-tool theme-toggle" data-toggle-theme data-light-label="${escapeAttr(ui.lightPaper)}" data-dark-label="${escapeAttr(ui.darkCard)}" aria-label="${escapeAttr(ui.lightPaper)} / ${escapeAttr(ui.darkCard)}">☀ / ☾</button>
-          <a class="rail-tool" href="https://github.com/MunMunMiao/dn-ioc" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+          <a class="rail-tool" dir="ltr" href="https://github.com/MunMunMiao/dn-ioc" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
           <a class="rail-tool" href="/llms.txt">llms.txt</a>
         </div>
       </div>

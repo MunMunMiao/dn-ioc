@@ -85,7 +85,7 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 1. **أضف النموذج (`models/post.ts`):** صدّر `interface Post { id: string; authorId: string; title: string }`.
 2. **أضف المستودع (`repositories/post-repository.ts`):** صدّر `postRepositoryRef = provide(function PostRepository({ inject }) { ... })` ليحقن `databaseRef` الموجود أصلاً.
 3. **أضف الخدمة (`services/post-service.ts`):** صدّر `postServiceRef = provide(function PostService({ inject }) { ... })` ليحقن `postRepositoryRef` (و`userRepositoryRef` لو احتاج يتأكّد من وجود الكاتب).
-4. **اربط وحدة التحكم (`controllers/post-controller.ts` → `main.ts`):** صدّر `postControllerRef` واحقن `inject(postControllerRef)` داخل `main.ts` وقت ربط المسارات.
+4. **اربط وحدة التحكم (`controllers/post-controller.ts` ← `main.ts`):** صدّر `postControllerRef` واحقن `inject(postControllerRef)` داخل `main.ts` وقت ربط المسارات.
 
 لاحظ الشيء اللي *ما اضطرّيت* تلمسه: ما في قائمة DI مركزية تعدّلها لكل مستودع وخدمة، و`databaseRef` أصلاً مشتركة في الجذر.
 

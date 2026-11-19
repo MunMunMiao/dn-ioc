@@ -653,6 +653,9 @@ describe('buildDocsSite', () => {
       expect(arIndexHtml).toContain('<html lang="ar" dir="rtl" data-locale="ar"')
       expect(arIndexHtml).toContain('<div class="paper-code" dir="ltr">')
       expect(arIndexHtml).toContain('IBM+Plex+Sans+Arabic')
+      expect(arIndexHtml).toContain(
+        '<a class="rail-tool" dir="ltr" href="https://github.com/MunMunMiao/dn-ioc" target="_blank" rel="noopener noreferrer">GitHub ↗</a>',
+      )
 
       const llmsOut = await readFile(join(outDir, 'llms.txt'), 'utf8')
       expect(llmsOut).toContain('https://dn-ioc.lyz.cloud/')
@@ -711,14 +714,17 @@ describe('buildDocsSite', () => {
 
     const arHtmlCss = extractBlocks('html[lang="ar"]').join('\n')
     expect(arHtmlCss).toContain('IBM Plex Sans Arabic')
+    expect(arHtmlCss).toMatch(/--font-mono:[^;]*IBM Plex Sans Arabic/)
     expect(arHtmlCss).toMatch(/--prose-lh:\s*1\.92/)
 
-    expect(css).toMatch(/html\[dir="rtl"\]\s+\.rail-brand strong[\s\S]*?letter-spacing:\s*0/)
-    expect(css).toMatch(/html\[dir="rtl"\]\s+\.rail-group-title/)
-    expect(css).toMatch(/html\[dir="rtl"\]\s+\.chapter-eyebrow/)
-    expect(css).toMatch(/html\[dir="rtl"\]\s+\.chapter-title/)
-    expect(css).toMatch(/html\[dir="rtl"\]\s+\.doc-section h2/)
-    expect(css).toMatch(/html\[dir="rtl"\]\s+\.mobile-brand/)
+    const rtlLetterSpacingMatch = css.match(
+      /html\[dir="rtl"\]\s+\.rail-brand strong,\s*html\[dir="rtl"\]\s+\.rail-group-title,\s*html\[dir="rtl"\]\s+\.chapter-eyebrow,\s*html\[dir="rtl"\]\s+\.chapter-title,\s*html\[dir="rtl"\]\s+\.doc-section h2,\s*html\[dir="rtl"\]\s+\.mobile-brand\s*\{([^}]*)\}/,
+    )
+    expect(rtlLetterSpacingMatch?.[1]).toMatch(/letter-spacing:\s*0/)
+
+    const rtlSearchHitCss = extractBlocks('html[dir="rtl"] .search-hit').join('\n')
+    expect(rtlSearchHitCss).toMatch(/padding:\s*0/)
+    expect(rtlSearchHitCss).toMatch(/font-weight:\s*inherit/)
 
     const rtlCalloutCss = extractBlocks('html[dir="rtl"] .callout').join('\n')
     expect(rtlCalloutCss).toMatch(/border-radius:\s*4px 0 0 4px/)
