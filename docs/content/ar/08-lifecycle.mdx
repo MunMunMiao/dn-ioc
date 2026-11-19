@@ -1,0 +1,76 @@
+---
+title: "دورة الحياة والتنظيف"
+slug: "lifecycle"
+part: kernel
+order: 8
+summary: "حرّر المقابس ومجمّعات الاتصال والمؤقّتات بنظافة عبر خطافات onDispose() بترتيب LIFO، والتراجع التلقائي عند فشل الإقلاع، و await using، وإشارات الإيقاف حسب بيئة التشغيل."
+---
+import disposeAndUsingCode from '../../examples/lifecycle/dispose-and-using.ts' with { type: 'text' }
+import nodeShutdownCode from '../../examples/lifecycle/node-server-shutdown.ts' with { type: 'text' }
+import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' with { type: 'text' }
+
+دالة `app.start()` الناجحة ما توقّف التطبيق من تلقاء نفسها أبداً — أنت اللي تقرّر إذا كنت تحتاج `app.stop()` أصلاً. سكربت CLI سريع أو مخطط متصفح يموت بمجرد إغلاق التبويب لا يحتاج `stop()`، لأن نظام التشغيل أو المتصفح يسترد كل شيء على أي حال. الجأ إلى `onDispose()` و`app.stop()` كلّما كان عندك **شيء يعيش أطول من المخطط**: خادم شغّال لوقت طويل ماسك منافذ أو مجمّعات قواعد بيانات، أو حالة اختبار معزولة، أو مكوّن واجهة ينفصل بينما الصفحة لا تزال مفتوحة.
+
+<Code title="dispose.ts" code={disposeAndUsingCode} region="dispose" />
+
+## إغلاق الحقن والتنظيف بترتيب LIFO
+
+استدعاء `app.stop()` ينفّذ خطوتين بترتيب صارم:
+
+1. **إغلاق `inject()` تزامنياً في كامل التطبيق:** قبل ما يشتغل حتى microtask واحد، كل مقبض `inject()` في التطبيق ينقفل للأبد. أي استدعاء لاحق لدالة `inject()` — حتى لنسخة مخزّنة أصلاً في الكاش أو داخل شجرة فرعية خاصة مثل `service.read()` في المثال أعلاه — يرمي فوراً خطأ `Cannot inject after the app has stopped`.
+2. **تشغيل خطافات `onDispose` من الأحدث للأقدم (LIFO):** الخطافات تشتغل واحداً تلو الآخر بعكس ترتيب تسجيلها. لو سجّل مجمّع قاعدة البيانات أولاً وسجّل خادم HTTP ثانياً، فـ `stop()` تغلق خادم HTTP أولاً قبل ما تفرّغ مجمّع قاعدة البيانات.
+
+ولأن `inject()` تكون مقفلة أصلاً وقت تشغيل خطافات التنظيف، **احرص دائماً تخزّن التبعيات في متغيّرات محلية قبل ما تسجّل `onDispose()`** — تماماً مثل `const store = inject(storeRef)` في `dispose.ts`.
+
+الاستدعاءات المتكررة أو المتزامنة لدالة `app.stop()` آمنة وقابلة للتكرار (idempotent): ترجّع نفس الـ `Promise` بالضبط وتشغّل كل خطاف مرة واحدة فقط. وبمجرد ما يتوقّف التطبيق، أي محاولة جديدة لاستدعاء `app.start()` ترفض بخطأ `Cannot start an app that has been stopped`.
+
+## التنظيف التلقائي عبر await using
+
+كل كائن `App` ينفّذ واجهة `AsyncDisposable` — يعرّف `[Symbol.asyncDispose]` لما يكون الرمز الأصلي `Symbol.asyncDispose` موجوداً في بيئة التشغيل، ويرجع إلى `[Symbol.for('Symbol.asyncDispose')]` كخيار بديل في البيئات الأقدم بدون الرمز الأصلي حتى يظل الكود المحوّل من TypeScript 5.2+ لميزة `await using` يلقاه ويشتغل بسلاسة.
+
+في الاختبارات، أو مهام CLI، أو المهام المرتبطة بنطاق طلب مثل `runScopedTask()`، كتابة `await using app = bootstrapApp(...)` تضمن انتظار `app.stop()` تلقائياً أول ما يخرج التنفيذ من البلوك — حتى لو رمى الكود داخل البلوك خطأً.
+
+<Code title="await-using.ts" code={disposeAndUsingCode} region="awaitUsing" />
+
+## ربط الإغلاق عبر بيئات التشغيل
+
+إشارات الإيقاف ما لها معيار موحّد بين بيئات تشغيل JavaScript، ولهذا النواة ما تركّب أبداً مستمعين عامين مخفيين. اربط `app.stop()` بأي مُطلق لدورة الحياة يناسب منصتك:
+
+| بيئة التشغيل | المُطلق | التنظيف غير المتزامن |
+| --- | --- | --- |
+| Node.js، Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | يُنتظر بـ `await`، إذا أبقى المعالج العملية حيّة |
+| Deno | `Deno.addSignalListener('SIGINT', handler)` | يُنتظر بـ `await` |
+| تطبيق فرعي في المتصفح | استدعاء الإلغاء الخاص بك (`useEffect` في React، `onScopeDispose` في Vue، مغادرة المسار) | يُنتظر بـ `await` |
+| صفحة متصفح | `addEventListener('pagehide', handler)` | غير مضمون — خلّ الخطافات متزامنة |
+| Web Worker | رسالة من المضيف قبل `worker.terminate()` | فقط إذا انتظر المضيف قبل الإنهاء |
+| Serverless، edge | نهاية الطلب أو الاستدعاء الذي ربطت به التطبيق | يعتمد على واجهة keep-alive في المنصة |
+
+وهذه بعض التفاصيل العملية التي تستاهل تنتبه لها في كل بيئة:
+
+- **Node.js وBun (`node-server.ts`):** سجّل مستمعي `SIGINT` و`SIGTERM` *قبل* `await app.start()`. بما أن `bootstrapApp()` ما تشغّل ولا مزوّد بعد، مقبض `app` يكون موجوداً أصلاً قبل ما ينفتح المنفذ `3000`. وعلى Deno، نفس المخطط بالضبط بس تبدّل المستمع إلى `Deno.addSignalListener('SIGINT', () => void app.stop())`.
+- **مكوّنات المتصفح (`browser-unmount.ts`):** كلّما أمكن، اربط مخططات المتصفح بمكوّن أو مسار تفصله أنت بنفسك (`await ready; await app.stop()`)، حيث يتم انتظار خطافات التنظيف غير المتزامنة بشكل سليم بينما الصفحة لا تزال مفتوحة.
+- **إغلاق تبويب المتصفح (`browser-pagehide.ts`):** فضّل `pagehide` على `beforeunload` (لأن `beforeunload` تتعطّل أو يتجاوزها كاش الرجوع للأمام والخلف bfcache). وحتى مع `pagehide`، المتصفحات تقفل الصفحة غالباً قبل ما يكتمل أي `Promise` غير متزامن — فخلّ خطافات إغلاق الصفحة متزامنة تماماً، مثل `navigator.sendBeacon()`.
+
+<CodeTabs
+  files={[
+    { title: 'node-server.ts', code: nodeShutdownCode },
+    { title: 'browser-unmount.ts', code: browserUnmountCode, region: 'unmount' },
+    { title: 'browser-pagehide.ts', code: browserUnmountCode, region: 'pagehide' },
+  ]}
+/>
+
+## قواعد الخطافات، التراجع عند فشل الإقلاع، والحدود
+
+أبقِ هذه الثوابت في بالك وأنت تكتب خطافات `onDispose`:
+
+- **نافذة التسجيل:** ما تقدر تستدعي `onDispose()` إلا بينما دالة الإنشاء الخاصة بها شغّالة فعلياً، وقبل ما تُستدعى `stop()`. دالة الإنشاء المتزامنة تقفل هذه النافذة لحظة ما ترجع أو ترمي خطأ؛ ودالة `async` تقفلها لحظة ما يستقر الـ `Promise` الراجع منها. استدعاء `onDispose()` بعد ما تخلص دالة الإنشاء يرمي `onDispose can only be called while the factory is running`؛ واستدعاؤها بعد بدء الإيقاف يرمي `Cannot register cleanup after the app has stopped`.
+- **أرجع `void` أو `Promise<void>`:** خطاف التنظيف لازم يرجّع `void` أو `Promise<void>` — إرجاع أي قيمة ثانية (أو `Promise` يحمل قيمة غير `void`) يعطي خطأ ترجمة في TypeScript، حتى ما تتسرّب قيم إرجاع بالغلط. غلّف دوال الإغلاق التي ترجع قيمة (مثل `http.Server.close()` في Node التي ترجع `Server`) بأقواس معقوفة: `onDispose(() => { server.close() })`.
+- **لا تستدعِ `await app.stop()` أبداً داخل خطاف:** خطاف التنظيف هو نفسه جزء من اكتمال `stop()` — انتظار `app.stop()` داخل `onDispose()` يسبّب جموداً (deadlock) للأبد.
+- **أخطاء الخطافات و`AggregateError`:** لو خطاف واحد رمى أو رفض، تواصل `stop()` تنفيذ باقي الخطافات كلها. الفشل الواحد يُعاد رميه كما هو بدون تغيير؛ أما الأعطال المتعددة فتتجمّع داخل `AggregateError` (`App stop failed`).
+- **التراجع التلقائي عند فشل `start()`:** لو فشلت `app.start()` في منتصف الإقلاع، تستدعي `stop()` تلقائياً لتنظيف الموارد المسجّلة لحد تلك اللحظة قبل ما ترفض. الخطأ الواحد يُعاد رميه كما هو؛ ولو فشل الإقلاع والتنظيف معاً، ترفض `start()` بكائن `AggregateError` (`App startup and stop failed`). وبمجرد ما تنجح `start()`، أي أخطاء تشغيل لاحقة في تطبيقك **لا** توقّف المخطط تلقائياً.
+
+<Callout kind="caution" title="ما لا تفعله دالة stop()">
+
+دالة `stop()` تقفل استدعاءات `inject()` المستقبلية وتشغّل خطافات `onDispose` المسجّلة — ولا شيء أكثر. هي **لا** تنتظر دوال الإنشاء المفصولة غير المكتملة، ولا تلغي عمليات I/O الجارية وراءها، ولا تسحب صلاحية كائنات JavaScript الموجودة أصلاً في متغيّراتك. إيقاف استقبال الطلبات الجديدة، وتفعيل `AbortController.abort()`، وترتيب التفريغ التدريجي تبقى كلّها بيد كود تطبيقك.
+
+</Callout>

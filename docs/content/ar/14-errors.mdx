@@ -1,0 +1,67 @@
+---
+title: "الأخطاء والتشخيص"
+slug: "errors"
+part: reference
+order: 14
+summary: "ابحث عن كل رسائل Error و AggregateError الحرفية من dn-ioc في وقت التشغيل، وتحقّق من ترتيب الأولوية، وانتقل للحل على طول."
+---
+import disposeCode from '../../examples/lifecycle/dispose-and-using.ts' with { type: 'text' }
+import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { type: 'text' }
+
+لما ينحرف الربط عن مساره، تفشل `dn-ioc` بسرعة وبرسائل `Error` واضحة ومتوقعة بدل مكدّسات أخطاء داخلية غامضة أو قيم `undefined` صامتة. كل رسالة حرفية في وقت التشغيل تقدر النواة تنتجها مفهرسة تحت، مع ترتيب التقييم، وقواعد الانتشار، والحلول المباشرة.
+
+<Code title="unbound-token.ts" code={tokenBindingCode} region="unbound" />
+
+## كتالوج رسائل الأخطاء الحرفية
+
+ترمي `dn-ioc` ثماني رسائل `Error` قياسية بالإضافة إلى غلافي `AggregateError` لما تتصادم عدة أعطال أثناء التنظيف:
+
+| نص `Error.message` الحرفي | من يرميه / يرفضه | السبب |
+| --- | --- | --- |
+| `No provider for token: Name` | `inject()` | تم حقن `token('Name')`، لكن لا النطاق النشط ولا أي نطاق أب ربطه عبر `provideFor()`. تطبع `<anonymous>` لو التوكن بدون وصف. |
+| `Circular dependency detected: A -> B -> A` | `inject()` | مزوّدات متزامنة أو غير متزامنة معلّقة تعتمد على بعضها في حلقة. يبدأ المسار من المفتاح الذي أقفل الحلقة (`A -> A` عند الحقن الذاتي) وتطبع `<anonymous>` للمفاتيح غير المسمّاة. |
+| `Invalid inject key received` | `inject()`، `provideFor()` | المفتاح ليس `Token` أو `Ref` حقيقياً — مثلاً `null`، أو قيمة أولية، أو `ProviderDef`، أو `ProviderBundle`، أو نسخة سطحية (`{ ...myToken }`). |
+| `Invalid provider input received` | `bootstrapApp()` (الجذر) أو `inject()` (المتداخل) | عنصر داخل `providers` أو `bundleProviders()` (عند تثبيته) ليس `Ref` أو `ProviderDef` أو `ProviderBundle` أو مصفوفة منها (مثلاً تمرير `Token` مجرد بدون `provideFor()`). |
+| `Cannot inject after the app has stopped` | `inject()` | تم استدعاء `inject()` أثناء `app.stop()` أو بعدها — بما فيها داخل خطاف `onDispose`، أو استكمال `async` مفصول، أو لمفتاح مخزّن في الكاش أصلاً. |
+| `onDispose can only be called while the factory is running` | `onDispose()` | تم استدعاء `onDispose()` بعد ما رجعت دالة الإنشاء تزامنياً، أو رمت خطأً، أو استقر الـ `Promise` الراجع منها (مثلاً داخل `setTimeout`، أو معالج طلبات، أو خطاف تنظيف آخر). |
+| `Cannot register cleanup after the app has stopped` | `onDispose()` | كانت دالة إنشاء `async` لا تزال معلّقة عند `await` لما اشتغلت `app.stop()`، ثم صحت واستدعت `onDispose()`. |
+| `Cannot start an app that has been stopped` | `app.start()` (ترفض) | تم استدعاء `app.start()` بعد ما بدأت `app.stop()` أو اكتملت أصلاً. |
+| `App stop failed` (`AggregateError`) | `app.stop()` (ترفض) | خطافا `onDispose` أو أكثر رموا أو رفضوا أثناء التنظيف (`error.errors` تحمل كل فشل بترتيب التنفيذ LIFO). |
+| `App startup and stop failed` (`AggregateError`) | `app.start()` (ترفض) | فشلت `app.start()` *وفشل معها أيضاً* التراجع التلقائي عبر `stop()` (`error.errors` تحمل `[startupError, cleanupError]`). |
+
+## فروق الأولوية والتوقيت
+
+في بعض ضمانات الترتيب الدقيقة داخل النواة تستحق تخليها ببالك وقت تتبّع الحالات الحدية:
+
+1. **فحص التوقّف يشتغل أولاً في `inject()`:** يتم فحص `Cannot inject after the app has stopped` *قبل* التحقق من المفتاح، أو اكتشاف الدوائر، أو البحث في النطاقات، أو قراءة الكاش. حتى حقن نسخة مخزّنة أصلاً في الكاش أو مفتاح غير صالح بعد `app.stop()` يرمي `Cannot inject after the app has stopped`.
+2. **`Invalid provider input received` في الجذر مقابل المتداخل:** مصفوفة `providers` الجذرية الممرّرة إلى `bootstrapApp()` يتم تفريغها والتحقق منها **تزامنياً** قبل ما يوجد مقبض `App` أصلاً. أما `{ providers }` المتداخلة على `provide()` أو `provideFor()` فيتم التحقق منها **عند الطلب** داخل `inject()` في أول مرة تُحلّ فيها تلك الشجرة الفرعية الخاصة.
+3. **فحص نافذة النشاط يسبق فحص التوقّف في `onDispose()`:** بمجرد ما تخلص دالة الإنشاء (ترجع، أو ترمي، أو يستقر الـ `Promise` الخاص بها)، ينطفي مقبض `onDispose` الخاص بها للأبد ويرمي دائماً `onDispose can only be called while the factory is running` — حتى لو توقّف التطبيق بعدها.
+4. **فحص التوقّف يسبق التكرار الآمن (idempotence) في `start()`:** طالما التطبيق لم يبدأ أو لا يزال شغّالاً، تخزّن `app.start()` نفس الـ `Promise` وترجّعه. وبمجرد استدعاء `app.stop()`، تفحص `app.start()` حالة التوقّف *قبل* ذلك الكاش وترفض بالخطأ `Cannot start an app that has been stopped` بدل ما تعيد تشغيل نتيجة قديمة.
+
+<Code title="dispose.ts" code={disposeCode} region="dispose" />
+
+## مصفوفة انتشار الأعطال
+
+أين ينتهي الخطأ — وماذا يصير للنسخ المخزّنة والموارد المفتوحة — يعتمد على المرحلة التي رمته:
+
+| سيناريو الفشل | كيف يظهر | حالة الكاش والتطبيق بعدها |
+| --- | --- | --- |
+| عنصر غير صالح في الجذر `bootstrapApp(..., { providers })` | يرمي تزامنياً من `bootstrapApp()` | لا يتم إنشاء مقبض `App`. |
+| عنصر غير صالح في `{ providers }` متداخلة | يرمي تزامنياً من `inject()` عند أول حل للشجرة الفرعية | الشجرة الفرعية ما تنشأ؛ وينتقل الخطأ للمستدعي (يتراجع عن `start()` لو صار وقت الإقلاع). |
+| دالة إنشاء متزامنة ترمي داخل `inject()` | يرمي تزامنياً من `inject()` | ما يتخزّن شيء في الكاش؛ أي `inject()` لاحق أثناء التشغيل يعيد تشغيل دالة الإنشاء. |
+| دالة إنشاء `async` ترفض داخل `inject()` | الـ `Promise` المشترك الراجع يرفض | ينحذف الإدخال المعلّق من الكاش؛ أي `inject()` لاحق أثناء التشغيل يعيد المحاولة من جديد. |
+| الدالة الجذرية (أو `Promise` منتظر وقت الإقلاع) تفشل | تنفّذ `app.start()` دالة `await app.stop()`، ثم ترفض | يتوقّف التطبيق للأبد؛ الخطأ الواحد يُعاد رميه كما هو، أو `AggregateError` لو فشل التنظيف أيضاً. |
+| `Promise` خلفية غير منتظَرة بـ `await` ترفض | يرفض على ذلك الـ `Promise` مباشرة (`start()` تتجاهله) | يظل التطبيق شغّالاً؛ ويُحذف المزوّد الفاشل من الكاش. |
+| فشل خطاف `onDispose` واحد أثناء `app.stop()` | تواصل الخطافات الباقية عملها؛ ترفض `app.stop()` بذلك الخطأ كما هو | يظل التطبيق متوقّفاً للأبد. |
+| فشل عدة خطافات `onDispose` أثناء `app.stop()` | تشتغل كل الخطافات؛ ترفض `app.stop()` بكائن `AggregateError` (`App stop failed`) | يظل التطبيق متوقّفاً للأبد. |
+
+## وصفات الحل السريع
+
+- **`No provider for token: Name`:** اربط التوكن عبر `provideFor(myToken, ...)` داخل `providers` الجذر أو حزمة `infraProviders`. لو صار هذا في اختبار تكامل، تأكّد أنك ما نسيت `infraProviders`؛ ولو في شجرة فرعية ابنة، راجع [النطاقات والأشجار الفرعية](/ar/scopes/) حتى تتأكّد أن المستهلك غير مملوك لنطاق أب ينقصه الربط.
+- **`Circular dependency detected: A -> B -> A`:** اسحب الحالة المشتركة أو الأداة التي يحتاجها كلٌّ من `A` و`B` إلى مزوّد ثالث `C` (`A -> C` و`B -> C`). ولو ظهر `<anonymous>` في السلسلة، غيّر `provide(({ inject }) => ...)` إلى `provide(function MyService({ inject }) { ... })` حتى تحدّد المتسبّب بالضبط.
+- **`Invalid provider input received`:** افحص مصفوفات `providers: [...]` واستدعاءات `bundleProviders(...)` بحثاً عن `token()` مجردة مُمرّرة مباشرة بدل `provideFor(myToken, factory)`، أو استيراد `undefined` ناتج عن استيراد دائري في ES modules، أو كائن منسوخ.
+- **`Invalid inject key received`:** تأكّد أنك مرّرت `Token` أو `Ref` — وليس `ProviderDef` ناتجاً من `provideFor()` ولا `ProviderBundle` ناتجاً من `bundleProviders()` — إلى `inject()` أو `provideFor()`.
+- **`Cannot inject after the app has stopped`:** انقل `const dep = inject(depRef)` إلى أعلى دالة الإنشاء *قبل* `onDispose(() => { ... })` حتى تغلق خطافات التنظيف على القيم المحلولة بدل ما تستدعي `inject()` أثناء الإغلاق (راجع [دورة الحياة والتنظيف](/ar/lifecycle/)). ولو رمى معالج طلبات هذا الخطأ وقت التفريغ التدريجي، وقّف قبول الطلبات الجديدة قبل استدعاء `app.stop()`.
+- **`onDispose can only be called while the factory is running`:** سجّل التنظيف تزامنياً في أعلى دالة الإنشاء — أو قبل ما ينحل الـ `Promise` الراجع من دالة الإنشاء `async` — ولا تسجّله أبداً داخل callback لمؤقّت، أو مستمع أحداث، أو دالة كسولة.
+- **`Cannot register cleanup after the app has stopped`:** تطبيقك استدعى `stop()` بينما دالة إنشاء `async` كانت لا تزال في منتصف الطريق عبر `await`. سجّل `onDispose()` *قبل* الانتظار متى ما أمكن، أو مرّر `AbortSignal` حتى يُلغى الإعداد الجاري بنظافة أول ما يبدأ الإيقاف (راجع [المزوّدات غير المتزامنة](/ar/async/)).
+- **`Cannot start an app that has been stopped`:** كائن `App` المتوقّف للاستخدام لمرة واحدة فقط لأن خطافات التنظيف حرّرت موارده أصلاً. استدعِ `bootstrapApp(...)` من جديد لبناء نسخة `App` جديدة — تماماً مثل إعدادات كل اختبار في [الاختبارات و Mocking](/ar/testing/).

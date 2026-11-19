@@ -1,0 +1,199 @@
+---
+title: "DDD والعمارة النظيفة"
+slug: "ddd"
+part: patterns
+order: 11
+summary: "أبقِ طبقات المجال والتطبيق نظيفة من استيرادات SQL و HTTP و SDK عبر منافذ token() الصافية، وحزم محوّلات البنية التحتية، وقواعد اللينت."
+---
+import orderServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
+import domainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
+import domainPortsCode from '../../examples/ddd/domain/ports.ts' with { type: 'text' }
+import infraProvidersCode from '../../examples/ddd/infra/providers.ts' with { type: 'text' }
+import sqlOrderRepoCode from '../../examples/ddd/infra/sql-order-repository.ts' with { type: 'text' }
+import systemAdaptersCode from '../../examples/ddd/infra/system-adapters.ts' with { type: 'text' }
+import dddMainCode from '../../examples/ddd/main.ts' with { type: 'text' }
+import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' with { type: 'text' }
+
+لما تكون قواعد العمل أطول عمراً من مشغّل SQL الحالي أو مزوّد البريد أو إطار HTTP، تساعدك **DDD / العمارة النظيفة (Hexagonal)** على إبعاد تفاصيل التوصيل الخارجية عن نموذجك الأساسي. ومع `dn-ioc`، ما تحتاج كلاسات أساسية مجرّدة ولا وحدات حاوية حتى تعكس التبعيات: طبقة `domain/` الداخلية تعلن الواجهات ومنافذ `token()`، وطبقة `application/` تنسّق حالات الاستخدام عبر `provide()`، وطبقة `infra/` تربط المحوّلات الحقيقية في تصدير `bundleProviders()` واحد.
+
+<Code
+  title="ddd-project"
+  lang="text"
+  code={`src/
+├── domain/                        # Imports NO other project layer
+│   ├── order.ts                   # Order entity + OrderRepository port & token
+│   └── ports.ts                   # Cross-cutting Clock & Mailer ports & tokens
+├── application/                   # Imports domain/ only
+│   ├── order-service.ts           # OrderService use-case Ref injecting domain tokens
+│   └── order-service.test.ts      # Pure unit test binding lightweight fakes
+├── infra/                         # Imports domain/ only
+│   ├── sql-order-repository.ts    # Private sqlTableRef + sqlOrderRepositoryProvider
+│   ├── system-adapters.ts         # systemClockProvider + smtpMailerProvider
+│   └── providers.ts               # infraProviders = bundleProviders(...)
+└── main.ts                        # Composition Root: imports application/ + infra/`}
+/>
+
+## 1. كيانات المجال الصافية وتوكنز المنافذ (domain/)
+
+مجلد `domain/` يجلس في قلب المخطط وما يستورد **ولا** طبقة ثانية في مشروعك. وبجانب الكيانات مثل `Order`، يعرّف **المنافذ (ports)** التي لازم يلبّيها العالم الخارجي — سواءً للحفظ والاسترجاع (`OrderRepository`) أو للتأثيرات الجانبية العابرة مثل وقت النظام (`Clock`) والبريد (`Mailer`).
+
+كل منفذ يقرن `interface` في TypeScript مع `token<T>('Name')` مسمّى بنفس اسم تلك الواجهة. وضع `Clock` خلف `clockToken` معناه أن قواعد العمل ما تستدعي `new Date()` مباشرة أبداً، فتظل الانتقالات الحساسة للوقت حتمية 100% في الاختبارات.
+
+<CodeTabs
+  files={[
+    { title: 'domain/order.ts', code: domainOrderCode },
+    { title: 'domain/ports.ts', code: domainPortsCode },
+  ]}
+/>
+
+## 2. حالات الاستخدام في طبقة التطبيق (application/)
+
+طبقة `application/` تنسّق كيانات المجال ومنافذه لإنجاز حالة استخدام مثل `OrderService.submit(id)`. لاحظ هنا الدمج المقصود بين الأسلوبين:
+
+- `OrderService` تجلب الإمكانيات الخارجية حصراً عبر **توكنز المجال** (`orderRepositoryToken` و`clockToken` و`mailerToken`) — ما عندها أي فكرة هل الطلبات محفوظة في Postgres أم SQLite أم مجرد `Map`.
+- ومع ذلك، المرجع `orderServiceRef` نفسه متصدّر كـ **`Ref`** عبر `provide(function OrderService({ inject }) { ... })`! لماذا؟ لأن مستدعي `application/` — وحدات تحكم HTTP، وأوامر CLI، وعمال الطوابير، والاختبارات — يعيشون في الطبقات *الخارجية* والمفروض يستوردون حالات الاستخدام مباشرة. ما تحتاج توكنز زائدة لخدمات أصلاً سهم استيرادها متّجه للداخل.
+
+<Code title="application/order-service.ts" code={orderServiceCode} />
+
+## 3. محوّلات البنية التحتية والحزمة المجمّعة (infra/)
+
+مجلد `infra/` يستورد عقود `domain/` وينفّذها أمام المشغّلات والـ SDKs وقواعد البيانات الحقيقية:
+
+- **خلّ مقابض المشغّلات خاصة داخل `infra/`:** في `sql-order-repository.ts`، المرجع `sqlTableRef` هو `Ref` داخلي يملك حالة الجدول/المجمّع الأساسية ويسجّل خطاف `onDispose`. والرابط `sqlOrderRepositoryProvider` يحقن `sqlTableRef` في الخلفية، بينما `domain/` و`application/` ما يعرفون أصلاً بوجود `sqlTableRef`.
+- **اجمع الطبقة كلها داخل `infraProviders`:** ملف `infra/providers.ts` يجمع `sqlTableRef` (حتى يتشارك كل محوّل في النطاق الجذري عميلاً واحداً) مع كل روابط `provideFor()` داخل مقبض `bundleProviders(...)` واحد.
+- **قاعدة التعديلين للمحوّلات الجديدة:** إضافة محوّل بنية تحتية جديد تاخذ تعديلين فقط داخل `infra/` — تكتب رابط `provideFor()` الخاص به وتضيف سطراً واحداً إلى `infraProviders`. ولا نقطة دخول عندك تحتاج تتغيّر.
+
+<Callout kind="caution" title="لا تصدّر أبداً محوّل DDD كـ Ref تستورده domain أو application">
+
+لا تغرك فكرة كتابة `export const sqlOrderRepositoryRef = provide(...)` في `infra/` واستيراده داخل `domain/` أو `application/`. هذا ما يربط المنطق الأساسي بمشغّل SQL مباشرة فحسب، بل يعكس سهم الاستيراد **للخارج**: ملف `infra/sql-order-repository.ts` يستورد أصلاً `Order` من `domain/order.ts`، فاستيراد `infra/` راجعاً إلى `domain/` يصنع فوراً دورة استيراد وحدات دائرية. أبقِ المنافذ كـ `token()` في `domain/` واربطها عبر `provideFor()` في `infra/`.
+
+</Callout>
+
+<CodeTabs
+  files={[
+    { title: 'infra/sql-order-repository.ts', code: sqlOrderRepoCode },
+    { title: 'infra/system-adapters.ts', code: systemAdaptersCode },
+    { title: 'infra/providers.ts', code: infraProvidersCode },
+  ]}
+/>
+
+## 4. جذر التركيب وإعادة الاستخدام عبر نقاط دخول متعددة
+
+ملف `main.ts` هو **جذر التركيب (Composition Root)** — المكان الوحيد في المشروع الذي يستورد `application/` و`infra/` معاً ويشبكهما بـ `providers: [infraProviders]`.
+
+ولأن `infraProviders` قيمة قابلة لإعادة الاستخدام و`orderServiceRef` مفصولة عن طبقة النقل، إطلاق عدة نقاط دخول فوق نفس المجال ما ياخذ إلا بضعة أسطر لكل واحدة:
+
+- **خادم HTTP API (`main.ts`):** يثبّت `[infraProviders]`، ويحقن `orderServiceRef` داخل `bootstrapApp()` (حتى يفشل أي ربط توكن منسي فوراً عند `await app.start()`، وليس في منتصف طلب عميل حي)، ويسلّمه للموجّه (router).
+- **عامل طابور أو مهمة CLI (`worker.ts`):** يستدعي `bootstrapApp(..., { providers: [infraProviders] })` في نقطة دخوله المستقلة ويحقن نفس `orderServiceRef` بالضبط — أو يضيف `provideFor(mailerToken, dryRunMailer)` *بعد* `infraProviders` لسكربت تعبئة بيانات يجب ألّا يرسل إيميلات للعملاء.
+- **اختبار الوحدة (`application/order-service.test.ts`):** يتجاوز `infraProviders` تماماً ويثبّت بدائل `provideFor()` خفيفة. نسيان ولو بديل منفذ واحد يرفض `unitTestApp.start()` فوراً بالخطأ `No provider for token: Mailer`.
+
+<CodeTabs
+  files={[
+    { title: 'main.ts', code: dddMainCode },
+    { title: 'application/order-service.test.ts', code: dddUnitTestCode },
+  ]}
+/>
+
+## 5. فرض اتجاه الطبقات عبر Biome أو ESLint
+
+بما أن `dn-ioc` ما تشوف إلا المقابض في وقت التشغيل، فما في شيء داخل النواة نفسها يمنع الإكمال التلقائي في محرّر زميلك من سحب `../infra/sql-order-repository` إلى `application/order-service.ts`. قفّل أسهم الاستيراد في مكانها بقاعدة linter حتى يكسر أي انحراف معماري أمر `lint:check` تلقائياً:
+
+| الطبقة | استيرادات المشروع المسموحة | استيرادات المشروع الممنوعة |
+| --- | --- | --- |
+| **`domain/`** | لا يوجد (`token` من `'dn-ioc'` فقط) | `application/`, `infra/`, `main.ts` |
+| **`application/`** | `domain/` | `infra/`, `main.ts` |
+| **`infra/`** | `domain/` | `application/`, `main.ts` |
+| **`main.ts` (نقاط الدخول)** | `application/`, `infra/`, `domain/` | — |
+
+<CodeTabs
+  files={[
+    {
+      title: 'biome.json',
+      lang: 'json',
+      code: `{
+  "overrides": [
+    {
+      "includes": ["src/domain/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../application/**", "../infra/**", "**/application/**", "**/infra/**"],
+                    "message": "domain/ must stay pure and cannot import application/ or infra/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/application/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../infra/**", "**/infra/**"],
+                    "message": "application/ must depend on domain/ tokens, not infra/ adapters."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}`,
+    },
+    {
+      title: 'eslint.config.js',
+      lang: 'js',
+      code: `export default [
+  {
+    files: ['src/domain/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../application/*', '../application/**', '../infra/*', '../infra/**'],
+              message: 'domain/ must stay pure and cannot import application/ or infra/.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/application/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../infra/*', '../infra/**'],
+              message: 'application/ must depend on domain/ tokens, not infra/ adapters.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+]`,
+    },
+  ]}
+/>
+
+الآن خلّينا نحط أنماط اختبارات الوحدة والتكامل جنباً إلى جنب في [الاختبارات و Mocking](/ar/testing/).

@@ -1,0 +1,62 @@
+---
+title: "الاختبارات و Mocking"
+slug: "testing"
+part: patterns
+order: 12
+summary: "شغّل اختبارات الوحدة والتكامل المعزولة بالتوازي بدون حيل module-mocking باستخدام provideFor() وأولوية الأخير في الحزم و await using."
+---
+import mvcFakeCode from '../../examples/mvc/user-service-fake-example.ts' with { type: 'text' }
+import testingCode from '../../examples/testing/unit-and-integration.ts' with { type: 'text' }
+
+الاختبار مع `dn-ioc` ما يحتاج `vi.mock()` أو `mock.module()` أو طقوس `afterEach(() => container.reset())` الهشّة. وبما أنه **ما في حاوية عامة**، كل استدعاء لـ `bootstrapApp()` يبني مخطط تبعيات جديداً ومعزولاً في الذاكرة — يعني عشرات ملفات الاختبار تقدر تشتغل بالتوازي بدون ما يدوس أحدها على الآخر، و`provideFor()` تبدّل أي `Token<T>` أو `Ref<T>` في سطر واحد.
+
+<Code title="order-service.unit.test.ts" code={testingCode} region="unit" />
+
+## اختبارات الوحدة ببدائل معزولة
+
+في اختبار الوحدة، تنشئ `bootstrapApp()` مخصصة وتثبّت فيها **فقط** البدائل الوهمية التي يحتاجها الكود قيد الاختبار (`fakeOrders`، و`Clock` ثابت، و`fakeMailer` في `order-service.unit.test.ts`).
+
+دالة `provideFor(key, fakeFactory)` تشتغل بنفس الطريقة تماماً سواءً كان `key` من نوع `Token<T>` أو `Ref<T>`، **لكن اللي يصير لو نسيت تحاكي تبعية يعتمد على نوع المفتاح اللي اخترته:**
+
+| نوع المفتاح | لو نسيت `provideFor()` في اختبار وحدة | الأثر العملي |
+| --- | --- | --- |
+| **`Token<T>`** | ترفض `app.start()` فوراً بالخطأ `No provider for token: Name`. | **فشل فوري:** مستحيل يفتح اختبار الوحدة مقبساً حقيقياً أو يرسل إيميلاً حقيقياً بالغلط. |
+| **`Ref<T>`** | ما يعطي خطأ — يثبّت نفسه تلقائياً ويشغّل دالة الإنشاء الحقيقية الخاصة بالـ `Ref`. | **تراجع صامت:** مريح للأدوات الصافية داخل الذاكرة، لكنه محفوف بالمخاطر لو الـ `Ref` المنسي يتواصل مع I/O خارجي. |
+
+قارن اختبار وحدة DDD أعلاه مع اختبار MVC (`services/user-service.test.ts`): تبديل `userRepositoryRef` عبر `provideFor(userRepositoryRef, fakeUserRepository)` نظيف بنفس الدرجة، طالما تذكّرت تبدّل كل `Ref` يتعامل مع I/O ويصل له `userServiceRef`.
+
+<Callout kind="tip" title="حافظ على وضوح تتبّع الأخطاء عند فشل الاختبارات">
+
+سمِّ التوكنز باسم واجهتها (`token<Mailer>('Mailer')`) وأعطِ دوال إنشاء `provide()` اسم دالة حقيقياً (`provide(function OrderService({ inject }) { ... })`). ولما ينسى اختبار معيّن ربطاً أو يدخل في حلقة دائرية، راح تشوف `OrderService` و`Mailer` في رسالة الخطأ بدل `<anonymous>`.
+
+</Callout>
+
+<Code title="services/user-service.test.ts" code={mvcFakeCode} />
+
+## اختبارات التكامل وتجاوز الحزم
+
+اختبارات الوحدة تثبت أن منطق العمل عندك يشتغل مع البدائل الوهمية؛ واختبارات التكامل تثبت أن مستودعات SQL الحقيقية وتحويل البيانات وخدمات المجال تشتغل مع بعض بينما تعزل الأطراف الخارجية مثل SMTP أو Stripe.
+
+ولأن `dn-ioc` تفرّغ المصفوفات وحزم `ProviderBundle` بترتيب كتابتها في الكود — **والروابط الأحدث في نفس النطاق تستبدل الأقدم بصمت** — تقدر تثبّت حزمة الإنتاج الكاملة `infraProviders` أولاً وتبدّل منفذاً واحداً بعدها مباشرة:
+
+- **الترتيب الصحيح (`[infraProviders, provideFor(mailerToken, fakeMailer)]`):** يثبّت `sqlTableRef` و`sqlOrderRepositoryProvider` و`systemClockProvider` و`smtpMailerProvider`، ثم يستبدل `mailerToken` بالبديل `fakeMailer`.
+- **الترتيب الغلط (`[provideFor(mailerToken, fakeMailer), infraProviders]`):** الحزمة `infraProviders` تتفرّغ *بعد* بديلك وتعيد الكتابة فوق `mailerToken` بصمت لترجعه إلى `smtpMailerProvider` الحقيقي!
+
+<Callout kind="note" title="التبديل داخل الأشجار الفرعية المتداخلة">
+
+التجاوزات الجذرية داخل `bootstrapApp(..., { providers })` تنطبق تلقائياً على كل خدمة مملوكة للجذر. ولو احتجت تبدّل تبعية داخل شجرة فرعية ابنة `{ providers }` بينما المستهلك الخاص بها مثبّت أصلاً في النطاق الجذري، تذكّر تعيد ربط المستهلك والتبعية معاً داخل ذلك النطاق الابن (راجع [النطاقات والأشجار الفرعية](/ar/scopes/)).
+
+</Callout>
+
+<Code title="order-service.integration.test.ts" code={testingCode} region="integration" />
+
+## التنظيف التلقائي لكل اختبار عبر await using
+
+لاحظ `await using app = bootstrapApp(...)` في كلٍّ من `testOrderSubmitUnit()` و`testOrderSubmitIntegration()`:
+
+- بما أن `App` ينفّذ واجهة `AsyncDisposable`، تنتظر TypeScript دالة `app.stop()` تلقائياً بمجرد خروج التنفيذ من بلوك الدالة — **حتى لو رمى تأكيد `expect()` خطأً في منتصف الاختبار.**
+- خطاف `onDispose` الخاص بـ `sqlTableRef` يشتغل قبل ما ترجع دالة الاختبار، فيغلق المجمّعات والمؤقّتات والخوادم المؤقتة بنظافة وبدون تكرار قوالب `try / finally`.
+
+ولو مشروعك ما يستخدم `await using` بعد، تغليف جسم الاختبار بـ `try { await app.start() } finally { await app.stop() }` يؤدي نفس الغرض بالضبط — ولأن `app.stop()` قابلة للتكرار بأمان (idempotent)، فاستدعاؤها مرتين في خطافات التنظيف آمن دائماً.
+
+تحتاج تتأكّد من توقيع نوع بالضبط أو تدور على رسالة خطأ معينة؟ انتقل إلى الجزء الرابع مع [مرجع الـ API العام](/ar/api/) و[الأخطاء والتشخيص](/ar/errors/).

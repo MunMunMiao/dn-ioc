@@ -1,0 +1,121 @@
+---
+title: "مرجع الـ API العام"
+slug: "api"
+part: reference
+order: 13
+summary: "مرجع كامل للتوقيعات والمعاملات والسلوك لكل الدوال الست في وقت التشغيل، وأنواع TypeScript الخمسة عشر العامة، والمقابض المبهمة المجمّدة."
+---
+import signaturesCode from '../../examples/api/signatures.ts' with { type: 'text' }
+import providersCode from '../../examples/providers/caching-and-bundle.ts' with { type: 'text' }
+
+كل ما تصدّره `dn-ioc` يجي مباشرة من `'dn-ioc'` — ست دوال في وقت التشغيل وخمسة عشر نوع TypeScript، بدون أي مسارات استيراد فرعية (sub-paths) أو آثار جانبية عامة. ارجع لهذا الفصل كلّما حبيت تتأكّد من نوع معامل دقيق، أو قيمة إرجاع، أو قاعدة من قواعد المقابض.
+
+<Code title="functions.ts" code={signaturesCode} region="functions" />
+
+## دوال وقت التشغيل
+
+### `token<T>(description?)`
+
+**التوقيع:** `function token<T>(description?: string): Token<T>`
+
+تنشئ مفتاح تبعية صافياً يحمل نوع TypeScript `T` مع صفر كود تشغيل.
+
+- **`description`** *(نص `string` اختياري)*: اسم مقروء يظهر في `No provider for token: Name` و`Circular dependency detected: ...`. ولو تُرك فارغاً أو بدون تمرير، تطبع رسائل التشخيص `<anonymous>`. استدعاءان منفصلان لـ `token('Same')` ينتجان دائماً مفتاحين مختلفين — الهوية ما تجي أبداً من نص الوصف.
+- **العقود غير المتزامنة:** حط `Promise` داخل `T` (`token<Promise<Settings>>('Settings')`) حتى يتفق مستدعو `inject()` وتنفيذات `provideFor()` على نوع الإرجاع غير المتزامن.
+
+### `provide<T>(factory, options?)`
+
+**التوقيع:** `function provide<T>(factory: Factory<T>, options?: ProviderOptions): Ref<T>`
+
+تغلّف دالة `factory` داخل مقبض `Ref<T>` يثبّت نفسه عند الحاجة.
+
+- **`factory`**: دالة بتوقيع `(ctx: Context) => T`. لو ما كان في ربط لهذا الـ `Ref` في النطاق النشط أو نطاقاته الأب وقت استدعاء `inject()`، يثبّت الـ `Ref` دالة الإنشاء الافتراضية في النطاق النشط، ويشغّلها مرة واحدة، ويخزّن النتيجة في الكاش (أو يشارك الـ `Promise` الجاري إذا كانت `async`). الأخطاء المتزامنة وحالات رفض الـ `Promise` **لا** تُخزّن في الكاش، وهذا يسمح بإعادة المحاولة طالما التطبيق شغّال.
+- **اسم التشخيص:** يُقرأ من `factory.name` (مثلاً `provide(function UserService(ctx) { ... })` يطبع `UserService`، بينما دالة السهم المجهولة تطبع `<anonymous>`).
+- **`options?.providers`**: شجرة فرعية خاصة اختيارية تكون مرئية فقط لـ `factory` وتوابعها. تُؤخذ منها نسخة لحظة استدعاء `provide()` ويتم التحقق منها عند الطلب في أول مرة تُحلّ فيها تلك الشجرة الفرعية.
+
+### `provideFor<T>(key, factory, options?)`
+
+**التوقيع:** `function provideFor<T>(key: InjectKey<T>, factory: Factory<T>, options?: ProviderOptions): ProviderDef<T>`
+
+تربط تنفيذ `factory` بمفتاح `key` — وتقبل **كلا النوعين** `Token<T>` أو `Ref<T>` — وترجّع `ProviderDef<T>` جاهزاً للتثبيت داخل `{ providers }` أو `bundleProviders()`.
+
+- تفحص `key` فوراً لحظة استدعاء `provideFor()`؛ تمرير أي قيمة غير `Token` أو `Ref` حقيقي يرمي `Invalid inject key received`.
+- **`options?.providers`**: شجرة فرعية خاصة اختيارية مرئية لهذه الـ `factory` المربوطة وتوابعها؛ تُؤخذ منها نسخة لحظة الإنشاء.
+
+### `bundleProviders(...inputs)`
+
+**التوقيع:** `function bundleProviders(...inputs: ProviderInput[]): ProviderBundle`
+
+تجمّع أي خليط من المراجع (`Ref`) وروابط `ProviderDef` والمصفوفات المتداخلة وكائنات `ProviderBundle` الأخرى داخل `ProviderBundle` واحدة قابلة لإعادة الاستخدام.
+
+- تنسخ المصفوفات المُمرّرة نسخاً سطحياً لحظة الإنشاء حتى ما يغيّر تعديل المصفوفات لاحقاً محتوى الحزمة.
+- تثبيت الحزمة يفرّغ عناصرها من اليسار لليمين بترتيب كتابتها مباشرة في النطاق المستقبل — فهي **لا** تنشئ نطاقاً فرعياً معزولاً خاصاً بها.
+
+### `isProvideRef(value)`
+
+**التوقيع:** `function isProvideRef(value: unknown): value is Ref<unknown>`
+
+دالة حارس نوع (type guard) ترجّع `true` **فقط** لما تكون `value` مرجع `Ref` حقيقياً صادراً من `provide()`. وترجّع `false` مع `Token` و`ProviderDef` و`ProviderBundle` والقيم الأولية و`null` والكائنات المنسوخة (`{ ...someRef }`).
+
+### `bootstrapApp(fn, options?)`
+
+**التوقيع:** `function bootstrapApp(fn: BootstrapAppFn, options?: BootstrapAppOptions): App`
+
+تنشئ نطاقاً جذرياً معزولاً، وتتحقق من `options?.providers` وتثبّتها تزامنياً، وترجّع مقبض `App` **بدون** ما تشغّل `fn` أو أي دالة إنشاء مزوّد بعد.
+
+- **`fn`**: دالة بتوقيع `(ctx: Context) => void | Promise<void>`. تشتغل لما تستدعي `app.start()`. لازم ترجّع `void` أو `Promise<void>`.
+- **`options?.providers`**: روابط ومراجع ومصفوفات وحزم على مستوى الجذر. أي عنصر غير صالح يرمي `Invalid provider input received` تزامنياً قبل حتى ما يرجع مقبض `App`.
+
+## واجهات Context ودورة حياة App
+
+### Context (`InjectFn` و `OnDisposeFn`)
+
+كل دالة إنشاء مزوّد `Factory<T>` وكل `BootstrapAppFn` تستلم كائن `Context` يحتوي على دالتين:
+
+- **`inject: InjectFn`** (`<T>(key: InjectKey<T>) => T`) — تحلّ `key` بدءاً من النطاق المالك للمزوّد صعوداً للأعلى. ترجّع القيم المتزامنة مباشرة وكائنات `Promise` مشتركة لدوال الإنشاء غير المتزامنة. وتبقى صالحة للاستدعاء داخل الدوال المرجّعة بعد ما تخلص دالة الإنشاء، حتى يتم استدعاء `app.stop()`.
+- **`onDispose: OnDisposeFn`** (`(fn: () => void | Promise<void>) => void`) — تسجّل خطاف تنظيف يشتغل بترتيب LIFO (من الأحدث للأقدم) أثناء `app.stop()`. يمكن استدعاؤها **فقط** بينما دالة الإنشاء الخاصة بها شغّالة فعلاً وقبل `stop()`. إرجاع أي قيمة غير `void` أو `Promise<void>` يعطي خطأ ترجمة في TypeScript — غلّف تعابير التنظيف التي ترجع قيمة بأقواس معقوفة (`onDispose(() => { server.close() })`).
+
+### App (`start` و `stop` و `AsyncDisposable`)
+
+المقبض اللي ترجّعه `bootstrapApp()` يوفّر ثلاثة أعضاء:
+
+- **`start(): Promise<void>`** — تشغّل الدالة الجذرية مرة واحدة وتنتظر أي `Promise` ترجعه. الاستدعاءات المتزامنة أو المتكررة ترجّع نفس الـ `Promise` بالضبط. ولو فشل الإقلاع، تستدعي `start()` دالة `stop()` تلقائياً لتتراجع عن الموارد المحجوزة حتى تلك اللحظة قبل ما ترفض. وبمجرد ما تُستدعى `stop()`، ترفض `start()` بالخطأ `Cannot start an app that has been stopped`.
+- **`stop(): Promise<void>`** — تقفل `inject()` تزامنياً في كامل التطبيق، ثم تنتظر خطافات `onDispose` المسجّلة من الأحدث للأقدم. قابلة للتكرار بأمان عبر الاستدعاءات المتزامنة أو المتتالية. وحتى لو فشل أحد الخطافات، تستمر كل الخطافات الباقية في العمل.
+- **`[Symbol.asyncDispose](): Promise<void>`** — دالة تشير إلى نفس `stop` بالضبط حتى يصفّي `await using app = bootstrapApp(...)` التطبيق تلقائياً عند الخروج من البلوك. لما يكون `Symbol.asyncDispose` الأصلي موجوداً في بيئة التشغيل، يعرّف `App` المفتاح `[Symbol.asyncDispose]`؛ وفي البيئات الأقدم بدون الرمز الأصلي (مثل Node 18)، ينزل احتياطياً إلى `[Symbol.for('Symbol.asyncDispose')]` حتى يطابق آلية البحث المحوّلة لـ `await using` في TypeScript.
+
+<Code title="types.ts" code={signaturesCode} region="types" />
+
+## أنواع المقابض والأدوات المساعدة
+
+| النوع المصدّر | التعريف / الشكل | الغرض |
+| --- | --- | --- |
+| `Token<T>` | واجهة مبهمة موسومة تحمل `T` | مفتاح عقد ترجعه `token<T>()`. |
+| `Ref<T>` | `extends Token<T>` (موسوم كمرجع) | مقبض ذاتي التثبيت ترجعه `provide()`. |
+| `RefType<T>` | `T extends Ref<infer U> ? U : never` | يستخرج النوع المحلول `U` من `typeof someRef` — ممتاز لتعريف أنواع بدائل الاختبار بدون تكرار الواجهات. |
+| `InjectKey<T>` | `Token<T> \| Ref<T>` | أي هدف صالح للبحث أو الربط تقبله `inject()` و`provideFor()`. |
+| `ProviderDef<T>` | واجهة مبهمة موسومة تحمل `T` | ربط صريح ترجعه `provideFor()`. |
+| `ProviderBundle` | واجهة مبهمة موسومة | مقبض ربط مجمّع ترجعه `bundleProviders()`. |
+| `ProviderInput` | `Ref<unknown> \| ProviderDef<unknown> \| ProviderBundle \| readonly ProviderInput[]` | أي عنصر قابل للتثبيت أو مصفوفة متداخلة بأي عمق تقبلها `providers` و`bundleProviders()`. |
+| `ProviderOptions` | `{ providers?: readonly ProviderInput[] }` | كائن خيارات لدالتي `provide()` و`provideFor()` يصرّح بشجرة فرعية خاصة. |
+| `BootstrapAppOptions` | `{ providers?: readonly ProviderInput[] }` | كائن خيارات لدالة `bootstrapApp()` يثبّت روابط النطاق الجذري. |
+| `InjectFn` | `<T>(key: InjectKey<T>) => T` | نوع `ctx.inject` المُمرّر داخل `Context`. |
+| `OnDisposeFn` | `(fn: () => void \| Promise<void>) => void` | نوع `ctx.onDispose` المُمرّر داخل `Context`. |
+| `Factory<T>` | `(ctx: Context) => T` | توقيع دالة إنشاء المزوّد. |
+| `BootstrapAppFn` | `(ctx: Context) => void \| Promise<void>` | توقيع دالة الإقلاع الجذرية لدالة `bootstrapApp()`. |
+
+## دلالات المقابض المبهمة المجمّدة
+
+كل مقبض ترجعه `token()` و`provide()` و`provideFor()` و`bundleProviders()` هو كائن فارغ مجمّد (`Object.freeze({})`) بدون أي خصائص خاصة قابلة للعدّ أو مفاتيح رموز خاصة. وكل البيانات الداخلية محفوظة داخل `WeakMap` خاصة داخل النواة:
+
+- **التعديل يفشل:** محاولة إضافة خصائص على المقبض أو الكتابة فوقها ترمي `TypeError` في الوضع الصارم (strict mode).
+- **النسخ والتزوير مرفوضان:** نسخ المقبض أو فرده (`{ ...sampleRef }` أو `Object.assign({}, myToken)`) ينشئ مرجع كائن جديداً غير موجود في الـ `WeakMap` الخاصة بالنواة. تمرير هذه النسخة إلى `isProvideRef()` يرجّع `false`؛ وتمريرها إلى `inject()` أو `provideFor()` يرمي `Invalid inject key received`؛ وتمرير رابط أو حزمة منسوخة داخل `providers` يرمي `Invalid provider input received`.
+
+<Callout kind="note" title="نواة موثوقة داخل نفس العملية، وليست sandbox">
+
+المقابض المبهمة تمنع التعديل غير المقصود، وأخطاء التسلسل (serialization)، والاعتماد الهش على تشابه الخصائص (duck-typing) عبر الحزم. لكنها **ليست** حداً أمنياً ضد كود غير موثوق يشتغل داخل نفس بيئة JavaScript المعزولة.
+
+</Callout>
+
+للاطّلاع على كل رسالة خطأ في وقت التشغيل تقدر النواة ترميها — وكيف تصلّح كل واحدة منها — انتقل إلى [الأخطاء والتشخيص](/ar/errors/).
+
+<Code title="opaque-handles.ts" code={providersCode} region="isProvideRef" />

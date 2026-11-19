@@ -1,0 +1,105 @@
+---
+title: "نمط MVC عملياً"
+slug: "mvc"
+part: patterns
+order: 10
+summary: "نظّم تطبيق TypeScript متكاملاً بنمط Controller-Service-Repository عبر مراجع Ref ذاتية التثبيت، ومجمّعات اتصال مشتركة في الجذر، وبدون تعقيد الحاويات."
+---
+import userControllerCode from '../../examples/mvc/controllers/user-controller.ts' with { type: 'text' }
+import databaseCode from '../../examples/mvc/db/database.ts' with { type: 'text' }
+import mvcMainCode from '../../examples/mvc/main.ts' with { type: 'text' }
+import userModelCode from '../../examples/mvc/models/user.ts' with { type: 'text' }
+import userRepoCode from '../../examples/mvc/repositories/user-repository.ts' with { type: 'text' }
+import userServiceCode from '../../examples/mvc/services/user-service.ts' with { type: 'text' }
+import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with { type: 'text' }
+
+لمعظم واجهات برمجة HTTP، والأدوات الداخلية، وخدمات CRUD الخلفية، يضرب نمط **MVC** الطبقي الكلاسيكي (`Controller → Service → Repository → Database`) في الصميم. وبما أن كل طبقة مسموح لها تستورد الطبقة الفعلية التي تحتها مباشرة، يقدر كل ملف في السلسلة يكون `Ref<T>` يثبّت نفسه — وهذا يعطيك فصلاً نظيفاً للمسؤوليات بدون ما تصون ملف حاوية مركزي ضخم.
+
+<Code
+  title="mvc-project"
+  lang="text"
+  code={`src/
+├── models/
+│   └── user.ts                # Plain TypeScript data shapes (zero runtime code)
+├── db/
+│   └── database.ts            # Stateful connection pool Ref + onDispose teardown
+├── repositories/
+│   └── user-repository.ts     # Data-access Ref injecting databaseRef
+├── services/
+│   ├── user-service.ts        # Business-rule Ref injecting userRepositoryRef
+│   └── user-service.test.ts   # Unit test swapping userRepositoryRef via provideFor()
+├── controllers/
+│   └── user-controller.ts     # Transport Ref injecting userServiceRef
+└── main.ts                    # Entrypoint registering [databaseRef] at root`}
+/>
+
+## قواعد الاستيراد طبقة بطبقة
+
+في مشروع MVC سليم، تتدفق الاستيرادات بصرامة من الأعلى للأسفل — وحدات التحكم ما تقفز فوق الخدمات لتستعلم الجداول مباشرة، والمستودعات ما تستورد وحدات تحكم HTTP أبداً:
+
+| الطبقة | الملف | ما تصدّره | استيرادات المشروع المسموحة | المسؤولية |
+| --- | --- | --- | --- | --- |
+| **Models** | `models/user.ts` | `type User` | لا يوجد | واجهات TypeScript وأشكال البيانات المشتركة. |
+| **Database** | `db/database.ts` | `databaseRef` | لا يوجد | تملك مجمّع الاتصالات وتسجّل تنظيف `onDispose()`. |
+| **Repositories** | `repositories/user-repository.ts` | `userRepositoryRef` | `db/`, `models/` | تغلّف استعلامات المجموعات أو SQL خلف دوال مضمونة الأنواع. |
+| **Services** | `services/user-service.ts` | `userServiceRef` | `repositories/`, `models/` | تفرض قواعد التحقق والعمل (`Invalid email`، منع التكرار). |
+| **Controllers** | `controllers/user-controller.ts` | `userControllerRef` | `services/`, `models/` | تحوّل مدخلات HTTP/RPC إلى استدعاءات خدمات وأكواد حالة. |
+| **Entrypoint** | `main.ts` | `app` | `controllers/`, `db/` | تثبّت المراجع ذات الحالة المشتركة في الجذر وتقلع التطبيق. |
+
+## تتبّع مخطط MVC بالكامل
+
+تنقّل بين تبويبات الملفات الستة من الأسفل للأعلى حتى تشوف كيف يمشي الطلب عبر المخطط:
+
+1. **`db/database.ts`:** استدعاء `provide(function Database({ onDispose }) { ... })` يستخدم دالة مسمّاة حتى تطبع أخطاء الدوائر الاعتمادية اسم `Database` بدل `<anonymous>`، ويسجّل خطاف `onDispose` بجانب الحالة التي يغلقها مباشرة.
+2. **`models/user.ts`:** مجرّد `interface User` صافية في TypeScript — بدون أي استيراد لمكتبة الحقن.
+3. **`repositories/user-repository.ts`:** المرجع `userRepositoryRef` يستدعي `inject(databaseRef)` مرة واحدة أثناء تشغيل دالة الإنشاء، ويمسك مجموعة `'users'`، ويرجّع `{ findByEmail, create }`.
+4. **`services/user-service.ts`:** المرجع `userServiceRef` يحقن `userRepositoryRef` ويبقي منطق التحقق وفحوصات التفرّد خارج معالجات HTTP.
+5. **`controllers/user-controller.ts`:** المرجع `userControllerRef` يحقن `userServiceRef` وينسّق استجابة `{ status: 201, body }`.
+6. **`main.ts`:** دالة `bootstrapApp()` تثبّت `providers: [databaseRef]` في النطاق الجذري وتحقن `userControllerRef` داخل دالة الإقلاع.
+
+<CodeTabs
+  files={[
+    { title: 'db/database.ts', code: databaseCode },
+    { title: 'models/user.ts', code: userModelCode },
+    { title: 'repositories/user-repository.ts', code: userRepoCode },
+    { title: 'services/user-service.ts', code: userServiceCode },
+    { title: 'controllers/user-controller.ts', code: userControllerCode },
+    { title: 'main.ts', code: mvcMainCode },
+  ]}
+/>
+
+## لماذا تنتمي مجمّعات الاتصال إلى providers الجذر
+
+ممكن تسأل: طالما `databaseRef` مبني بـ `provide()`، ألا يثبّته استدعاء `inject(databaseRef)` داخل `userRepositoryRef` تلقائياً حتى لو حذفنا `providers: [databaseRef]` من `main.ts`؟
+
+في تطبيق مسطّح بنطاق واحد، نعم — أول استدعاء لـ `inject(databaseRef)` في النطاق الجذري راح يخزّنه هناك. **لكن كتابة `providers: [databaseRef]` صراحةً في `main.ts` تحميك كلّما كبر التطبيق:**
+
+- تذكّر من [المزوّدات و Ref](/ar/providers/) و[النطاقات والأشجار الفرعية](/ar/scopes/) أن الـ `Ref` غير المسجّل يثبّت نفسه داخل *أي نطاق يحقنه أولاً*.
+- لو ركّبت لاحقاً شجرتين فرعيتين معزولتين بـ `{ providers }` — مثلاً موجّه لوحة تحكم وعامل مهام خلفية — وما سجّل أي نطاق أب `databaseRef`، فكل شجرة فرعية راح تفتح لنفسها بهدوء **مجمّع اتصالات منفصلاً خاصاً بها**.
+- تثبيت الموارد ذات الحالة المشتركة (`databaseRef`، عملاء Redis، مخازن تحديد المعدّل rate-limit) في `providers` الجذر يبقي الإنشاء كسولاً، وبنفس الوقت يضمن أن كل شجرة فرعية في العملية تتشارك نفس هذا المجمّع الوحيد وتغلقه مرة واحدة عند `await app.stop()`.
+
+## سير العمل: إضافة وحدة مورد جديدة
+
+إضافة ميزة ثانية — خلّينا نقول `posts` — تمشي على حلقة متوقعة من أربع خطوات بدون ما تلمس وحدات المستخدمين الحالية:
+
+1. **أضف النموذج (`models/post.ts`):** صدّر `interface Post { id: string; authorId: string; title: string }`.
+2. **أضف المستودع (`repositories/post-repository.ts`):** صدّر `postRepositoryRef = provide(function PostRepository({ inject }) { ... })` ليحقن `databaseRef` الموجود أصلاً.
+3. **أضف الخدمة (`services/post-service.ts`):** صدّر `postServiceRef = provide(function PostService({ inject }) { ... })` ليحقن `postRepositoryRef` (و`userRepositoryRef` لو احتاج يتأكّد من وجود الكاتب).
+4. **اربط وحدة التحكم (`controllers/post-controller.ts` → `main.ts`):** صدّر `postControllerRef` واحقن `inject(postControllerRef)` داخل `main.ts` وقت ربط المسارات.
+
+لاحظ الشيء اللي *ما اضطرّيت* تلمسه: ما في قائمة DI مركزية تعدّلها لكل مستودع وخدمة، و`databaseRef` أصلاً مشتركة في الجذر.
+
+## تبديل userRepositoryRef في اختبارات الوحدة
+
+رغم أن `userServiceRef` يستورد `userRepositoryRef` مباشرة، ما تحتاج أبداً لحيل mock على مستوى الوحدات (`vi.mock` أو `mock.module`) حتى تختبر `UserService` بمعزل. مرّر `provideFor(userRepositoryRef, fakeUserRepository)` إلى `bootstrapApp()` في اختبارك:
+
+- يستلم `userServiceRef` نسختك الوهمية المبنية على `Map` في الذاكرة بدل المستودع الحقيقي.
+- ولأن دالة الإنشاء الافتراضية لـ `userRepositoryRef` ما تشتغل أصلاً، فـ `databaseRef` ما ينبني ولا ينفتح أثناء الاختبار من الأساس.
+
+<Callout kind="caution" title="انتبه للمراجع غير المحاكاة في اختبارات الوحدة">
+
+بما أن كل `Ref` يحمل دالة إنشاء افتراضية شغّالة، فنسيان تمرير `provideFor(someOtherRef, fake)` في اختبار وحدة MVC **ما يرمي أي خطأ** — بل النواة راح تبني التنفيذ الحقيقي بكل هدوء. لو فريقك يبغى فصل منطق العمل الأساسي عن استيرادات قواعد البيانات وSDKs *وضمان* الفشل الفوري كلّما نسي الاختبار بديلاً، راجع [DDD والعمارة النظيفة](/ar/ddd/) في الفصل الجاي.
+
+</Callout>
+
+<Code title="services/user-service.test.ts" code={mvcTestCode} />
