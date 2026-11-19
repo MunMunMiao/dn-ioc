@@ -233,16 +233,41 @@ describe('buildDocsSite', () => {
     expect(css).toMatch(/--sheet:\s*#f8f8f7/i)
     expect(css).toMatch(/--vellum:\s*#f0f0ee/i)
     expect(css).toMatch(/--vellum-tab:\s*#e8e8e5/i)
-    expect(css).toMatch(/--ink-primary:\s*#161615/i)
-    expect(css).toMatch(/--accent:\s*#c94628/i)
+    expect(css).toMatch(/--ink-primary:\s*#0f0f0e/i)
+    expect(css).toMatch(/--ink-body:\s*#1f1f1d/i)
+    expect(css).toMatch(/--ink-muted:\s*#52524e/i)
+    expect(css).toMatch(/--accent:\s*#b5381c/i)
     expect(css).toMatch(/--grain-opacity:\s*0\.042/)
 
     expect(css).toMatch(/--sheet:\s*#161617/i)
     expect(css).toMatch(/--vellum:\s*#111112/i)
     expect(css).toMatch(/--vellum-tab:\s*#1c1c1e/i)
-    expect(css).toMatch(/--ink-primary:\s*#efefef/i)
-    expect(css).toMatch(/--accent:\s*#e56b4e/i)
+    expect(css).toMatch(/--ink-primary:\s*#f7f7f5/i)
+    expect(css).toMatch(/--ink-body:\s*#ddddda/i)
+    expect(css).toMatch(/--ink-muted:\s*#a5a5a0/i)
+    expect(css).toMatch(/--accent:\s*#f27a5d/i)
     expect(css).toMatch(/--grain-opacity:\s*0\.028/)
+
+    const relativeLuminance = (hex: string): number => {
+      const [r, g, b] = [1, 3, 5].map(offset => {
+        const channel = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255
+        return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+      })
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+    }
+    const contrastRatio = (fg: string, bg: string): number => {
+      const l1 = Math.max(relativeLuminance(fg), relativeLuminance(bg))
+      const l2 = Math.min(relativeLuminance(fg), relativeLuminance(bg))
+      return (l1 + 0.05) / (l2 + 0.05)
+    }
+
+    // Enforce high WCAG legibility across light & dark paper surfaces
+    expect(contrastRatio('#1f1f1d', '#f8f8f7')).toBeGreaterThanOrEqual(12)
+    expect(contrastRatio('#52524e', '#e8e8e5')).toBeGreaterThanOrEqual(6)
+    expect(contrastRatio('#b5381c', '#f0f0ee')).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio('#ddddda', '#161617')).toBeGreaterThanOrEqual(12)
+    expect(contrastRatio('#a5a5a0', '#1c1c1e')).toBeGreaterThanOrEqual(6)
+    expect(contrastRatio('#f27a5d', '#1c1c1e')).toBeGreaterThanOrEqual(4.5)
 
     expect(css).not.toContain('--desk:')
     expect(css).not.toContain('--spine-gradient')
