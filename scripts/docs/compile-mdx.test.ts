@@ -143,7 +143,11 @@ describe('compileMdxFile & renderChapterPage', () => {
 
       const html1 = renderChapterPage(ch1, [ch2, ch1], '0.3.1')
       expect(html1).toContain('<strong>dn-ioc</strong><span>v0.3.1</span>')
-      expect(html1).toContain('class="rail-nav"')
+      expect(html1).toContain('<aside class="doc-rail" id="doc-rail">')
+      expect(html1).toContain('<nav class="rail-nav" aria-label="目录">')
+      expect(html1).toContain('<p class="rail-group-title">')
+      expect(html1).not.toContain('<h2 class="rail-group-title">')
+      expect(html1).toContain('<nav class="chapter-pager" aria-label="上一章 / 下一章">')
       expect(html1).toContain('class="rail-foot"')
       expect(html1).toContain('class="rail-link is-current"')
       expect(html1).toContain('href="/zh-hans/tokens/"')

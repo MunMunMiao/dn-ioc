@@ -447,7 +447,13 @@
     }
     if (event.key === 'Escape') {
       if (docRail?.classList.contains('is-open')) {
+        const shouldRestoreFocus = Boolean(
+          docRail && (docRail.contains(document.activeElement) || document.activeElement === contentsToggle),
+        )
         setContentsOpen(false)
+        if (shouldRestoreFocus && contentsToggle instanceof HTMLElement) {
+          contentsToggle.focus()
+        }
       }
       if (langMenu?.hasAttribute('open')) {
         langMenu.removeAttribute('open')

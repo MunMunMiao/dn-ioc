@@ -290,6 +290,8 @@ describe('buildDocsSite', () => {
     const noop = () => undefined
 
     class MockElement {
+      tagName = ''
+      parentElement: MockElement | null = null
       attrs = new Map<string, string>()
       classes = new Set<string>()
       hidden = false
@@ -334,18 +336,40 @@ describe('buildDocsSite', () => {
         this.attrs.delete(name)
       }
       contains(target: unknown) {
-        return target === this
+        let cur = target
+        while (cur instanceof MockElement) {
+          if (cur === this) {
+            return true
+          }
+          cur = cur.parentElement
+        }
+        return false
       }
-      closest() {
+      closest(selector: string) {
+        let cur: MockElement | null = this
+        while (cur) {
+          if (selector.startsWith('.')) {
+            if (cur.classes.has(selector.slice(1))) {
+              return cur
+            }
+          } else if (cur.tagName.toLowerCase() === selector.toLowerCase()) {
+            return cur
+          }
+          cur = cur.parentElement
+        }
         return null
       }
     }
     class MockHTMLElement extends MockElement {
       isContentEditable = false
+      focusCalls = 0
+      focus() {
+        this.focusCalls += 1
+        mockDoc.activeElement = this
+      }
     }
     class MockHTMLInputElement extends MockHTMLElement {
       value = ''
-      focus = noop
       select = noop
     }
     class MockHTMLTextAreaElement extends MockHTMLElement {}
@@ -361,6 +385,12 @@ describe('buildDocsSite', () => {
     }
 
     const mockDocRail = new MockHTMLElement()
+    const mockRailLink = new MockHTMLElement()
+    mockRailLink.tagName = 'a'
+    mockRailLink.parentElement = mockDocRail
+    const mockRailLinkText = new MockHTMLElement()
+    mockRailLinkText.tagName = 'span'
+    mockRailLinkText.parentElement = mockRailLink
     const mockToggleContents = new MockHTMLElement()
     const mockBackdrop = new MockHTMLElement()
     mockBackdrop.hidden = true
@@ -372,7 +402,7 @@ describe('buildDocsSite', () => {
 
     const mockDoc = {
       documentElement: new MockHTMLElement(),
-      activeElement: mockSearchInput,
+      activeElement: mockSearchInput as MockElement | null,
       querySelectorAll: (selector: string) => {
         if (selector === '[data-open-search]') {
           return [mockOpenSearchMobile, mockOpenSearchRail]
@@ -479,9 +509,12 @@ describe('buildDocsSite', () => {
     expect(mockToggleContents.getAttribute('aria-expanded')).toBe('true')
     expect(mockBackdrop.hidden).toBe(false)
 
+    mockDoc.activeElement = mockRailLinkText
+    const toggleFocusBeforeEscape = mockToggleContents.focusCalls
     const docKeydownHandlers = docListeners.get('keydown') ?? []
     expect(docKeydownHandlers.length).toBe(1)
-    docKeydownHandlers[0]!({
+    const onDocKeydown = docKeydownHandlers[0]!
+    onDocKeydown({
       key: 'Escape',
       isComposing: false,
       keyCode: 27,
@@ -490,18 +523,79 @@ describe('buildDocsSite', () => {
     expect(mockDocRail.classList.contains('is-open')).toBe(false)
     expect(mockToggleContents.getAttribute('aria-expanded')).toBe('false')
     expect(mockBackdrop.hidden).toBe(true)
+    expect(mockToggleContents.focusCalls).toBe(toggleFocusBeforeEscape + 1)
+    expect(mockDoc.activeElement).toBe(mockToggleContents)
 
     for (const openSearchBtn of [mockOpenSearchMobile, mockOpenSearchRail]) {
       toggleClickHandlers[0]!({})
       expect(mockDocRail.classList.contains('is-open')).toBe(true)
+      mockDoc.activeElement = mockRailLink
+      const toggleFocusBeforeSearch = mockToggleContents.focusCalls
+      const searchInputFocusBefore = mockSearchInput.focusCalls
       const searchClickHandlers = openSearchBtn.listeners.get('click') ?? []
       expect(searchClickHandlers.length).toBe(1)
       searchClickHandlers[0]!({})
       expect(mockDialog.open).toBe(true)
       expect(mockDocRail.classList.contains('is-open')).toBe(false)
       expect(mockBackdrop.hidden).toBe(true)
+      expect(mockToggleContents.focusCalls).toBe(toggleFocusBeforeSearch)
+      expect(mockSearchInput.focusCalls).toBe(searchInputFocusBefore + 1)
+      expect(mockDoc.activeElement).toBe(mockSearchInput)
       mockDialog.close()
     }
+
+    const backdropClickHandlers = mockBackdrop.listeners.get('click') ?? []
+    expect(backdropClickHandlers.length).toBe(1)
+    toggleClickHandlers[0]!({})
+    expect(mockDocRail.classList.contains('is-open')).toBe(true)
+    backdropClickHandlers[0]!({})
+    expect(mockDocRail.classList.contains('is-open')).toBe(false)
+    expect(mockToggleContents.getAttribute('aria-expanded')).toBe('false')
+    expect(mockBackdrop.hidden).toBe(true)
+
+    const railClickHandlers = mockDocRail.listeners.get('click') ?? []
+    expect(railClickHandlers.length).toBe(1)
+    toggleClickHandlers[0]!({})
+    expect(mockDocRail.classList.contains('is-open')).toBe(true)
+    railClickHandlers[0]!({ target: mockRailLinkText })
+    expect(mockDocRail.classList.contains('is-open')).toBe(false)
+    expect(mockToggleContents.getAttribute('aria-expanded')).toBe('false')
+    expect(mockBackdrop.hidden).toBe(true)
+
+    mockDoc.activeElement = mockDoc.documentElement
+    const blockedDocEvents = [
+      { key: '/', isComposing: true, keyCode: 191, metaKey: false, ctrlKey: false, altKey: false },
+      { key: '/', isComposing: false, keyCode: 229, metaKey: false, ctrlKey: false, altKey: false },
+      { key: 'k', isComposing: true, keyCode: 75, metaKey: true, ctrlKey: false, altKey: false },
+      { key: 'k', isComposing: false, keyCode: 229, metaKey: true, ctrlKey: false, altKey: false },
+    ]
+    for (const evt of blockedDocEvents) {
+      let prevented = false
+      onDocKeydown({
+        ...evt,
+        preventDefault() {
+          prevented = true
+        },
+      })
+      expect(prevented).toBe(false)
+      expect(mockDialog.open).toBe(false)
+    }
+
+    let slashPrevented = false
+    onDocKeydown({
+      key: '/',
+      isComposing: false,
+      keyCode: 191,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      preventDefault() {
+        slashPrevented = true
+      },
+    })
+    expect(slashPrevented).toBe(true)
+    expect(mockDialog.open).toBe(true)
+    mockDialog.close()
   })
 
   test('builds all 8 real locales (112 pages), 8 search indices, llms.txt, and verified cross-locale links end-to-end', async () => {

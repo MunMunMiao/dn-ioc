@@ -529,7 +529,7 @@ export function renderChapterPage(chapter: CompiledChapter, allChapters: readonl
         return `<li class="rail-item"><a class="rail-link${isCurrent ? ' is-current' : ''}" href="${escapeAttr(chapterHref(chapter.locale, c.meta.slug))}"${isCurrent ? ' aria-current="page"' : ''}><span class="rail-num">${String(c.meta.order).padStart(2, '0')}</span><span class="rail-title">${escapeHtml(c.meta.title)}</span></a></li>`
       })
       .join('')
-    return `<div class="rail-group" data-part="${partId}"><h2 class="rail-group-title">${escapeHtml(ui.parts[partId])}</h2><ol class="rail-list">${items}</ol></div>`
+    return `<div class="rail-group" data-part="${partId}"><p class="rail-group-title">${escapeHtml(ui.parts[partId])}</p><ol class="rail-list">${items}</ol></div>`
   }).join('')
 
   const sectionsHtml = chapter.sections
@@ -579,9 +579,9 @@ ${hreflangLinks}
   </header>
   <div class="rail-backdrop" data-close-contents hidden></div>
   <div class="doc-shell">
-    <aside class="doc-rail" id="doc-rail" aria-label="${escapeAttr(ui.contents)}">
+    <aside class="doc-rail" id="doc-rail">
       <a class="rail-brand" href="${escapeAttr(homeHref)}"><strong>dn-ioc</strong><span>v${escapeHtml(version)}</span></a>
-      <nav class="rail-nav">${railGroupsHtml}</nav>
+      <nav class="rail-nav" aria-label="${escapeAttr(ui.contents)}">${railGroupsHtml}</nav>
       <div class="rail-foot">
         <button type="button" class="rail-tool" data-open-search>${escapeHtml(ui.search)} <kbd>⌘K</kbd></button>
         <details class="lang-menu">
@@ -603,7 +603,7 @@ ${hreflangLinks}
       <div class="doc-sections">
 ${sectionsHtml}
       </div>
-      <nav class="chapter-pager">
+      <nav class="chapter-pager" aria-label="${escapeAttr(`${ui.prev} / ${ui.next}`)}">
         ${prevLinkHtml}
         ${nextLinkHtml}
       </nav>
