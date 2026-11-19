@@ -34,7 +34,7 @@ import case4Code from '../../examples/scopes/case4-rebind-both.ts' with { type: 
 
 الآن أضف `provideFor(labelToken, () => 'local')` مباشرة بجانب `rendererRef` داخل `{ providers }` الخاصة بـ `previewRef`.
 
-بما أن `rendererRef` مملوك للشجرة الفرعية الخاصة بـ `previewRef`، فبحثها عن `labelToken` يفحص ذلك النطاق الخاص أولاً ويصيب `'local'`. وفي نفس الوقت، خارج الشجرة الفرعية، استدعاء `inject(rendererRef)` في الجذر يثبّت تلقائياً نسخة جذرية منفصلة من `rendererRef` لا تزال تقرأ `'app'`. ولا طرف يتسرّب للآخر.
+بما أن `rendererRef` مملوكة للشجرة الفرعية الخاصة بـ `previewRef`، فبحثها عن `labelToken` يفحص ذلك النطاق الخاص أولاً ويلاقي `'local'`. وفي نفس الوقت، خارج الشجرة الفرعية، استدعاء `inject(rendererRef)` في الجذر يثبّت تلقائياً نسخة جذرية منفصلة من `rendererRef` لا تزال تقرأ `'app'`. ولا طرف يتسرّب للآخر.
 
 <Code title="case2-local-override.ts" code={case2Code} />
 
@@ -50,7 +50,7 @@ import case4Code from '../../examples/scopes/case4-rebind-both.ts' with { type: 
 
 ## 4. إعادة ربط المستهلك والتبعية معاً
 
-لما يكون التطبيق الجذري يملك `rendererRef` أصلاً، كيف تعطي `previewRef` نسخة تشوف `'local'`؟ أعد ربط **كلاً** من `labelToken` و`rendererRef` معاً داخل `{ providers }` الخاصة بـ `previewRef`.
+لما يكون التطبيق الجذري يملك `rendererRef` أصلاً، كيف تعطي `previewRef` نسخة تشوف `'local'`؟ أعد ربط **كلّاً** من `labelToken` و`rendererRef` معاً داخل `{ providers }` الخاصة بـ `previewRef`.
 
 الآن تملك `previewRef` ربط `rendererRef` المحلي الخاص بها مباشرة بجانب تخصيص التوكن `'local'`، فتقرأ `previewRef` القيمة `'local'` بينما تواصل `rendererRef` في التطبيق الجذري قراءة `'app'`.
 

@@ -26,7 +26,7 @@ import asyncCode from '../../examples/async/shared-and-background.ts' with { typ
 
 `app.start()` تمشي على قاعدة بسيطة: تنتظر **فقط** دالتك الجذرية وأي كائنات `Promise` تنتظرها دالتك الجذرية فعلاً بـ `await` أو ترجعها. هذا يعطيك تحكماً دقيقاً في ما ينتظره الإقلاع وما يتركه يكمل:
 
-- **أوقف `start()` حتى تجهز التبعيات الحرجة:** اكتب `await inject(settingsRef)` داخل `bootstrapApp(async ({ inject }) => { ... })` لما تحتاج أن ينتظر التطبيق جاهزية ذلك المورد قبل ما يعلن أنه جاهز. ولو رفض، تشغّل `start()` التنظيف تلقائياً وترفض.
+- **خلّ `start()` تنتظر حتى تجهز التبعيات الحرجة:** اكتب `await inject(settingsRef)` داخل `bootstrapApp(async ({ inject }) => { ... })` لما تحتاج أن ينتظر التطبيق جاهزية ذلك المورد قبل ما يعلن أنه جاهز. ولو رفض، تشغّل `start()` التنظيف تلقائياً وترفض.
 - **أطلق شغل الخلفية بدون ما تعطل الإقلاع:** شغّل `inject(warmupRef)` *بدون* `await` داخل الدالة الجذرية، وراح تكتمل `app.start()` فوراً بينما تواصل `warmupRef` عملها. أسند دائماً ذلك الـ `Promise` غير المنتظر بـ `await` إلى مالك خارج الدالة الجذرية (مثل `warmupTask` في `background-task.ts`) حتى تقدر تتابع نتيجته أو تمسك أخطاءه — فالـ Promises المنفلتة لا تتتبّعها `start()`.
 
 <Code title="background-task.ts" code={asyncCode} region="background" />

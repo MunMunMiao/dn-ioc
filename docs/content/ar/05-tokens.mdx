@@ -21,7 +21,7 @@ import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { typ
 - `formatterRef` تحقن `prefixToken` بدون ما تعرف إذا كانت البادئة مصدرها متغير بيئة، أو ملف إعدادات، أو بديل اختبار.
 - `boundApp` تثبّت `provideFor(prefixToken, () => '[app] ')` عند الإقلاع، فتطبع `formatterRef` عبارة `[app] ready`.
 
-لاحظ أن `provideFor()` تقبل أي `InjectKey<T>` — يعني **كلاً** من `Token<T>` و`Ref<T>`. فهكذا تستخدم نفس الدالة بالضبط لربط منفذ مجرّد في الإنتاج أو تبديل `Ref` فعلي في الاختبار.
+لاحظ أن `provideFor()` تقبل أي `InjectKey<T>` — يعني **كلّاً** من `Token<T>` و`Ref<T>`. فهكذا تستخدم نفس الدالة بالضبط لربط منفذ مجرّد في الإنتاج أو تبديل `Ref` فعلي في الاختبار.
 
 ## الفشل الفوري عند نسيان ربط Token
 

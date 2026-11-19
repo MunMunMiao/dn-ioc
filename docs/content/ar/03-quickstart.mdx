@@ -45,7 +45,7 @@ import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with {
 
 الخدمات الحقيقية غالباً تحمّل الإعدادات من الشبكة أو تتواصل مع قاعدة بيانات، والاختبارات تحتاج تبدّلها بسهولة. الحالتين تاخذ سطر ربط واحد:
 
-- **المزوّدات غير المتزامنة تستخدم دوال `async` عادية:** اجعل `settingsRef` دالة `async` وراح يرجّع `inject(settingsRef)` نفس الـ `Promise` المشترك الذي تنتظره `greeterRef` بـ `await`. وجعل دالة الجذر في `bootstrapApp` `async` مع انتظار `inject(greeterRef)` يضمن أن `await testApp.start()` ما يخلص حتى يكتمل الإقلاع.
+- **المزوّدات غير المتزامنة تستخدم دوال `async` عادية:** خلّ `settingsRef` دالة `async` وراح يرجّع `inject(settingsRef)` نفس الـ `Promise` المشترك الذي تنتظره `greeterRef` بـ `await`. وجعل دالة الجذر في `bootstrapApp` `async` مع انتظار `inject(greeterRef)` يضمن أن `await testApp.start()` ما يخلص حتى يكتمل الإقلاع.
 - **`provideFor()` تبدّل أي تبعية في مكانها:** تمرير `provideFor(settingsRef, async () => ({ greeting: 'test-hello' }))` ضمن `{ providers }` يستبدل `settingsRef` داخل `testApp` بدون ما تلمس كود `greeterRef`.
 - **تنظيف مرتّب بعد الاختبار:** استدعاء `await testApp.stop()` يقفل الحقن ويشغّل كل دوال التنظيف المسجّلة حتى ما تتسرّب الموارد للاختبار التالي.
 
