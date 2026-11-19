@@ -48,7 +48,7 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 
 ## 由底至頂行一次成張 MVC 依賴圖
 
-由底至頂逐個撳開下面六個檔案分頁，就可以睇晒一個請求係點樣穿過成張依賴圖：
+由底至頂逐個點開下面目錄樹入面六個檔案，就可以睇晒一個請求係點樣穿過成張依賴圖：
 
 1. **`db/database.ts`：** `provide(function Database({ onDispose }) { ... })` 特登寫成具名函式，萬一撞正循環依賴嗰陣會清晰顯示 `Database` 而唔係 `<anonymous>`，同時將 `onDispose` 清理 hook 就地寫喺連線狀態隔離。
 2. **`models/user.ts`：** 純粹嘅 TypeScript `interface User`——連 `dn-ioc` 都唔使 import。

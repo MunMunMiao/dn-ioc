@@ -34,12 +34,7 @@ import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with {
 
 이 작은 그래프는 열어 둔 소켓도, 타이머도, DB 커넥션 풀도 없기 때문에 `app.stop()`을 호출할 필요도 없어요. `start()`가 끝나면 일반 가비지 컬렉션이 깔끔하게 정리해 주거든요.
 
-<CodeTabs
-  files={[
-    { title: 'step2-compose.ts', code: step2Code },
-    { title: 'step1-provide.ts', code: step1Code },
-  ]}
-/>
+<Code title="step2-compose.ts" code={step2Code} />
 
 ## 3. 비동기 전환과 테스트 대역 갈아끼우기
 

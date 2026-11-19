@@ -34,12 +34,7 @@ import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with {
 
 因為呢張細圖入面完全冇開 socket、timer 或者 DB 連線池，行完根本唔使特登 call `app.stop()`——等 `start()` 一完，交返畀 JS 垃圾回收自動執走就搞掂。
 
-<CodeTabs
-  files={[
-    { title: 'step2-compose.ts', code: step2Code },
-    { title: 'step1-provide.ts', code: step1Code },
-  ]}
-/>
+<Code title="step2-compose.ts" code={step2Code} />
 
 ## 3. 轉做非同步兼喺測試換走依賴
 

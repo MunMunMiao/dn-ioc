@@ -48,7 +48,7 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 
 ## 由底層往上走讀整張 MVC 依賴圖
 
-由下往上依序點開底下六個檔案分頁，就能清楚追蹤一筆請求是如何走過整張依賴圖：
+由下往上依序點開底下目錄樹裡的六個檔案，就能清楚追蹤一筆請求是如何走過整張依賴圖：
 
 1. **`db/database.ts`：** `provide(function Database({ onDispose }) { ... })` 刻意寫成具名函式，萬一遇到循環相依時錯誤訊息會清楚印出 `Database` 而非 `<anonymous>`，同時把 `onDispose` 清理掛鉤直接寫在它負責關閉的資源旁邊。
 2. **`models/user.ts`：** 純粹的 TypeScript `interface User`——連半個 DI 匯入都不需要。

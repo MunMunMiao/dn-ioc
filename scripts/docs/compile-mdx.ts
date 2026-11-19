@@ -53,7 +53,7 @@ const SCRIPTS_DOCS_DIR = import.meta.dir
 const JSX_RUNTIME_URL = pathToFileURL(join(SCRIPTS_DOCS_DIR, 'jsx-runtime.ts')).href
 const JSX_DEV_RUNTIME_URL = pathToFileURL(join(SCRIPTS_DOCS_DIR, 'jsx-dev-runtime.ts')).href
 
-const THEME_INIT_SCRIPT = `(function(){try{var s=localStorage.getItem('dn-ioc-theme');var m=s==='dark'||s==='light'?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-mode',m);}catch(e){}})();`
+const THEME_INIT_SCRIPT = `(function(){try{var s=localStorage.getItem('dn-ioc-theme');var p=s==='light'||s==='dark'||s==='auto'?s:'auto';var m=p==='auto'?(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):p;document.documentElement.setAttribute('data-theme-pref',p);document.documentElement.setAttribute('data-mode',m);}catch(e){}})();`
 
 export function slugifyHeading(text: string, seen: Set<string>): string {
   const base =
@@ -273,14 +273,69 @@ function rewriteCompiledModuleSpecifiers(jsCode: string, filePath: string): stri
   })
 }
 
+interface FileTreeDir {
+  kind: 'dir'
+  name: string
+  children: FileTreeNode[]
+}
+
+interface FileTreeFile {
+  kind: 'file'
+  name: string
+  fullPath: string
+  tabIndex: number
+}
+
+type FileTreeNode = FileTreeDir | FileTreeFile
+
+function buildFileTree(tabs: readonly RenderedCodeTab[]): FileTreeNode[] {
+  const root: FileTreeNode[] = []
+  for (let i = 0; i < tabs.length; i++) {
+    const tab = tabs[i]!
+    const parts = tab.title
+      .split('/')
+      .map(part => part.trim())
+      .filter(Boolean)
+    if (parts.length === 0) {
+      root.push({ kind: 'file', name: tab.title, fullPath: tab.title, tabIndex: i })
+      continue
+    }
+    let level = root
+    for (let depth = 0; depth < parts.length - 1; depth++) {
+      const dirName = parts[depth]!
+      let dirNode = level.find((node): node is FileTreeDir => node.kind === 'dir' && node.name === dirName)
+      if (!dirNode) {
+        dirNode = { kind: 'dir', name: dirName, children: [] }
+        level.push(dirNode)
+      }
+      level = dirNode.children
+    }
+    level.push({
+      kind: 'file',
+      name: parts[parts.length - 1]!,
+      fullPath: tab.title,
+      tabIndex: i,
+    })
+  }
+  return root
+}
+
+function renderFileTreeNodes(nodes: readonly FileTreeNode[], depth = 0): string {
+  return nodes
+    .map(node => {
+      if (node.kind === 'dir') {
+        return `<li class="p-tree-branch" role="treeitem" aria-expanded="true"><span class="p-tree-dir" style="--depth:${depth}"><span class="p-tree-glyph" aria-hidden="true">▾</span><span class="p-tree-dir-name">${escapeHtml(node.name)}/</span></span><ul class="p-tree-children" role="group">${renderFileTreeNodes(node.children, depth + 1)}</ul></li>`
+      }
+      const isActive = node.tabIndex === 0
+      return `<li class="p-tree-leaf" role="none"><button type="button" class="p-tree-file${isActive ? ' is-active' : ''}" role="treeitem" aria-selected="${isActive ? 'true' : 'false'}" style="--depth:${depth}" data-file="${node.tabIndex}" data-path="${escapeAttr(node.fullPath)}" title="${escapeAttr(node.fullPath)}">${escapeHtml(node.name)}</button></li>`
+    })
+    .join('')
+}
+
 function renderPaperCode(tabs: readonly RenderedCodeTab[], localeCfg: LocaleConfig): string {
   const { ui } = localeCfg
-  const tabButtons = tabs
-    .map(
-      (tab, t) =>
-        `<button type="button" class="p-tab${t === 0 ? ' is-active' : ''}" role="tab" aria-selected="${t === 0 ? 'true' : 'false'}" data-tab="${t}">${escapeHtml(tab.title)}</button>`,
-    )
-    .join('')
+  const activeTitle = tabs[0]?.title ?? ''
+  const headerHtml = `<div class="p-head"><span class="p-filename">${escapeHtml(activeTitle)}</span><button type="button" class="p-copy" data-copy="${escapeAttr(ui.copy)}" data-copied="${escapeAttr(ui.copied)}">${escapeHtml(ui.copy)}</button></div>`
 
   const prePanels = tabs
     .map(
@@ -289,7 +344,12 @@ function renderPaperCode(tabs: readonly RenderedCodeTab[], localeCfg: LocaleConf
     )
     .join('')
 
-  return `<div class="paper-code" dir="ltr"><div class="p-tabs"><div class="p-tablist" role="tablist">${tabButtons}</div><button type="button" class="p-copy" data-copy="${escapeAttr(ui.copy)}" data-copied="${escapeAttr(ui.copied)}">${escapeHtml(ui.copy)}</button></div>${prePanels}</div>`
+  if (tabs.length <= 1) {
+    return `<div class="paper-code" dir="ltr">${headerHtml}${prePanels}</div>`
+  }
+
+  const treeHtml = renderFileTreeNodes(buildFileTree(tabs))
+  return `<div class="paper-code paper-code-tree" dir="ltr">${headerHtml}<div class="p-tree-layout"><div class="p-tree" role="tree" aria-label="${escapeAttr(ui.files)}"><ul class="p-tree-list" role="none">${treeHtml}</ul></div><div class="p-panels">${prePanels}</div></div></div>`
 }
 
 function flattenTopLevel(node: VChild): VChild[] {
@@ -560,7 +620,7 @@ ${section.html}
   const fontsUrl = `https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400${arabicFontParam}&display=swap`
 
   return `<!DOCTYPE html>
-<html lang="${escapeAttr(localeCfg.htmlLang)}" dir="${localeCfg.dir}" data-locale="${escapeAttr(chapter.locale)}" data-mode="light">
+<html lang="${escapeAttr(localeCfg.htmlLang)}" dir="${localeCfg.dir}" data-locale="${escapeAttr(chapter.locale)}" data-mode="light" data-theme-pref="auto">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -594,8 +654,12 @@ ${hreflangLinks}
           <summary class="rail-tool lang-summary" aria-label="${escapeAttr(ui.language)}">🌐 ${escapeHtml(localeCfg.label)}</summary>
           <ul class="lang-list">${langOptionsHtml}</ul>
         </details>
+        <div class="theme-group" role="group" aria-label="${escapeAttr(ui.theme)}">
+          <button type="button" class="theme-opt" data-theme-set="auto" aria-pressed="true" title="${escapeAttr(ui.autoTheme)}"><span aria-hidden="true">◐</span><span>${escapeHtml(ui.autoTheme)}</span></button>
+          <button type="button" class="theme-opt" data-theme-set="light" aria-pressed="false" title="${escapeAttr(ui.lightPaper)}"><span aria-hidden="true">☀</span><span>${escapeHtml(ui.lightTheme)}</span></button>
+          <button type="button" class="theme-opt" data-theme-set="dark" aria-pressed="false" title="${escapeAttr(ui.darkCard)}"><span aria-hidden="true">☾</span><span>${escapeHtml(ui.darkTheme)}</span></button>
+        </div>
         <div class="rail-foot-links">
-          <button type="button" class="rail-tool theme-toggle" data-toggle-theme data-light-label="${escapeAttr(ui.lightPaper)}" data-dark-label="${escapeAttr(ui.darkCard)}" aria-label="${escapeAttr(ui.lightPaper)} / ${escapeAttr(ui.darkCard)}">☀ / ☾</button>
           <a class="rail-tool" dir="ltr" href="https://github.com/MunMunMiao/dn-ioc" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
           <a class="rail-tool" href="/llms.txt">llms.txt</a>
         </div>

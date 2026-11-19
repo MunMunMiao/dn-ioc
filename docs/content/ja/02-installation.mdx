@@ -8,14 +8,14 @@ summary: "普段使いのパッケージマネージャでの導入から、Deno
 
 `dn-ioc` は依存ゼロの単一 ESM パッケージ（minify 後 `4.8 kB`、gzip `1.9 kB`）として配布されています。コマンド1つで入りますし、`node_modules` に余計な間接依存を持ち込むこともありません。普段プロジェクトで使っているパッケージマネージャで入れるのはもちろん、Deno の `npm:` 指定子やブラウザの CDN から直接読み込むこともできます。
 
-<CodeTabs
-  files={[
-    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
-    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
-    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
-    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
-    { title: 'deno', lang: 'bash', code: 'deno add npm:dn-ioc' },
-  ]}
+<Code
+  title="install.sh"
+  lang="bash"
+  code={`npm install dn-ioc
+pnpm add dn-ioc
+yarn add dn-ioc
+bun add dn-ioc
+deno add npm:dn-ioc`}
 />
 
 ## Deno ならインストールすら不要
@@ -42,12 +42,10 @@ Web ページで `dn-ioc` を使うのにバンドラは必須ではありませ
 
 また、`<script type="importmap">` を書いておけば、モジュール側のコードを `'dn-ioc'` のベア指定子のまま統一できるので、バンドラあり・なしのどちらでも同じコードがそのまま動きます。
 
-<CodeTabs
-  files={[
-    {
-      title: 'importmap.html',
-      lang: 'html',
-      code: `<!doctype html>
+<Code
+  title="importmap.html"
+  lang="html"
+  code={`<!doctype html>
 <html lang="en">
   <head>
     <script type="importmap">
@@ -70,12 +68,13 @@ Web ページで `dn-ioc` を使うのにバンドラは必須ではありませ
       await app.start()
     </script>
   </body>
-</html>`,
-    },
-    {
-      title: 'direct-cdn.html',
-      lang: 'html',
-      code: `<!doctype html>
+</html>`}
+/>
+
+<Code
+  title="direct-cdn.html"
+  lang="html"
+  code={`<!doctype html>
 <html lang="en">
   <body>
     <script type="module">
@@ -89,9 +88,7 @@ Web ページで `dn-ioc` を使うのにバンドラは必須ではありませ
       await app.start()
     </script>
   </body>
-</html>`,
-    },
-  ]}
+</html>`}
 />
 
 ## ESM と TypeScript の設定

@@ -105,12 +105,10 @@ Comme `dn-ioc` ne manipule que des handles au runtime, rien dans le noyau n’em
 | **`infra/`** | `domain/` | `application/`, `main.ts` |
 | **`main.ts` (Points d’entrée)** | `application/`, `infra/`, `domain/` | — |
 
-<CodeTabs
-  files={[
-    {
-      title: 'biome.json',
-      lang: 'json',
-      code: `{
+<Code
+  title="biome.json"
+  lang="json"
+  code={`{
   "overrides": [
     {
       "includes": ["src/domain/**"],
@@ -153,12 +151,13 @@ Comme `dn-ioc` ne manipule que des handles au runtime, rien dans le noyau n’em
       }
     }
   ]
-}`,
-    },
-    {
-      title: 'eslint.config.js',
-      lang: 'js',
-      code: `export default [
+}`}
+/>
+
+<Code
+  title="eslint.config.js"
+  lang="js"
+  code={`export default [
   {
     files: ['src/domain/**/*.ts'],
     rules: {
@@ -191,9 +190,7 @@ Comme `dn-ioc` ne manipule que des handles au runtime, rien dans le noyau n’em
       ],
     },
   },
-]`,
-    },
-  ]}
+]`}
 />
 
 Mettons maintenant côte à côte les tests unitaires et les tests d’intégration dans [Tests et mocks](/fr/testing/).

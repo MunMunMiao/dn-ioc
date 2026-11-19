@@ -8,14 +8,14 @@ summary: "패키지 매니저로 dn-ioc를 설치하거나 Deno·브라우저 CD
 
 `dn-ioc`는 외부 의존성이 하나도 없는 순수 ESM 패키지(`4.8 kB` minified, `1.9 kB` gzipped)로 배포돼요. 명령어 한 줄이면 설치가 끝나고 `node_modules`에 불필요한 하위 패키지를 잔뜩 끌고 오지도 않죠. 프로젝트에서 쓰던 패키지 매니저로 바로 설치하거나, Deno의 `npm:` 지정자나 브라우저 CDN에서 곧장 불러와 보세요.
 
-<CodeTabs
-  files={[
-    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
-    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
-    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
-    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
-    { title: 'deno', lang: 'bash', code: 'deno add npm:dn-ioc' },
-  ]}
+<Code
+  title="install.sh"
+  lang="bash"
+  code={`npm install dn-ioc
+pnpm add dn-ioc
+yarn add dn-ioc
+bun add dn-ioc
+deno add npm:dn-ioc`}
 />
 
 ## Deno에서 설치 없이 바로 쓰기
@@ -42,12 +42,10 @@ summary: "패키지 매니저로 dn-ioc를 설치하거나 Deno·브라우저 CD
 
 여기에 `<script type="importmap">`을 곁들이면 모듈 코드 안에서 `'dn-ioc'`라는 짧은 이름을 그대로 유지할 수 있어서, 번들러가 있든 없든 똑같은 코드가 그대로 돌아가요.
 
-<CodeTabs
-  files={[
-    {
-      title: 'importmap.html',
-      lang: 'html',
-      code: `<!doctype html>
+<Code
+  title="importmap.html"
+  lang="html"
+  code={`<!doctype html>
 <html lang="en">
   <head>
     <script type="importmap">
@@ -70,12 +68,13 @@ summary: "패키지 매니저로 dn-ioc를 설치하거나 Deno·브라우저 CD
       await app.start()
     </script>
   </body>
-</html>`,
-    },
-    {
-      title: 'direct-cdn.html',
-      lang: 'html',
-      code: `<!doctype html>
+</html>`}
+/>
+
+<Code
+  title="direct-cdn.html"
+  lang="html"
+  code={`<!doctype html>
 <html lang="en">
   <body>
     <script type="module">
@@ -89,9 +88,7 @@ summary: "패키지 매니저로 dn-ioc를 설치하거나 Deno·브라우저 CD
       await app.start()
     </script>
   </body>
-</html>`,
-    },
-  ]}
+</html>`}
 />
 
 ## ESM 및 TypeScript 설정

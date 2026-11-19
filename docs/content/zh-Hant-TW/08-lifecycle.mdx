@@ -51,13 +51,11 @@ import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' wit
 - **瀏覽器局部元件（`browser-unmount.ts`）：** 在前端盡可能把依賴圖綁定在由你自己控制卸載時機的元件或路由上（`await ready; await app.stop()`），因為只要頁面還活著，非同步清理掛鉤就能完整被 `await` 執行完畢。
 - **瀏覽器分頁關閉（`browser-pagehide.ts`）：** 請優先使用 `pagehide` 而不要用 `beforeunload`（後者會破壞瀏覽器的往返快取 bfcache，甚至直接被略過）。即便改用 `pagehide`，瀏覽器通常也不會等 `async` Promise 解析完就把頁面銷毀了——因此分頁關閉時的清理邏輯請務必保持純同步，例如直接呼叫 `navigator.sendBeacon()`。
 
-<CodeTabs
-  files={[
-    { title: 'node-server.ts', code: nodeShutdownCode },
-    { title: 'browser-unmount.ts', code: browserUnmountCode, region: 'unmount' },
-    { title: 'browser-pagehide.ts', code: browserUnmountCode, region: 'pagehide' },
-  ]}
-/>
+<Code title="node-server.ts" code={nodeShutdownCode} />
+
+<Code title="browser-unmount.ts" code={browserUnmountCode} region="unmount" />
+
+<Code title="browser-pagehide.ts" code={browserUnmountCode} region="pagehide" />
 
 ## 掛鉤規則、啟動失敗自動回滾與限制
 

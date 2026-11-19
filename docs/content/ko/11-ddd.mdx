@@ -105,12 +105,10 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
 | **`infra/`** | `domain/` | `application/`, `main.ts` |
 | **`main.ts` (진입점)** | `application/`, `infra/`, `domain/` | — |
 
-<CodeTabs
-  files={[
-    {
-      title: 'biome.json',
-      lang: 'json',
-      code: `{
+<Code
+  title="biome.json"
+  lang="json"
+  code={`{
   "overrides": [
     {
       "includes": ["src/domain/**"],
@@ -153,12 +151,13 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
       }
     }
   ]
-}`,
-    },
-    {
-      title: 'eslint.config.js',
-      lang: 'js',
-      code: `export default [
+}`}
+/>
+
+<Code
+  title="eslint.config.js"
+  lang="js"
+  code={`export default [
   {
     files: ['src/domain/**/*.ts'],
     rules: {
@@ -191,9 +190,7 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
       ],
     },
   },
-]`,
-    },
-  ]}
+]`}
 />
 
 이제 [테스트와 대역 갈아끼우기](/ko/testing/)로 넘어가서 단위 테스트와 통합 테스트 패턴을 나란히 비교해 볼게요.

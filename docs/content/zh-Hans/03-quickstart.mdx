@@ -13,7 +13,7 @@ import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with {
 
 ## 1. 用 provide() 定义依赖
 
-随便传个工厂函数给 `provide()`，就能拿到一个带完整类型的 `Ref<T>` 句柄。看右边的 `step1-provide.ts`：`configRef` 直接返回一个普通配置对象，`greeterRef` 从参数里解构出 `{ inject }` 把配置取出来，拼好 `{ greet }` 返回。
+随便传个工厂函数给 `provide()`，就能拿到一个带完整类型的 `Ref<T>` 句柄。看下面的 `step1-provide.ts`：`configRef` 直接返回一个普通配置对象，`greeterRef` 从参数里解构出 `{ inject }` 把配置取出来，拼好 `{ greet }` 返回。
 
 这里有两个细节一眼就能看出来：
 
@@ -34,12 +34,7 @@ import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with {
 
 因为这个小例子没开网络连接、没挂定时器也没连数据库池，跑完压根不需要调 `app.stop()`——`start()` 结束后交给正常的垃圾回收就行。
 
-<CodeTabs
-  files={[
-    { title: 'step2-compose.ts', code: step2Code },
-    { title: 'step1-provide.ts', code: step1Code },
-  ]}
-/>
+<Code title="step2-compose.ts" code={step2Code} />
 
 ## 3. 接入异步依赖，并在测试里替换假实现
 

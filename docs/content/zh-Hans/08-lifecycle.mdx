@@ -51,13 +51,11 @@ import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' wit
 - **浏览器局部组件（`browser-unmount.ts`）：** 只要条件允许，尽量把前端依赖图绑在你能手动卸载的组件或路由生命周期上（`await ready; await app.stop()`）。页面还活着，异步清理钩子就能稳稳当当地 `await` 完。
 - **浏览器整页卸载（`browser-pagehide.ts`）：** 优先用 `pagehide`，别用 `beforeunload`（容易破坏往返缓存 bfcache，在移动端还经常不触发）。不过就算用了 `pagehide`，浏览器也经常不等 `async` Promise 跑完就直接把页面销毁了——所以卸载钩子里只放纯同步操作，比如 `navigator.sendBeacon()`。
 
-<CodeTabs
-  files={[
-    { title: 'node-server.ts', code: nodeShutdownCode },
-    { title: 'browser-unmount.ts', code: browserUnmountCode, region: 'unmount' },
-    { title: 'browser-pagehide.ts', code: browserUnmountCode, region: 'pagehide' },
-  ]}
-/>
+<Code title="node-server.ts" code={nodeShutdownCode} />
+
+<Code title="browser-unmount.ts" code={browserUnmountCode} region="unmount" />
+
+<Code title="browser-pagehide.ts" code={browserUnmountCode} region="pagehide" />
 
 ## 清理钩子规矩、启动失败回滚与能力边界
 

@@ -48,7 +48,7 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 
 ## تتبّع مخطط MVC بالكامل
 
-تنقّل بين تبويبات الملفات الستة من الأسفل للأعلى حتى تشوف كيف يمشي الطلب عبر المخطط:
+تنقّل بين الملفات الستة في شجرة الملفات أدناه من الأسفل للأعلى حتى تشوف كيف يمشي الطلب عبر المخطط:
 
 1. **`db/database.ts`:** استدعاء `provide(function Database({ onDispose }) { ... })` يستخدم دالة مسمّاة حتى تطبع أخطاء الدوائر الاعتمادية اسم `Database` بدل `<anonymous>`، ويسجّل خطاف `onDispose` بجانب الحالة التي يغلقها مباشرة.
 2. **`models/user.ts`:** مجرّد `interface User` صافية في TypeScript — بدون أي استيراد لمكتبة الحقن.

@@ -34,12 +34,7 @@ When `await app.start()` runs:
 
 Because this little graph holds no open sockets, timers, or database pools, you don't need `app.stop()`—once `start()` finishes, normal garbage collection cleans everything up.
 
-<CodeTabs
-  files={[
-    { title: 'step2-compose.ts', code: step2Code },
-    { title: 'step1-provide.ts', code: step1Code },
-  ]}
-/>
+<Code title="step2-compose.ts" code={step2Code} />
 
 ## 3. Go Async and Swap a Test Fake
 

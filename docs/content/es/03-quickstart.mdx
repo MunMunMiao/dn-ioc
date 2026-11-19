@@ -34,12 +34,7 @@ Cuando corre `await app.start()`:
 
 Como este pequeño grafo no abre sockets, temporizadores ni pools de base de datos, no necesitas llamar a `app.stop()`: en cuanto termina `start()`, el recolector de basura normal limpia todo.
 
-<CodeTabs
-  files={[
-    { title: 'step2-compose.ts', code: step2Code },
-    { title: 'step1-provide.ts', code: step1Code },
-  ]}
-/>
+<Code title="step2-compose.ts" code={step2Code} />
 
 ## 3. Hazlo asíncrono y mete un fake de prueba
 

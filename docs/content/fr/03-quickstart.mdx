@@ -34,12 +34,7 @@ Quand `await app.start()` se lance :
 
 Comme ce petit graphe ne garde aucun socket, timer ou pool de connexions ouvert, inutile d’appeler `app.stop()` : dès que `start()` se termine, le ramasse-miettes nettoie tout normalement.
 
-<CodeTabs
-  files={[
-    { title: 'step2-compose.ts', code: step2Code },
-    { title: 'step1-provide.ts', code: step1Code },
-  ]}
-/>
+<Code title="step2-compose.ts" code={step2Code} />
 
 ## 3. Passe en asynchrone et injecte un fake de test
 

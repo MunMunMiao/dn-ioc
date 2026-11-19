@@ -105,12 +105,10 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
 | **`infra/`** | `domain/` | `application/`、`main.ts` |
 | **`main.ts`（各入口文件）** | `application/`、`infra/`、`domain/` | — |
 
-<CodeTabs
-  files={[
-    {
-      title: 'biome.json',
-      lang: 'json',
-      code: `{
+<Code
+  title="biome.json"
+  lang="json"
+  code={`{
   "overrides": [
     {
       "includes": ["src/domain/**"],
@@ -153,12 +151,13 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
       }
     }
   ]
-}`,
-    },
-    {
-      title: 'eslint.config.js',
-      lang: 'js',
-      code: `export default [
+}`}
+/>
+
+<Code
+  title="eslint.config.js"
+  lang="js"
+  code={`export default [
   {
     files: ['src/domain/**/*.ts'],
     rules: {
@@ -191,9 +190,7 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
       ],
     },
   },
-]`,
-    },
-  ]}
+]`}
 />
 
 架构搭清楚了，下一章我们把单元测试和集成测试的实战套路摆到一块儿细聊，请翻到[测试与依赖替换](/zh-hans/testing/)。

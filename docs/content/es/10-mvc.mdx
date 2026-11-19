@@ -48,7 +48,7 @@ En un proyecto MVC sano, los imports fluyen estrictamente de arriba hacia abajo:
 
 ## Recorrido completo por el grafo MVC
 
-Navega por las seis pestañas de código de abajo arriba para seguir el viaje de una petición por todo el grafo:
+Recorre los seis archivos del árbol de código desde la base hacia arriba para seguir el viaje de una petición por todo el grafo:
 
 1. **`db/database.ts`:** `provide(function Database({ onDispose }) { ... })` usa una función con nombre para que los errores de ciclos muestren `Database` en lugar de `<anonymous>`, y registra su hook `onDispose` justo al lado del estado que cierra.
 2. **`models/user.ts`:** Un `interface User` puro de TypeScript, sin un solo import de DI.

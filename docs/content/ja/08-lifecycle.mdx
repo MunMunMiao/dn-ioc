@@ -51,13 +51,11 @@ import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' wit
 - **ブラウザのウィジェット (`browser-unmount.ts`):** ブラウザで使う場合は、ページ全体よりもコンポーネントやルート単位にグラフを閉じ込め、アンマウント時に自分で止める（`await ready; await app.stop()`）のが一番確実です。ページが生きている間なので、非同期のクリーンアップフックも最後までしっかり待てます。
 - **ブラウザのタブ離脱 (`browser-pagehide.ts`):** bfcache（戻る・進むキャッシュ）を阻害したりスキップされたりする `beforeunload` ではなく、`pagehide` を使いましょう。ただし `pagehide` でも、`async` の `Promise` が完了する前にブラウザがページを破棄してしまうのが普通なので、離脱時のフックは `navigator.sendBeacon()` のような同期処理だけに留めてください。
 
-<CodeTabs
-  files={[
-    { title: 'node-server.ts', code: nodeShutdownCode },
-    { title: 'browser-unmount.ts', code: browserUnmountCode, region: 'unmount' },
-    { title: 'browser-pagehide.ts', code: browserUnmountCode, region: 'pagehide' },
-  ]}
-/>
+<Code title="node-server.ts" code={nodeShutdownCode} />
+
+<Code title="browser-unmount.ts" code={browserUnmountCode} region="unmount" />
+
+<Code title="browser-pagehide.ts" code={browserUnmountCode} region="pagehide" />
 
 ## フックの制約・起動失敗時のロールバック・注意点
 

@@ -105,12 +105,10 @@ Because `dn-ioc` only sees runtime handles, nothing in the kernel itself stops a
 | **`infra/`** | `domain/` | `application/`, `main.ts` |
 | **`main.ts` (Entrypoints)** | `application/`, `infra/`, `domain/` | — |
 
-<CodeTabs
-  files={[
-    {
-      title: 'biome.json',
-      lang: 'json',
-      code: `{
+<Code
+  title="biome.json"
+  lang="json"
+  code={`{
   "overrides": [
     {
       "includes": ["src/domain/**"],
@@ -153,12 +151,13 @@ Because `dn-ioc` only sees runtime handles, nothing in the kernel itself stops a
       }
     }
   ]
-}`,
-    },
-    {
-      title: 'eslint.config.js',
-      lang: 'js',
-      code: `export default [
+}`}
+/>
+
+<Code
+  title="eslint.config.js"
+  lang="js"
+  code={`export default [
   {
     files: ['src/domain/**/*.ts'],
     rules: {
@@ -191,9 +190,7 @@ Because `dn-ioc` only sees runtime handles, nothing in the kernel itself stops a
       ],
     },
   },
-]`,
-    },
-  ]}
+]`}
 />
 
 Now let's put both unit and integration testing patterns side by side in [Testing & Mocking](/testing/).

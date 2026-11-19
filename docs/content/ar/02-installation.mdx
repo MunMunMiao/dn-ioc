@@ -8,14 +8,14 @@ summary: "ثبّت dn-ioc بمدير الحزم الذي تستخدمه، أو �
 
 `dn-ioc` عبارة عن حزمة ESM بدون أي تبعيات خارجية (`4.8 kB` بعد الضغط، و`1.9 kB` مضغوطة بـ gzip)، يعني تثبيتها ياخذ أمراً واحداً وما يجر معها أي حزم إضافية في `node_modules`. نزّلها بأي مدير حزم تستخدمه في مشروعك، أو اسحبها مباشرة بصيغة `npm:` على Deno أو من CDN في المتصفح.
 
-<CodeTabs
-  files={[
-    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
-    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
-    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
-    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
-    { title: 'deno', lang: 'bash', code: 'deno add npm:dn-ioc' },
-  ]}
+<Code
+  title="install.sh"
+  lang="bash"
+  code={`npm install dn-ioc
+pnpm add dn-ioc
+yarn add dn-ioc
+bun add dn-ioc
+deno add npm:dn-ioc`}
 />
 
 ## التشغيل المباشر على Deno بدون تثبيت
@@ -42,12 +42,10 @@ summary: "ثبّت dn-ioc بمدير الحزم الذي تستخدمه، أو �
 
 إضافة `<script type="importmap">` تخليك تكتب استيراد `'dn-ioc'` مباشرة في ملفاتك، فيشتغل نفس الكود بالضبط سواء بوجود bundler أو بدونه.
 
-<CodeTabs
-  files={[
-    {
-      title: 'importmap.html',
-      lang: 'html',
-      code: `<!doctype html>
+<Code
+  title="importmap.html"
+  lang="html"
+  code={`<!doctype html>
 <html lang="en">
   <head>
     <script type="importmap">
@@ -70,12 +68,13 @@ summary: "ثبّت dn-ioc بمدير الحزم الذي تستخدمه، أو �
       await app.start()
     </script>
   </body>
-</html>`,
-    },
-    {
-      title: 'direct-cdn.html',
-      lang: 'html',
-      code: `<!doctype html>
+</html>`}
+/>
+
+<Code
+  title="direct-cdn.html"
+  lang="html"
+  code={`<!doctype html>
 <html lang="en">
   <body>
     <script type="module">
@@ -89,9 +88,7 @@ summary: "ثبّت dn-ioc بمدير الحزم الذي تستخدمه، أو �
       await app.start()
     </script>
   </body>
-</html>`,
-    },
-  ]}
+</html>`}
 />
 
 ## إعدادات ESM و TypeScript

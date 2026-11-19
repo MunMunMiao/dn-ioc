@@ -105,12 +105,10 @@ Como `dn-ioc` trabaja con manejadores en tiempo de ejecución, nada dentro del n
 | **`infra/`** | `domain/` | `application/`, `main.ts` |
 | **`main.ts` (Puntos de entrada)** | `application/`, `infra/`, `domain/` | — |
 
-<CodeTabs
-  files={[
-    {
-      title: 'biome.json',
-      lang: 'json',
-      code: `{
+<Code
+  title="biome.json"
+  lang="json"
+  code={`{
   "overrides": [
     {
       "includes": ["src/domain/**"],
@@ -153,12 +151,13 @@ Como `dn-ioc` trabaja con manejadores en tiempo de ejecución, nada dentro del n
       }
     }
   ]
-}`,
-    },
-    {
-      title: 'eslint.config.js',
-      lang: 'js',
-      code: `export default [
+}`}
+/>
+
+<Code
+  title="eslint.config.js"
+  lang="js"
+  code={`export default [
   {
     files: ['src/domain/**/*.ts'],
     rules: {
@@ -191,9 +190,7 @@ Como `dn-ioc` trabaja con manejadores en tiempo de ejecución, nada dentro del n
       ],
     },
   },
-]`,
-    },
-  ]}
+]`}
 />
 
 Ahora pongamos mano a mano las estrategias de tests unitarios y de integración en [Pruebas y mocks](/es/testing/).

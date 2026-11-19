@@ -4,7 +4,7 @@
   const contentsToggle = document.querySelector('[data-toggle-contents]')
   const railBackdrop = document.querySelector('[data-close-contents]')
   const langMenu = document.querySelector('details.lang-menu')
-  const themeToggle = document.querySelector('[data-toggle-theme]')
+  const themeButtons = Array.from(document.querySelectorAll('[data-theme-set]'))
   const searchOpenBtns = Array.from(document.querySelectorAll('[data-open-search]'))
   const searchModal = document.getElementById('search-modal')
   const searchInput = document.getElementById('search-input')
@@ -34,20 +34,25 @@
       return
     }
 
-    const tabBtn = target.closest('.p-tab')
-    if (tabBtn) {
-      const paperCode = tabBtn.closest('.paper-code')
-      const tabIndex = tabBtn.getAttribute('data-tab')
-      if (paperCode && tabIndex !== null) {
-        const tabs = paperCode.querySelectorAll('.p-tab')
-        for (const tab of tabs) {
-          const isSelected = tab.getAttribute('data-tab') === tabIndex
-          tab.classList.toggle('is-active', isSelected)
-          tab.setAttribute('aria-selected', isSelected ? 'true' : 'false')
+    const fileBtn = target.closest('.p-tree-file')
+    if (fileBtn) {
+      const paperCode = fileBtn.closest('.paper-code')
+      const fileIndex = fileBtn.getAttribute('data-file')
+      if (paperCode && fileIndex !== null) {
+        const fileButtons = paperCode.querySelectorAll('.p-tree-file')
+        for (const btn of fileButtons) {
+          const isSelected = btn.getAttribute('data-file') === fileIndex
+          btn.classList.toggle('is-active', isSelected)
+          btn.setAttribute('aria-selected', isSelected ? 'true' : 'false')
         }
         const panels = paperCode.querySelectorAll('.p-pre')
         for (const panel of panels) {
-          panel.classList.toggle('is-active', panel.getAttribute('data-panel') === tabIndex)
+          panel.classList.toggle('is-active', panel.getAttribute('data-panel') === fileIndex)
+        }
+        const filenameEl = paperCode.querySelector('.p-filename')
+        const filePath = fileBtn.getAttribute('data-path')
+        if (filenameEl && filePath) {
+          filenameEl.textContent = filePath
         }
       }
       return
@@ -83,31 +88,71 @@
     }
   })
 
-  const syncThemeToggle = () => {
-    if (!themeToggle) {
-      return
+  const THEME_STORAGE_KEY = 'dn-ioc-theme'
+  const VALID_THEME_PREFS = new Set(['auto', 'light', 'dark'])
+  const colorSchemeQuery = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null
+
+  const readStoredThemePref = () => {
+    try {
+      const stored = localStorage.getItem(THEME_STORAGE_KEY)
+      if (stored && VALID_THEME_PREFS.has(stored)) {
+        return stored
+      }
+    } catch (_err) {
+      // Ignore storage read errors in restricted browsing contexts
     }
-    const current = root.getAttribute('data-mode') === 'dark' ? 'dark' : 'light'
-    const lightLabel = themeToggle.getAttribute('data-light-label') || 'Light'
-    const darkLabel = themeToggle.getAttribute('data-dark-label') || 'Dark'
-    const nextLabel = current === 'dark' ? lightLabel : darkLabel
-    themeToggle.setAttribute('title', nextLabel)
-    themeToggle.setAttribute('aria-pressed', current === 'dark' ? 'true' : 'false')
+    const attr = root.getAttribute('data-theme-pref')
+    return attr && VALID_THEME_PREFS.has(attr) ? attr : 'auto'
   }
 
-  syncThemeToggle()
+  const resolveThemeMode = pref => {
+    if (pref === 'light' || pref === 'dark') {
+      return pref
+    }
+    return colorSchemeQuery?.matches ? 'dark' : 'light'
+  }
 
-  if (themeToggle) {
-    themeToggle.addEventListener('click', () => {
-      const nextMode = root.getAttribute('data-mode') === 'dark' ? 'light' : 'dark'
-      root.setAttribute('data-mode', nextMode)
+  let currentThemePref = readStoredThemePref()
+
+  const applyThemePref = (pref, persist) => {
+    currentThemePref = VALID_THEME_PREFS.has(pref) ? pref : 'auto'
+    const resolvedMode = resolveThemeMode(currentThemePref)
+    root.setAttribute('data-theme-pref', currentThemePref)
+    root.setAttribute('data-mode', resolvedMode)
+    for (const btn of themeButtons) {
+      const isSelected = btn.getAttribute('data-theme-set') === currentThemePref
+      btn.classList.toggle('is-active', isSelected)
+      btn.setAttribute('aria-pressed', isSelected ? 'true' : 'false')
+    }
+    if (persist) {
       try {
-        localStorage.setItem('dn-ioc-theme', nextMode)
+        localStorage.setItem(THEME_STORAGE_KEY, currentThemePref)
       } catch (_err) {
         // Ignore storage write errors in restricted browsing contexts
       }
-      syncThemeToggle()
+    }
+  }
+
+  applyThemePref(currentThemePref, false)
+
+  for (const btn of themeButtons) {
+    btn.addEventListener('click', () => {
+      const nextPref = btn.getAttribute('data-theme-set') || 'auto'
+      applyThemePref(nextPref, true)
     })
+  }
+
+  if (colorSchemeQuery) {
+    const onSystemSchemeChange = () => {
+      if (currentThemePref === 'auto') {
+        applyThemePref('auto', false)
+      }
+    }
+    if (typeof colorSchemeQuery.addEventListener === 'function') {
+      colorSchemeQuery.addEventListener('change', onSystemSchemeChange)
+    } else if (typeof colorSchemeQuery.addListener === 'function') {
+      colorSchemeQuery.addListener(onSystemSchemeChange)
+    }
   }
 
   const setContentsOpen = open => {

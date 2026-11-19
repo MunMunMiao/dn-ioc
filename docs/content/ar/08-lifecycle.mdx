@@ -51,13 +51,11 @@ import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' wit
 - **مكوّنات المتصفح (`browser-unmount.ts`):** كلّما أمكن، اربط مخططات المتصفح بمكوّن أو مسار تفصله أنت بنفسك (`await ready; await app.stop()`)، حيث يتم انتظار خطافات التنظيف غير المتزامنة بشكل سليم بينما الصفحة لا تزال مفتوحة.
 - **إغلاق تبويب المتصفح (`browser-pagehide.ts`):** فضّل `pagehide` على `beforeunload` (لأن `beforeunload` تتعطّل أو يتجاوزها كاش الرجوع للأمام والخلف bfcache). وحتى مع `pagehide`، المتصفحات تقفل الصفحة غالباً قبل ما يكتمل أي `Promise` غير متزامن — فخلّ خطافات إغلاق الصفحة متزامنة تماماً، مثل `navigator.sendBeacon()`.
 
-<CodeTabs
-  files={[
-    { title: 'node-server.ts', code: nodeShutdownCode },
-    { title: 'browser-unmount.ts', code: browserUnmountCode, region: 'unmount' },
-    { title: 'browser-pagehide.ts', code: browserUnmountCode, region: 'pagehide' },
-  ]}
-/>
+<Code title="node-server.ts" code={nodeShutdownCode} />
+
+<Code title="browser-unmount.ts" code={browserUnmountCode} region="unmount" />
+
+<Code title="browser-pagehide.ts" code={browserUnmountCode} region="pagehide" />
 
 ## قواعد الخطافات، التراجع عند فشل الإقلاع، والحدود
 

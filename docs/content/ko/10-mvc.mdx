@@ -48,7 +48,7 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 
 ## 전체 MVC 그래프 아래에서 위로 따라가기
 
-여섯 개의 파일 탭을 맨 아래 계층부터 위로 넘기면서 요청 하나가 그래프를 어떻게 통과하는지 따라가 보세요.
+아래 파일 트리의 여섯 파일을 맨 아래 계층부터 위로 따라가면서 요청 하나가 그래프를 어떻게 통과하는지 살펴보세요.
 
 1. **`db/database.ts`:** `provide(function Database({ onDispose }) { ... })`처럼 기명 함수를 써서 순환 참조 진단 메시지에 `<anonymous>` 대신 `Database`가 찍히도록 했고, 닫아야 할 상태 바로 옆에서 `onDispose` 훅을 등록했어요.
 2. **`models/user.ts`:** 순수 TypeScript `interface User`만 들어 있어요. DI 관련 `import`는 하나도 필요 없죠.

@@ -48,7 +48,7 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 
 ## 从底往上串一遍完整依赖图
 
-在右边把六个文件标签页从左到右翻一遍，就能看清一次请求是怎么穿过整张图的：
+沿着下面目录树里的六个文件从底往上翻一遍，就能看清一次请求是怎么穿过整张图的：
 
 1. **`db/database.ts`：** 用具名函数 `provide(function Database({ onDispose }) { ... })` 定义，这样万一写出循环依赖，报错会直接显示 `Database` 而不是 `<anonymous>`；同时把关闭连接的 `onDispose` 钩子紧挨着连接状态写在一起。
 2. **`models/user.ts`：** 纯粹的 TypeScript `interface User`，连 `dn-ioc` 都不用引。

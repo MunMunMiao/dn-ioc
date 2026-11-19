@@ -48,7 +48,7 @@ Dans une base MVC saine, les imports descendent strictement du haut vers le bas 
 
 ## Parcourir tout le graphe MVC
 
-Parcours les six onglets de bas en haut pour suivre le trajet d’une requête à travers le graphe :
+Parcours les six fichiers de l’arborescence ci-dessous de bas en haut pour suivre le trajet d’une requête à travers le graphe :
 
 1. **`db/database.ts` :** `provide(function Database({ onDispose }) { ... })` utilise une fonction nommée pour que les diagnostics de cycle affichent `Database` plutôt que `<anonymous>`, et enregistre son hook `onDispose` juste à côté de l’état qu’il referme.
 2. **`models/user.ts` :** Une simple `interface User` TypeScript — aucun import DI nécessaire.

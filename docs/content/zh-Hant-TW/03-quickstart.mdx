@@ -34,12 +34,7 @@ import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with {
 
 因為這張小巧的依賴圖完全沒有開啟網路連線、計時器或資料庫連線池，跑完根本不需要呼叫 `app.stop()`——只要 `start()` 結束，交給一般的垃圾回收機制清理就夠了。
 
-<CodeTabs
-  files={[
-    { title: 'step2-compose.ts', code: step2Code },
-    { title: 'step1-provide.ts', code: step1Code },
-  ]}
-/>
+<Code title="step2-compose.ts" code={step2Code} />
 
 ## 3. 換成非同步並在測試中注入測試替身
 

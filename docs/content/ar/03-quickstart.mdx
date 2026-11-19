@@ -34,12 +34,7 @@ import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with {
 
 ولأن هذا المخطط الصغير ما يفتح sockets أو مؤقّتات أو مجمّعات قواعد بيانات، ما تحتاج تستدعي `app.stop()` — أول ما تنتهي `start()`، يتكفّل جامع المهملات (garbage collection) بتنظيف كل شيء.
 
-<CodeTabs
-  files={[
-    { title: 'step2-compose.ts', code: step2Code },
-    { title: 'step1-provide.ts', code: step1Code },
-  ]}
-/>
+<Code title="step2-compose.ts" code={step2Code} />
 
 ## 3. التبعيات غير المتزامنة وتبديلها في الاختبار
 

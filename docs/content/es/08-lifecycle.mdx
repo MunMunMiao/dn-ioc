@@ -51,13 +51,11 @@ Unos cuantos detalles prácticos que conviene vigilar en cada entorno:
 - **Widgets en el navegador (`browser-unmount.ts`):** Siempre que puedas, acota los grafos del navegador a un componente o ruta que tú mismo desmontes (`await ready; await app.stop()`); ahí los hooks asíncronos sí se esperan de verdad mientras la página sigue abierta.
 - **Cierre de pestaña (`browser-pagehide.ts`):** Prefiere `pagehide` frente a `beforeunload` (que rompe o se salta con la caché atrás/adelante del navegador). Incluso con `pagehide`, los navegadores suelen descartar la página antes de que resuelva una `Promise` asíncrona, así que deja ahí únicamente trabajo síncrono como `navigator.sendBeacon()`.
 
-<CodeTabs
-  files={[
-    { title: 'node-server.ts', code: nodeShutdownCode },
-    { title: 'browser-unmount.ts', code: browserUnmountCode, region: 'unmount' },
-    { title: 'browser-pagehide.ts', code: browserUnmountCode, region: 'pagehide' },
-  ]}
-/>
+<Code title="node-server.ts" code={nodeShutdownCode} />
+
+<Code title="browser-unmount.ts" code={browserUnmountCode} region="unmount" />
+
+<Code title="browser-pagehide.ts" code={browserUnmountCode} region="pagehide" />
 
 ## Reglas de los hooks, reversión en el arranque y límites
 

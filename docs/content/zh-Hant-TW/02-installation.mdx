@@ -8,14 +8,14 @@ summary: "用習慣的套件管理工具安裝 dn-ioc、在 Deno 或瀏覽器 CD
 
 `dn-ioc` 是一個零外部相依性的純 ESM 套件（壓縮後 `4.8 kB`、gzip 後 `1.9 kB`），一行指令就能裝好，完全不會在 `node_modules` 裡塞進一堆來路不明的間接相依套件。不管團隊平常習慣哪套套件管理工具都能直接安裝，在 Deno 透過 `npm:` 或是在瀏覽器直接從 CDN 載入也同樣順手。
 
-<CodeTabs
-  files={[
-    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
-    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
-    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
-    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
-    { title: 'deno', lang: 'bash', code: 'deno add npm:dn-ioc' },
-  ]}
+<Code
+  title="install.sh"
+  lang="bash"
+  code={`npm install dn-ioc
+pnpm add dn-ioc
+yarn add dn-ioc
+bun add dn-ioc
+deno add npm:dn-ioc`}
 />
 
 ## 在 Deno 免安裝直接匯入
@@ -42,12 +42,10 @@ summary: "用習慣的套件管理工具安裝 dn-ioc、在 Deno 或瀏覽器 CD
 
 搭配 `<script type="importmap">` 使用，就能在模組裡保留乾淨的 `'dn-ioc'` 裸模組匯入寫法，不論有沒有經過打包工具都能共用同一份程式碼。
 
-<CodeTabs
-  files={[
-    {
-      title: 'importmap.html',
-      lang: 'html',
-      code: `<!doctype html>
+<Code
+  title="importmap.html"
+  lang="html"
+  code={`<!doctype html>
 <html lang="en">
   <head>
     <script type="importmap">
@@ -70,12 +68,13 @@ summary: "用習慣的套件管理工具安裝 dn-ioc、在 Deno 或瀏覽器 CD
       await app.start()
     </script>
   </body>
-</html>`,
-    },
-    {
-      title: 'direct-cdn.html',
-      lang: 'html',
-      code: `<!doctype html>
+</html>`}
+/>
+
+<Code
+  title="direct-cdn.html"
+  lang="html"
+  code={`<!doctype html>
 <html lang="en">
   <body>
     <script type="module">
@@ -89,9 +88,7 @@ summary: "用習慣的套件管理工具安裝 dn-ioc、在 Deno 或瀏覽器 CD
       await app.start()
     </script>
   </body>
-</html>`,
-    },
-  ]}
+</html>`}
 />
 
 ## ESM 與 TypeScript 設定

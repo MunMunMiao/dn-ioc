@@ -8,14 +8,14 @@ summary: "用常用包管理器安装 dn-ioc，在 Deno 或浏览器 CDN 中直�
 
 `dn-ioc` 发布的是零依赖纯 ESM 包（压缩后 `4.8 kB`，gzip 后 `1.9 kB`），一行命令装完，不会往你的 `node_modules` 里塞任何传递依赖。平时项目里用什么包管理器就用什么装；如果在写 Deno 脚本或纯静态网页，直接走 `npm:` 协议或浏览器 CDN 拉下来就能跑。
 
-<CodeTabs
-  files={[
-    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
-    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
-    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
-    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
-    { title: 'deno', lang: 'bash', code: 'deno add npm:dn-ioc' },
-  ]}
+<Code
+  title="install.sh"
+  lang="bash"
+  code={`npm install dn-ioc
+pnpm add dn-ioc
+yarn add dn-ioc
+bun add dn-ioc
+deno add npm:dn-ioc`}
 />
 
 ## 在 Deno 里免安装直接用
@@ -42,12 +42,10 @@ summary: "用常用包管理器安装 dn-ioc，在 Deno 或浏览器 CDN 中直�
 
 再配一段 `<script type="importmap">`，你的业务模块里就能继续写干净的裸导入 `'dn-ioc'`，以后加不加打包器代码都不用改。
 
-<CodeTabs
-  files={[
-    {
-      title: 'importmap.html',
-      lang: 'html',
-      code: `<!doctype html>
+<Code
+  title="importmap.html"
+  lang="html"
+  code={`<!doctype html>
 <html lang="en">
   <head>
     <script type="importmap">
@@ -70,12 +68,13 @@ summary: "用常用包管理器安装 dn-ioc，在 Deno 或浏览器 CDN 中直�
       await app.start()
     </script>
   </body>
-</html>`,
-    },
-    {
-      title: 'direct-cdn.html',
-      lang: 'html',
-      code: `<!doctype html>
+</html>`}
+/>
+
+<Code
+  title="direct-cdn.html"
+  lang="html"
+  code={`<!doctype html>
 <html lang="en">
   <body>
     <script type="module">
@@ -89,9 +88,7 @@ summary: "用常用包管理器安装 dn-ioc，在 Deno 或浏览器 CDN 中直�
       await app.start()
     </script>
   </body>
-</html>`,
-    },
-  ]}
+</html>`}
 />
 
 ## ESM 与 TypeScript 配置

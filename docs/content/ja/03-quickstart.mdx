@@ -34,12 +34,7 @@ import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with {
 
 この小さなグラフはソケットもタイマーも DB プールも握っていないので、`app.stop()` を呼ぶ必要すらありません。`start()` が終われば、通常のガベージコレクションがきれいに片付けてくれます。
 
-<CodeTabs
-  files={[
-    { title: 'step2-compose.ts', code: step2Code },
-    { title: 'step1-provide.ts', code: step1Code },
-  ]}
-/>
+<Code title="step2-compose.ts" code={step2Code} />
 
 ## 3. 非同期化とテストでのフェイク差し替え
 

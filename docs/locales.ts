@@ -18,6 +18,11 @@ export interface LocaleConfig {
     next: string
     page: string
     language: string
+    theme: string
+    autoTheme: string
+    lightTheme: string
+    darkTheme: string
+    files: string
     lightPaper: string
     darkCard: string
     parts: Record<PartId, string>
@@ -45,6 +50,11 @@ export const LOCALES: readonly LocaleConfig[] = [
       next: 'Next',
       page: 'Page',
       language: 'Language',
+      theme: 'Theme',
+      autoTheme: 'Auto',
+      lightTheme: 'Light',
+      darkTheme: 'Dark',
+      files: 'Files',
       lightPaper: 'Cotton Paper',
       darkCard: 'Dark Cardstock',
       parts: {
@@ -72,6 +82,11 @@ export const LOCALES: readonly LocaleConfig[] = [
       next: '下一章',
       page: '页',
       language: '语言',
+      theme: '外观主题',
+      autoTheme: '自动',
+      lightTheme: '浅色',
+      darkTheme: '深色',
+      files: '文件列表',
       lightPaper: '浅色棉纸',
       darkCard: '深色卡纸',
       parts: {
@@ -99,6 +114,11 @@ export const LOCALES: readonly LocaleConfig[] = [
       next: '下一篇',
       page: '頁',
       language: '語言',
+      theme: '外觀主題',
+      autoTheme: '自動',
+      lightTheme: '淺色',
+      darkTheme: '深色',
+      files: '檔案列表',
       lightPaper: '淺色棉紙',
       darkCard: '深色卡紙',
       parts: {
@@ -126,6 +146,11 @@ export const LOCALES: readonly LocaleConfig[] = [
       next: '下一章',
       page: '頁',
       language: '語言',
+      theme: '外觀主題',
+      autoTheme: '自動',
+      lightTheme: '淺色',
+      darkTheme: '深色',
+      files: '檔案列表',
       lightPaper: '淺色棉紙',
       darkCard: '深色厚卡',
       parts: {
@@ -153,6 +178,11 @@ export const LOCALES: readonly LocaleConfig[] = [
       next: '次へ',
       page: 'ページ',
       language: '言語',
+      theme: 'テーマ',
+      autoTheme: '自動',
+      lightTheme: 'ライト',
+      darkTheme: 'ダーク',
+      files: 'ファイル',
       lightPaper: 'コットン紙',
       darkCard: 'ダークカード',
       parts: {
@@ -180,6 +210,11 @@ export const LOCALES: readonly LocaleConfig[] = [
       next: '다음',
       page: '페이지',
       language: '언어',
+      theme: '테마',
+      autoTheme: '자동',
+      lightTheme: '라이트',
+      darkTheme: '다크',
+      files: '파일',
       lightPaper: '코튼 페이퍼',
       darkCard: '다크 카드스톡',
       parts: {
@@ -207,6 +242,11 @@ export const LOCALES: readonly LocaleConfig[] = [
       next: 'Siguiente',
       page: 'Pág.',
       language: 'Idioma',
+      theme: 'Tema',
+      autoTheme: 'Auto',
+      lightTheme: 'Claro',
+      darkTheme: 'Oscuro',
+      files: 'Archivos',
       lightPaper: 'Papel algodón',
       darkCard: 'Cartulina oscura',
       parts: {
@@ -234,6 +274,11 @@ export const LOCALES: readonly LocaleConfig[] = [
       next: 'Suivant',
       page: 'Page',
       language: 'Langue',
+      theme: 'Thème',
+      autoTheme: 'Auto',
+      lightTheme: 'Clair',
+      darkTheme: 'Sombre',
+      files: 'Fichiers',
       lightPaper: 'Papier coton',
       darkCard: 'Carton sombre',
       parts: {
@@ -261,6 +306,11 @@ export const LOCALES: readonly LocaleConfig[] = [
       next: 'التالي',
       page: 'صفحة',
       language: 'اللغة',
+      theme: 'المظهر',
+      autoTheme: 'تلقائي',
+      lightTheme: 'فاتح',
+      darkTheme: 'داكن',
+      files: 'الملفات',
       lightPaper: 'ورق فاتح',
       darkCard: 'ورق داكن',
       parts: {

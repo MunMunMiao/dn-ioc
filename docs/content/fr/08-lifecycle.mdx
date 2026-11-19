@@ -51,13 +51,11 @@ Quelques détails pratiques à garder à l’œil selon l’environnement :
 - **Widgets navigateur (`browser-unmount.ts`) :** Dès que possible, rattache tes graphes navigateur à un composant ou une route que tu démontes toi-même (`await ready; await app.stop()`), là où les hooks asynchrones sont réellement attendus pendant que la page reste ouverte.
 - **Fermeture d’onglet (`browser-pagehide.ts`) :** Préfère `pagehide` à `beforeunload` (qui casse ou est ignoré par le cache avant/arrière du navigateur). Même avec `pagehide`, les navigateurs détruisent régulièrement la page avant la résolution d’une `Promise` asynchrone : garde donc des hooks strictement synchrones, comme `navigator.sendBeacon()`.
 
-<CodeTabs
-  files={[
-    { title: 'node-server.ts', code: nodeShutdownCode },
-    { title: 'browser-unmount.ts', code: browserUnmountCode, region: 'unmount' },
-    { title: 'browser-pagehide.ts', code: browserUnmountCode, region: 'pagehide' },
-  ]}
-/>
+<Code title="node-server.ts" code={nodeShutdownCode} />
+
+<Code title="browser-unmount.ts" code={browserUnmountCode} region="unmount" />
+
+<Code title="browser-pagehide.ts" code={browserUnmountCode} region="pagehide" />
 
 ## Règles des hooks, rollback au démarrage et limites
 

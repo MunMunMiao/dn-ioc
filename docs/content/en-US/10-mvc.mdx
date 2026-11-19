@@ -48,7 +48,7 @@ In a healthy MVC codebase, imports flow strictly top-down—controllers never sk
 
 ## Walking the Full MVC Graph
 
-Flip through the six file tabs from bottom to top to trace how a request travels through the graph:
+Walk through the six files in the tree below from bottom to top to trace how a request travels through the graph:
 
 1. **`db/database.ts`:** `provide(function Database({ onDispose }) { ... })` uses a named function so cycle diagnostics show `Database` instead of `<anonymous>`, and registers an `onDispose` hook right next to the state it closes.
 2. **`models/user.ts`:** Pure TypeScript `interface User`—zero DI imports needed.

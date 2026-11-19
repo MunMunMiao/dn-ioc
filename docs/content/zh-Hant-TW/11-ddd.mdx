@@ -105,12 +105,10 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
 | **`infra/`** | `domain/` | `application/`、`main.ts` |
 | **`main.ts`（各進入點）** | `application/`、`infra/`、`domain/` | — |
 
-<CodeTabs
-  files={[
-    {
-      title: 'biome.json',
-      lang: 'json',
-      code: `{
+<Code
+  title="biome.json"
+  lang="json"
+  code={`{
   "overrides": [
     {
       "includes": ["src/domain/**"],
@@ -153,12 +151,13 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
       }
     }
   ]
-}`,
-    },
-    {
-      title: 'eslint.config.js',
-      lang: 'js',
-      code: `export default [
+}`}
+/>
+
+<Code
+  title="eslint.config.js"
+  lang="js"
+  code={`export default [
   {
     files: ['src/domain/**/*.ts'],
     rules: {
@@ -191,9 +190,7 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
       ],
     },
   },
-]`,
-    },
-  ]}
+]`}
 />
 
 看完這兩種專案架構後，下一章我們把單元測試與整合測試放在一起對照——請翻到[測試與模擬替身](/zh-hant-tw/testing/)。

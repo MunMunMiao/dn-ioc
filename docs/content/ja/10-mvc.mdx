@@ -48,7 +48,7 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 
 ## MVC グラフ全体を下から上へたどる
 
-6つのファイルタブを下から順番にめくって、リクエストがどう流れるか見てみましょう。
+下のファイルツリーにある6つのファイルを下層から順番にたどって、リクエストがどう流れるか見てみましょう。
 
 1. **`db/database.ts`:** `provide(function Database({ onDispose }) { ... })` と名前付き関数にすることで、循環依存などの診断時に `<anonymous>` ではなく `Database` と表示されるようにしています。状態を閉じる `onDispose` フックも、その状態のすぐ隣で登録します。
 2. **`models/user.ts`:** 純粋な TypeScript の `interface User` だけです。DI ライブラリの import すら必要ありません。

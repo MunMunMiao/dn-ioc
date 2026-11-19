@@ -274,9 +274,20 @@ describe('buildDocsSite', () => {
     expect(css).not.toContain('.notebook-open')
     expect(css).not.toContain('.spread-right')
     expect(css).not.toContain('.mobile-deck')
+    expect(css).not.toContain('.p-tabs')
+    expect(css).not.toContain('.p-tab ')
+    expect(css).toContain('.p-head')
+    expect(css).toContain('.p-filename')
+    expect(css).toContain('.p-tree-layout')
+    expect(css).toContain('.paper-code .p-tree-list')
+    expect(css).toContain('.theme-group')
     expect(css).toContain('@media (max-width: 920px)')
 
     expect(js).toContain('dn-ioc-theme')
+    expect(js).toContain('data-theme-set')
+    expect(js).toContain('.p-tree-file')
+    expect(js).toContain('.p-filename')
+    expect(js).not.toContain('.p-tab')
     expect(js).toContain('data-raw')
     expect(js).toContain('data-search-url')
     expect(js).toContain('doc-rail')
@@ -685,10 +696,24 @@ describe('buildDocsSite', () => {
         expect(html).toContain('class="doc-shell"')
         expect(html).toContain('id="doc-rail"')
         expect(html).toContain('class="doc-article"')
+        expect(html).toContain('class="theme-group"')
+        expect(html).toContain('data-theme-set="auto"')
+        expect(html).toContain('data-theme-set="light"')
+        expect(html).toContain('data-theme-set="dark"')
+        expect(html).not.toContain('class="p-tabs"')
+        expect(html).not.toContain('class="p-tab')
         expect(html).not.toContain('notebook-open')
         expect(html).not.toContain('spread-right')
         expect(html).not.toContain('mobile-deck')
         expect(html).not.toMatch(/dn-ioc@\d|@0\.\d+\.\d+|v0\.\d+\.\d+/)
+
+        const normalizedPath = htmlFile.replaceAll('\\', '/')
+        const expectsTree = /\/(?:architecture|mvc|ddd)\/index\.html$/.test(normalizedPath)
+        if (expectsTree) {
+          expect(html, `${normalizedPath} should render file tree`).toContain('class="paper-code paper-code-tree"')
+        } else {
+          expect(html, `${normalizedPath} should not render file tree`).not.toContain('paper-code-tree')
+        }
 
         const matches = Array.from(html.matchAll(localeLinkRe))
         expect(matches).toHaveLength(9)
@@ -937,5 +962,301 @@ describe('buildDocsSite', () => {
 
     await triggerSearch('كلمةغيرموجودة')
     expect(mockSearchResults.innerHTML).toContain('<p class="search-empty">ما لقينا نتيجة مطابقة، جرّب كلمة ثانية.</p>')
+  })
+
+  test('switches active code panel + filename via file tree and persists auto/light/dark theme preference with live OS tracking', async () => {
+    const repoRoot = join(import.meta.dir, '../..')
+    const js = await readFile(join(repoRoot, 'docs/assets/notebook.js'), 'utf8')
+    const noop = () => undefined
+
+    class MockElement {
+      tagName = ''
+      parentElement: MockElement | null = null
+      attrs = new Map<string, string>()
+      classes = new Set<string>()
+      textContent = ''
+      listeners = new Map<string, ((event: Record<string, unknown>) => void)[]>()
+      children: MockElement[] = []
+      classList = {
+        add: (...names: string[]) => {
+          for (const name of names) {
+            this.classes.add(name)
+          }
+        },
+        remove: (...names: string[]) => {
+          for (const name of names) {
+            this.classes.delete(name)
+          }
+        },
+        contains: (name: string) => this.classes.has(name),
+        toggle: (name: string, force?: boolean) => {
+          const shouldAdd = force ?? !this.classes.has(name)
+          if (shouldAdd) {
+            this.classes.add(name)
+          } else {
+            this.classes.delete(name)
+          }
+          return shouldAdd
+        },
+      }
+      append(child: MockElement) {
+        child.parentElement = this
+        this.children.push(child)
+        return child
+      }
+      addEventListener(type: string, handler: (event: Record<string, unknown>) => void) {
+        const list = this.listeners.get(type) ?? []
+        list.push(handler)
+        this.listeners.set(type, list)
+      }
+      getAttribute(name: string) {
+        return this.attrs.get(name) ?? null
+      }
+      setAttribute(name: string, value: string) {
+        this.attrs.set(name, value)
+      }
+      hasAttribute(name: string) {
+        return this.attrs.has(name)
+      }
+      removeAttribute(name: string) {
+        this.attrs.delete(name)
+      }
+      contains(target: unknown) {
+        let cur = target
+        while (cur instanceof MockElement) {
+          if (cur === this) {
+            return true
+          }
+          cur = cur.parentElement
+        }
+        return false
+      }
+      closest(selector: string) {
+        let cur: MockElement | null = this
+        while (cur) {
+          if (selector.startsWith('.')) {
+            if (cur.classes.has(selector.slice(1))) {
+              return cur
+            }
+          } else if (cur.tagName.toLowerCase() === selector.toLowerCase()) {
+            return cur
+          }
+          cur = cur.parentElement
+        }
+        return null
+      }
+      querySelectorAll(selector: string): MockElement[] {
+        const out: MockElement[] = []
+        const visit = (el: MockElement) => {
+          for (const child of el.children) {
+            if (selector.startsWith('.') && child.classes.has(selector.slice(1))) {
+              out.push(child)
+            }
+            visit(child)
+          }
+        }
+        visit(this)
+        return out
+      }
+      querySelector(selector: string): MockElement | null {
+        return this.querySelectorAll(selector)[0] ?? null
+      }
+    }
+    class MockHTMLElement extends MockElement {
+      isContentEditable = false
+      focus = noop
+    }
+    class MockHTMLInputElement extends MockHTMLElement {}
+    class MockHTMLTextAreaElement extends MockHTMLElement {}
+    class MockHTMLSelectElement extends MockHTMLElement {}
+    class MockHTMLDialogElement extends MockHTMLElement {}
+
+    const storageMap = new Map<string, string>()
+    const mockStorage = {
+      getItem: (key: string) => storageMap.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storageMap.set(key, value)
+      },
+      removeItem: (key: string) => {
+        storageMap.delete(key)
+      },
+    }
+
+    const mountPage = (initialOsDark: boolean) => {
+      const rootEl = new MockHTMLElement()
+      rootEl.setAttribute('data-theme-pref', 'auto')
+      rootEl.setAttribute('data-mode', 'light')
+
+      const btnAuto = new MockHTMLElement()
+      btnAuto.setAttribute('data-theme-set', 'auto')
+      const btnLight = new MockHTMLElement()
+      btnLight.setAttribute('data-theme-set', 'light')
+      const btnDark = new MockHTMLElement()
+      btnDark.setAttribute('data-theme-set', 'dark')
+
+      const paperCode = new MockHTMLElement()
+      paperCode.classList.add('paper-code', 'paper-code-tree')
+      const filenameEl = paperCode.append(new MockHTMLElement())
+      filenameEl.classList.add('p-filename')
+      filenameEl.textContent = 'domain/order.ts'
+
+      const file0 = paperCode.append(new MockHTMLElement())
+      file0.classList.add('p-tree-file', 'is-active')
+      file0.setAttribute('data-file', '0')
+      file0.setAttribute('data-path', 'domain/order.ts')
+      file0.setAttribute('aria-selected', 'true')
+
+      const file1 = paperCode.append(new MockHTMLElement())
+      file1.classList.add('p-tree-file')
+      file1.setAttribute('data-file', '1')
+      file1.setAttribute('data-path', 'domain/ports.ts')
+      file1.setAttribute('aria-selected', 'false')
+
+      const panel0 = paperCode.append(new MockHTMLElement())
+      panel0.classList.add('p-pre', 'is-active')
+      panel0.setAttribute('data-panel', '0')
+
+      const panel1 = paperCode.append(new MockHTMLElement())
+      panel1.classList.add('p-pre')
+      panel1.setAttribute('data-panel', '1')
+
+      const docListeners = new Map<string, ((event: Record<string, unknown>) => void)[]>()
+      const mediaListeners: (() => void)[] = []
+      const mql = {
+        matches: initialOsDark,
+        addEventListener: (type: string, cb: () => void) => {
+          if (type === 'change') {
+            mediaListeners.push(cb)
+          }
+        },
+      }
+
+      const mockDoc = {
+        documentElement: rootEl,
+        activeElement: rootEl,
+        querySelectorAll: (selector: string) => {
+          if (selector === '[data-theme-set]') {
+            return [btnAuto, btnLight, btnDark]
+          }
+          return []
+        },
+        querySelector: () => null,
+        getElementById: () => null,
+        addEventListener: (type: string, handler: (event: Record<string, unknown>) => void) => {
+          const list = docListeners.get(type) ?? []
+          list.push(handler)
+          docListeners.set(type, list)
+        },
+      }
+      const mockWin = {
+        location: { hash: '', href: '/' },
+        matchMedia: () => mql,
+        addEventListener: noop,
+        setTimeout,
+        clearTimeout,
+      }
+
+      const runner = new Function(
+        'window',
+        'document',
+        'localStorage',
+        'Element',
+        'HTMLElement',
+        'HTMLInputElement',
+        'HTMLTextAreaElement',
+        'HTMLSelectElement',
+        'HTMLDialogElement',
+        js,
+      )
+      runner(
+        mockWin,
+        mockDoc,
+        mockStorage,
+        MockElement,
+        MockHTMLElement,
+        MockHTMLInputElement,
+        MockHTMLTextAreaElement,
+        MockHTMLSelectElement,
+        MockHTMLDialogElement,
+      )
+
+      return {
+        rootEl,
+        btnAuto,
+        btnLight,
+        btnDark,
+        filenameEl,
+        file0,
+        file1,
+        panel0,
+        panel1,
+        clickDoc: (target: MockElement) => {
+          for (const handler of docListeners.get('click') ?? []) {
+            handler({ target })
+          }
+        },
+        setOsDark: (dark: boolean) => {
+          mql.matches = dark
+          for (const cb of mediaListeners) {
+            cb()
+          }
+        },
+      }
+    }
+
+    // 1. Default auto tracks OS scheme live + file tree click switches panel & filename
+    const page1 = mountPage(false)
+    expect(page1.rootEl.getAttribute('data-theme-pref')).toBe('auto')
+    expect(page1.rootEl.getAttribute('data-mode')).toBe('light')
+    expect(page1.btnAuto.getAttribute('aria-pressed')).toBe('true')
+    expect(page1.btnDark.getAttribute('aria-pressed')).toBe('false')
+
+    page1.setOsDark(true)
+    expect(page1.rootEl.getAttribute('data-mode')).toBe('dark')
+
+    page1.setOsDark(false)
+    expect(page1.rootEl.getAttribute('data-mode')).toBe('light')
+
+    // Click second file in tree -> activates panel 1 and updates .p-filename
+    page1.clickDoc(page1.file1)
+    expect(page1.file0.classList.contains('is-active')).toBe(false)
+    expect(page1.file0.getAttribute('aria-selected')).toBe('false')
+    expect(page1.file1.classList.contains('is-active')).toBe(true)
+    expect(page1.file1.getAttribute('aria-selected')).toBe('true')
+    expect(page1.panel0.classList.contains('is-active')).toBe(false)
+    expect(page1.panel1.classList.contains('is-active')).toBe(true)
+    expect(page1.filenameEl.textContent).toBe('domain/ports.ts')
+
+    // 2. Manual selection persists to localStorage and ignores OS theme changes
+    page1.btnDark.listeners.get('click')?.[0]?.({})
+    expect(storageMap.get('dn-ioc-theme')).toBe('dark')
+    expect(page1.rootEl.getAttribute('data-theme-pref')).toBe('dark')
+    expect(page1.rootEl.getAttribute('data-mode')).toBe('dark')
+    expect(page1.btnDark.getAttribute('aria-pressed')).toBe('true')
+    expect(page1.btnAuto.getAttribute('aria-pressed')).toBe('false')
+
+    page1.setOsDark(false)
+    expect(page1.rootEl.getAttribute('data-mode')).toBe('dark')
+
+    // 3. Reloading restores stored manual 'dark' even when OS is light
+    const page2 = mountPage(false)
+    expect(page2.rootEl.getAttribute('data-theme-pref')).toBe('dark')
+    expect(page2.rootEl.getAttribute('data-mode')).toBe('dark')
+    expect(page2.btnDark.getAttribute('aria-pressed')).toBe('true')
+
+    // 4. Switching to 'light' persists and ignores OS dark change
+    page2.btnLight.listeners.get('click')?.[0]?.({})
+    expect(storageMap.get('dn-ioc-theme')).toBe('light')
+    expect(page2.rootEl.getAttribute('data-mode')).toBe('light')
+    page2.setOsDark(true)
+    expect(page2.rootEl.getAttribute('data-mode')).toBe('light')
+
+    // 5. Switching back to 'auto' persists 'auto' and resumes live OS tracking
+    page2.btnAuto.listeners.get('click')?.[0]?.({})
+    expect(storageMap.get('dn-ioc-theme')).toBe('auto')
+    expect(page2.rootEl.getAttribute('data-theme-pref')).toBe('auto')
+    expect(page2.rootEl.getAttribute('data-mode')).toBe('dark')
+    page2.setOsDark(false)
+    expect(page2.rootEl.getAttribute('data-mode')).toBe('light')
   })
 })
