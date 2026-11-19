@@ -142,7 +142,9 @@ describe('compileMdxFile & renderChapterPage', () => {
       const ch2 = await compileMdxFile(ch2Path, 'zh-Hans')
 
       const html1 = renderChapterPage(ch1, [ch2, ch1], '0.3.1')
-      expect(html1).toContain('<strong>dn-ioc</strong><span>v0.3.1</span>')
+      expect(html1).toContain('<a class="rail-brand" href="/zh-hans/"><strong>dn-ioc</strong></a>')
+      expect(html1).toContain('<a class="mobile-brand" href="/zh-hans/">dn-ioc</a>')
+      expect(html1).not.toContain('v0.3.1')
       expect(html1).toContain('<aside class="doc-rail" id="doc-rail">')
       expect(html1).toContain('<nav class="rail-nav" aria-label="目录">')
       expect(html1).toContain('<p class="rail-group-title">')

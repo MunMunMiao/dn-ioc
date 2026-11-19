@@ -499,7 +499,7 @@ export async function compileMdxFile(filePath: string, locale: LocaleCode): Prom
   }
 }
 
-export function renderChapterPage(chapter: CompiledChapter, allChapters: readonly CompiledChapter[], version: string): string {
+export function renderChapterPage(chapter: CompiledChapter, allChapters: readonly CompiledChapter[], _version?: string): string {
   const localeCfg = getLocale(chapter.locale)
   const { ui } = localeCfg
   const sortedChapters = [...allChapters].sort((a, b) => a.meta.order - b.meta.order)
@@ -571,7 +571,7 @@ ${hreflangLinks}
 </head>
 <body>
   <header class="mobile-bar">
-    <a class="mobile-brand" href="${escapeAttr(homeHref)}">dn-ioc v${escapeHtml(version)}</a>
+    <a class="mobile-brand" href="${escapeAttr(homeHref)}">dn-ioc</a>
     <div class="mobile-actions">
       <button type="button" class="mobile-btn" data-toggle-contents aria-expanded="false" aria-controls="doc-rail">☰ ${escapeHtml(ui.contents)}</button>
       <button type="button" class="mobile-btn" data-open-search>${escapeHtml(ui.search)} <kbd>⌘K</kbd></button>
@@ -580,7 +580,7 @@ ${hreflangLinks}
   <div class="rail-backdrop" data-close-contents hidden></div>
   <div class="doc-shell">
     <aside class="doc-rail" id="doc-rail">
-      <a class="rail-brand" href="${escapeAttr(homeHref)}"><strong>dn-ioc</strong><span>v${escapeHtml(version)}</span></a>
+      <a class="rail-brand" href="${escapeAttr(homeHref)}"><strong>dn-ioc</strong></a>
       <nav class="rail-nav" aria-label="${escapeAttr(ui.contents)}">${railGroupsHtml}</nav>
       <div class="rail-foot">
         <button type="button" class="rail-tool" data-open-search>${escapeHtml(ui.search)} <kbd>⌘K</kbd></button>

@@ -194,13 +194,6 @@ body::after {
   letter-spacing: -0.015em;
 }
 
-.rail-brand span {
-  color: var(--ink-muted);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 400;
-}
-
 .rail-brand:hover {
   color: var(--accent);
 }
