@@ -1,0 +1,122 @@
+---
+title: "التثبيت وبيئات التشغيل"
+slug: "installation"
+part: start
+order: 2
+summary: "ثبّت dn-ioc بمدير الحزم الذي تستخدمه، أو استوردها مباشرة على Deno أو من CDN المتصفح، واضبط إعدادات TypeScript."
+---
+
+`dn-ioc` عبارة عن حزمة ESM بدون أي تبعيات خارجية (`4.8 kB` بعد الضغط، و`1.9 kB` مضغوطة بـ gzip)، يعني تثبيتها ياخذ أمراً واحداً وما يجر معها أي حزم إضافية في `node_modules`. نزّلها بأي مدير حزم تستخدمه في مشروعك، أو اسحبها مباشرة بصيغة `npm:` على Deno أو من CDN في المتصفح.
+
+<CodeTabs
+  files={[
+    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
+    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
+    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
+    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
+    { title: 'deno', lang: 'bash', code: 'deno add npm:dn-ioc' },
+  ]}
+/>
+
+## التشغيل المباشر على Deno بدون تثبيت
+
+تكتب سكربت Deno في ملف واحد وما تريد تجهّز ملف `deno.json` أول؟ تقدر في Deno تستورد `dn-ioc` مباشرة عبر صيغة `npm:` — بس ثبّت رقم النسخة `@0.3.1` حتى تضمن كل تشغيل يسحب نفس الإصدار الذي اختبرته.
+
+<Code
+  title="deno-import.ts"
+  lang="ts"
+  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc@0.3.1'`}
+/>
+
+## التشغيل في المتصفح عبر CDN و Import Maps
+
+ما تحتاج bundler حتى تستخدم `dn-ioc` في صفحة ويب. المتصفحات الحديثة تقدر تحمّل نسخة ESM المضغوطة مباشرة من الـ CDN:
+
+| الـ CDN | الرابط المثبّت | ماذا يقدّم |
+| --- | --- | --- |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1` | `index.min.js` (`4.8 kB`، `1.9 kB` بـ gzip) |
+| unpkg | `https://unpkg.com/dn-ioc@0.3.1` | `index.min.js` — نفس الملف بالضبط |
+| esm.sh | `https://esm.sh/dn-ioc@0.3.1` | نسخة esm.sh المحوّلة الخاصة بها |
+
+احرص دائماً تثبّت رقم الإصدار مثل `@0.3.1` في روابط المتصفح — لو حذفت رقم النسخة راح يرجّع الـ CDN أحدث إصدار نازل، وهذا ممكن يفاجئ صفحة شغّالة في الإنتاج.
+
+إضافة `<script type="importmap">` تخليك تكتب استيراد `'dn-ioc'` مباشرة في ملفاتك، فيشتغل نفس الكود بالضبط سواء بوجود bundler أو بدونه.
+
+<CodeTabs
+  files={[
+    {
+      title: 'importmap.html',
+      lang: 'html',
+      code: `<!doctype html>
+<html lang="en">
+  <head>
+    <script type="importmap">
+      {
+        "imports": {
+          "dn-ioc": "https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module">
+      import { bootstrapApp, provide } from 'dn-ioc'
+
+      const greetingRef = provide(() => 'hello, browser')
+      const app = bootstrapApp(({ inject }) => {
+        document.body.textContent = inject(greetingRef)
+      })
+
+      await app.start()
+    </script>
+  </body>
+</html>`,
+    },
+    {
+      title: 'direct-cdn.html',
+      lang: 'html',
+      code: `<!doctype html>
+<html lang="en">
+  <body>
+    <script type="module">
+      import { bootstrapApp, provide } from 'https://cdn.jsdelivr.net/npm/dn-ioc@0.3.1'
+
+      const greetingRef = provide(() => 'hello, browser')
+      const app = bootstrapApp(({ inject }) => {
+        document.body.textContent = inject(greetingRef)
+      })
+
+      await app.start()
+    </script>
+  </body>
+</html>`,
+    },
+  ]}
+/>
+
+## إعدادات ESM و TypeScript
+
+`dn-ioc` **تعمل بنظام ESM فقط** — استوردها دائماً بـ `import` بدل `require()` الخاصة بـ CommonJS.
+
+في مشاريع TypeScript، حط `"moduleResolution": "bundler"` داخل ملف `tsconfig.json`. إعدادات Vite وBun وDeno وNext.js وAstro و`tsdown` الحديثة أصلاً تستخدم هذا الوضع افتراضياً.
+
+<Code
+  title="tsconfig.json"
+  lang="json"
+  code={`{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true
+  }
+}`}
+/>
+
+<Callout kind="caution" title="إعدادات NodeNext و Node16 غير مدعومة">
+
+نظام فحص التصريحات `NodeNext` و`Node16` **غير مدعوم**. أبقِ `"moduleResolution": "bundler"` في إعدادات TypeScript التي تتحقّق من الأنواع مع `dn-ioc`.
+
+</Callout>
+
+ولأن النواة تتجنّب `process` وواجهات DOM والمؤقّتات، تظل مزوّداتك محمولة 100% بين Node.js وBun وDeno والمتصفحات وWeb Workers وبيئات edge. جاهز تركّب أول تطبيق لك؟ انتقل إلى [البدء السريع في خمس دقائق](/ar/quickstart/).

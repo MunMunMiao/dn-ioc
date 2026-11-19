@@ -1,0 +1,72 @@
+---
+title: "النطاقات والأشجار الفرعية"
+slug: "scopes"
+part: kernel
+order: 6
+summary: "شاهد كيف تصعد inject() عبر النطاقات، وكيف تعزل الأشجار الفرعية الخاصة { providers } التخصيصات، ولماذا تحدد ملكية المستهلك ما يُحقن."
+---
+import case1Code from '../../examples/scopes/case1-fallback.ts' with { type: 'text' }
+import case2Code from '../../examples/scopes/case2-local-override.ts' with { type: 'text' }
+import case3Code from '../../examples/scopes/case3-parent-owned.ts' with { type: 'text' }
+import case4Code from '../../examples/scopes/case4-rebind-both.ts' with { type: 'text' }
+
+معظم التطبيقات تضع كل روابطها داخل النطاق الجذري الوحيد الذي تنشئه `bootstrapApp()`. الجأ إلى خيار `{ providers }` على `provide()` أو `provideFor()` معينة لما تحتاج شجرة فرعية محددة — مثل أداة معاينة سمة، أو إضافة مدمجة، أو عامل معزول — تخصيصات محلية بدون ما تتسرّب للآباء أو الأشقاء.
+
+## كيف يشتغل البحث في النطاقات
+
+طريقة حل `inject(key)` داخل النطاقات المتداخلة تتلخّص في ثلاث قواعد:
+
+1. **الصعود للأعلى، وأول مطابقة تفوز:** `inject(key)` تفحص النطاق الحالي أولاً، وبعدها تصعد عبر النطاقات الأب حتى تلقى ربطاً. ولو ما لقت أي ربط، فالـ `Ref` يثبّت نفسه تلقائياً في النطاق النشط بينما `Token` يرمي `No provider for token: Name`.
+2. **`{ providers }` تنشئ شجرة فرعية خاصة (child subtree):** الروابط الموجودة داخل خيار `{ providers }` الخاص بمزوّد تكون مرئية فقط لذلك المزوّد وتوابعه. كل رابط يخزّن نسخته في النطاق المالك له — أو داخل نطاقه الفرعي الخاص المرفق معه لما يصرّح بـ `{ providers }`. الأشجار الشقيقة والآباء ما يشوفون التخصيصات المحلية أبداً.
+3. **كل مزوّد يحل تبعياته داخل نطاقه المالك:** المستهلك ما يرث أبداً تخصيصات الجهة التي استدعته. لو كان المستهلك مربوطاً في نطاق أب، فاستدعاءات `inject()` الخاصة فيه تبدأ من ذلك النطاق الأب.
+
+السيناريوهات الأربعة التالية تستخدم نفس إعداد `labelToken` و`rendererRef` و`previewRef` بالضبط — تنقّل بينها وشاهد كيف تحريك سطر واحد يغيّر ما تقرأه `previewRef`.
+
+## 1. بدون تخصيص محلي: الرجوع للنطاق الأب
+
+في `case1-fallback.ts`، تثبّت `previewRef` المرجع `rendererRef` داخل شجرتها الفرعية الخاصة `{ providers }`، بينما يربط التطبيق الجذري `labelToken` بالقيمة `'app'`.
+
+لما تحقن `previewRef` المرجع `rendererRef`، تلقى ربط `rendererRef` المحلي في نطاقها الخاص. بعدها تطلب `rendererRef` التوكن `labelToken`: ما في ربط محلي لـ `labelToken` في شجرة المعاينة، فيصعد البحث إلى النطاق الجذري ويقرأ `'app'`.
+
+<Code title="case1-fallback.ts" code={case1Code} />
+
+## 2. إضافة تخصيص محلي بجانب المستهلك
+
+الآن أضف `provideFor(labelToken, () => 'local')` مباشرة بجانب `rendererRef` داخل `{ providers }` الخاصة بـ `previewRef`.
+
+بما أن `rendererRef` مملوك للشجرة الفرعية الخاصة بـ `previewRef`، فبحثها عن `labelToken` يفحص ذلك النطاق الخاص أولاً ويصيب `'local'`. وفي نفس الوقت، خارج الشجرة الفرعية، استدعاء `inject(rendererRef)` في الجذر يثبّت تلقائياً نسخة جذرية منفصلة من `rendererRef` لا تزال تقرأ `'app'`. ولا طرف يتسرّب للآخر.
+
+<Code title="case2-local-override.ts" code={case2Code} />
+
+## 3. فخ المستهلك المملوك للأب
+
+شاهد ماذا يصير لو نقلت `rendererRef` خارج `previewRef` وسجّلتها في التطبيق الجذري بدلاً من ذلك — تاركاً فقط `provideFor(labelToken, () => 'local')` داخل `previewRef`.
+
+رغم أن `previewRef` هي أول من استدعى `inject(rendererRef)` — ورغم أن `previewRef` عندها ربط محلي `'local'` — **تظل `previewRef` تطبع `'app'`!**
+
+لماذا؟ لأن `previewRef` تبحث للأعلى عن `rendererRef`، وتلقاها مملوكة للنطاق الجذري، فتشغّلها *هناك*. المزوّد المملوك للأب يحل تبعياته في النطاق الأب، ولا يحلّها أبداً في النطاق الابن الذي استدعاه.
+
+<Code title="case3-parent-owned.ts" code={case3Code} />
+
+## 4. إعادة ربط المستهلك والتبعية معاً
+
+لما يكون التطبيق الجذري يملك `rendererRef` أصلاً، كيف تعطي `previewRef` نسخة تشوف `'local'`؟ أعد ربط **كلاً** من `labelToken` و`rendererRef` معاً داخل `{ providers }` الخاصة بـ `previewRef`.
+
+الآن تملك `previewRef` ربط `rendererRef` المحلي الخاص بها مباشرة بجانب تخصيص التوكن `'local'`، فتقرأ `previewRef` القيمة `'local'` بينما تواصل `rendererRef` في التطبيق الجذري قراءة `'app'`.
+
+<Code title="case4-rebind-both.ts" code={case4Code} />
+
+## ملخص سريع لمقارنة النطاقات
+
+| السيناريو | `providers` في الجذر | `providers` في `previewRef` | ماذا تقرأ `previewRef` | السبب |
+| --- | --- | --- | --- | --- |
+| **1. الرجوع للأب** | `label = 'app'` | `rendererRef` | `'app'` | `rendererRef` المحلية تصعد للجذر بحثاً عن `labelToken`. |
+| **2. تخصيص محلي** | `label = 'app'` | `rendererRef`, `label = 'local'` | `'local'` | `rendererRef` المحلية تلقى `'local'` الشقيقة في نفس النطاق الخاص. |
+| **3. مملوك للأب** | `label = 'app'`, `rendererRef` | `label = 'local'` | `'app'` | `rendererRef` تعيش في الجذر، فحقن `inject(labelToken)` يُحل في الجذر. |
+| **4. إعادة ربط الاثنين** | `label = 'app'`, `rendererRef` | `label = 'local'`, `provideFor(rendererRef, ...)` | `'local'` | كلا المستهلك والتبعية مملوكان لنطاق `previewRef` الخاص. |
+
+<Callout kind="note" title="مدخلات المزوّدات المتداخلة تُفحص عند الحاجة">
+
+على عكس `providers` الجذرية (التي تفحصها `bootstrapApp()` فوراً)، مصفوفة `{ providers }` المتداخلة لمزوّد يتم التحقق منها في أول مرة تُحلّ فيها تلك الشجرة الفرعية فعلياً. لو احتوت المصفوفة المتداخلة على عنصر غير صالح، يرمي ذلك الاستدعاء لـ `inject()` خطأ `Invalid provider input received`.
+
+</Callout>

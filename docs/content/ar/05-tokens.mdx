@@ -1,0 +1,50 @@
+---
+title: "Token والربط"
+slug: "tokens"
+part: kernel
+order: 5
+summary: "عرّف عقوداً بدون تنفيذ باستخدام token()، واربط التنفيذ الفعلي بـ provideFor()، وحافظ على رسائل أخطاء واضحة وسهلة القراءة."
+---
+import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { type: 'text' }
+
+استخدم `token<T>()` متى ما كان الكود الذي يطلب التبعية ما يجب أن يستورد — أو ما يعرف بعد — التنفيذ الفعلي وراءها. أسرار التشغيل مثل روابط قواعد البيانات، وسمات الواجهة القابلة للتبديل، ومنافذ المجال الصافية في DDD كلّها تناسب هذا النمط: تعرّف عنصراً نائباً مضمون النوع مسبقاً، وتربط القيمة الفعلية لاحقاً عبر `provideFor()`.
+
+<Code title="bound-token.ts" code={tokenBindingCode} region="bound" />
+
+## تعريف العقود بـ token() وربطها بـ provideFor()
+
+بينما `provide()` تجمّع المفتاح ودالة الإنشاء الافتراضية معاً، `token<T>(description?)` تنشئ **المفتاح فقط**. ما فيها أي منطق تشغيل ولا تسحب أي استيراد للتنفيذ الفعلي — TypeScript تحمل النوع `T`، ونص `description` الاختياري يعطي المطورين اسماً واضحاً في رسائل الأخطاء.
+
+ولتزويد التنفيذ، مرّر التوكن ودالة الإنشاء إلى `provideFor(key, factory, options?)`:
+
+- في `bound-token.ts`، يعلن `prefixToken` أن جهة ما لازم توفّر قيمة `string`.
+- `formatterRef` تحقن `prefixToken` بدون ما تعرف إذا كانت البادئة مصدرها متغير بيئة، أو ملف إعدادات، أو بديل اختبار.
+- `boundApp` تثبّت `provideFor(prefixToken, () => '[app] ')` عند الإقلاع، فتطبع `formatterRef` عبارة `[app] ready`.
+
+لاحظ أن `provideFor()` تقبل أي `InjectKey<T>` — يعني **كلاً** من `Token<T>` و`Ref<T>`. فهكذا تستخدم نفس الدالة بالضبط لربط منفذ مجرّد في الإنتاج أو تبديل `Ref` فعلي في الاختبار.
+
+## الفشل الفوري عند نسيان ربط Token
+
+بما أن `Token<T>` ما عنده دالة إنشاء احتياطية، فحقن توكن غير مربوط في النطاق النشط أو أي نطاق أب يرمي خطأ فوراً. في `unbound-token.ts`، يرفض `unboundApp.start()` بالخطأ `No provider for token: DatabaseUrl` — على نفس الصيغة `No provider for token: Name`، حيث `Name` هو الوصف الممرّر إلى `token()`.
+
+<Callout kind="tip" title="احقن تبعيات الدخول داخل دالة الجذر">
+
+تأكّد أن دالة الجذر في `bootstrapApp()` تحقن وحدات التحكم أو المسارات أو العمال الأساسيين التي يعتمد عليها مدخل تطبيقك. بهذه الطريقة، أي ربط `provideFor()` منسي يرفض `await app.start()` مباشرة عند الإقلاع — بدل ما ينتظر وينفجر عند أول طلب حي يوصل لأحد المعالجات.
+
+</Callout>
+
+<Code title="unbound-token.ts" code={tokenBindingCode} region="unbound" />
+
+## تسمية التوكنز والدوال لرسائل أخطاء واضحة
+
+رسائل الأخطاء المقروءة توفّر وقت تتبّع حقيقي لما يُترك توكن بدون ربط أو لما يكوّن مزوّدان حلقة دائرية بالغلط (`Circular dependency detected: A -> B -> A`). إليك من أين تأتي هذه الأسماء:
+
+- **التوكنز تستخدم نص الوصف:** سمِّ التوكن باسم النوع أو الإعداد الذي يمثله — مثلاً `token<OrderRepository>('OrderRepository')` أو `token<string>('DatabaseUrl')`. ولو تركته بدون وصف (`token<string>()`)، الأخطاء تطبع `<anonymous>`.
+- **المراجع تستخدم `factory.name`:** دالة `provide()` ما تاخذ معامل اسم منفصل — تقرأ خاصية `.name` لدالة JavaScript. كتابة `provide(function Formatter({ inject }) { ... })` تعطي المرجع اسم التشخيص `Formatter`، بينما دالة السهم المجهولة (`provide(({ inject }) => ...)`) ما لها اسم وتطبع `<anonymous>`.
+
+<Callout kind="note" title="تنبيه حول أدوات التصغير (Minifiers) والمفاتيح غير الصالحة">
+
+- **انتبه مع الـ Minifiers:** لأن `Ref` ياخذ اسم التشخيص من `factory.name`، فأي أداة تجميع أو تصغير تغيّر أو تحذف أسماء الدوال راح تغيّر هذا الاسم في أخطاء الدوائر الاعتمادية (إلا لو فعّلت `keepNames`). أما أوصاف التوكنز الممرّرة إلى `token('Name')` فهي نصوص عادية، فتتركها أدوات التصغير كما هي.
+- **فحص المفاتيح المبهمة:** تمرير `null`، أو قيمة أولية، أو `ProviderDef`، أو `ProviderBundle`، أو نسخة سطحية (`{ ...prefixToken }`) إلى `inject()` أو `provideFor()` يرمي `Invalid inject key received`.
+
+</Callout>

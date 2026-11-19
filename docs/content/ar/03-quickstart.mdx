@@ -1,0 +1,64 @@
+---
+title: "البدء السريع في خمس دقائق"
+slug: "quickstart"
+part: start
+order: 3
+summary: "من الصفر إلى مخطط شغّال في ثلاث خطوات بسيطة: عرّف المزوّدات، شغّل التطبيق، وبدّل تبعية async في الاختبارات."
+---
+import step1Code from '../../examples/quickstart/step1-provide.ts' with { type: 'text' }
+import step2Code from '../../examples/quickstart/step2-compose.ts' with { type: 'text' }
+import step3Code from '../../examples/quickstart/step3-async-and-fake.ts' with { type: 'text' }
+
+ما تحتاج ترسم هيكل مجلدات كامل أو تسجّل كلاسات في ملف مركزي فقط حتى تبدأ. خلّينا نبني مخططاً شغّالاً في ثلاث خطوات سريعة: نغلّف دوال عادية بـ `provide()`، نشغّلها عبر `bootstrapApp()`، ونبدّل تبعية `async` بنسخة تجريبية في اختبار.
+
+## 1. عرّف المزوّدات بـ provide()
+
+مرّر أي دالة إنشاء إلى `provide()` وراح ترجّع لك مقبض `Ref<T>` مضمون النوع. في `step1-provide.ts`، ترجّع `configRef` كائناً عادياً، و`greeterRef` تجلبه عبر `{ inject }` حتى تبني أداة `greet()`.
+
+لاحظ نقطتين على طول:
+
+- **بدون كتابة أنواع يدوياً:** TypeScript تستنتج نوع `config` داخل `greeterRef` مباشرة من نوع الإرجاع الخاص بـ `configRef`.
+- **ما في شيء تنفّذ لحد الآن:** استدعاء `provide()` يسجّل فقط *طريقة* بناء القيمة لما يطلبها التطبيق لاحقاً.
+
+<Code title="step1-provide.ts" code={step1Code} />
+
+## 2. شغّل المخطط عبر bootstrapApp()
+
+في الخطوة التالية، مرّر دالة جذرية إلى `bootstrapApp()` واستدعِ `await app.start()`. `bootstrapApp()` تنشئ نطاق تطبيق معزولاً وترجّع لك مقبض `app` فوراً — وأيضاً بدون ما تشغّل ولا دالة إنشاء بعد.
+
+لما يشتغل `await app.start()`:
+
+1. دالتك الجذرية تطلب `inject(greeterRef)`.
+2. `greeterRef` تثبّت نفسها تلقائياً في نطاق التطبيق وتطلب `inject(configRef)`.
+3. `configRef` تشتغل مرة واحدة، وتخزّن `{ greeting: 'hello' }` في الكاش، وبعدها `greeterRef` تخزّن كائن `{ greet }` وتطبع `hello, world`.
+
+ولأن هذا المخطط الصغير ما يفتح sockets أو مؤقّتات أو مجمّعات قواعد بيانات، ما تحتاج تستدعي `app.stop()` — أول ما تنتهي `start()`، يتكفّل جامع المهملات (garbage collection) بتنظيف كل شيء.
+
+<CodeTabs
+  files={[
+    { title: 'step2-compose.ts', code: step2Code },
+    { title: 'step1-provide.ts', code: step1Code },
+  ]}
+/>
+
+## 3. التبعيات غير المتزامنة وتبديلها في الاختبار
+
+الخدمات الحقيقية غالباً تحمّل الإعدادات من الشبكة أو تتواصل مع قاعدة بيانات، والاختبارات تحتاج تبدّلها بسهولة. الحالتين تاخذ سطر ربط واحد:
+
+- **المزوّدات غير المتزامنة تستخدم دوال `async` عادية:** اجعل `settingsRef` دالة `async` وراح يرجّع `inject(settingsRef)` نفس الـ `Promise` المشترك الذي تنتظره `greeterRef` بـ `await`. وجعل دالة الجذر في `bootstrapApp` `async` مع انتظار `inject(greeterRef)` يضمن أن `await testApp.start()` ما يخلص حتى يكتمل الإقلاع.
+- **`provideFor()` تبدّل أي تبعية في مكانها:** تمرير `provideFor(settingsRef, async () => ({ greeting: 'test-hello' }))` ضمن `{ providers }` يستبدل `settingsRef` داخل `testApp` بدون ما تلمس كود `greeterRef`.
+- **تنظيف مرتّب بعد الاختبار:** استدعاء `await testApp.stop()` يقفل الحقن ويشغّل كل دوال التنظيف المسجّلة حتى ما تتسرّب الموارد للاختبار التالي.
+
+<Code title="step3-async-and-fake.ts" code={step3Code} />
+
+## عادات مهم تتذكّرها
+
+<Callout kind="note" title="ثلاث قواعد بتعتمد عليها كل يوم">
+
+- **سجّل مستمعي الإغلاق قبل `start()`:** بما أن `bootstrapApp()` ما تشغّل شيء بعد، كائن `app` يكون موجوداً قبل ما ينفتح أي socket أو مؤقّت — فبأمان تقدر تربط إشارات الإيقاف قبل استدعاء `await app.start()`.
+- **`start()` قابلة للتكرار بأمان (idempotent):** لو استدعيت `app.start()` أكثر من مرة، ترجّع نفس الـ `Promise` بالضبط وتشغّل الدالة الجذرية مرة واحدة فقط.
+- **الدالة الجذرية ترجّع `void`:** خلّ شغل الإقلاع كله داخل دالة `bootstrapApp()` بدل ما ترجّع قيمة منها.
+
+</Callout>
+
+في الفصول التالية راح نطلّ تحت الغطاء على [المزوّدات و Ref](/ar/providers/) و[Token والربط](/ar/tokens/) — ولو مستعجل تبني هيكل مشروع متكامل، انتقل مباشرة إلى دليل [MVC](/ar/mvc/) أو [DDD والعمارة النظيفة](/ar/ddd/).
