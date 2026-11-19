@@ -1,18 +1,38 @@
 ;(() => {
+  type ThemePref = 'auto' | 'light' | 'dark'
+  type ThemeMode = 'light' | 'dark'
+
+  interface RawSearchItem {
+    title?: unknown
+    chapterTitle?: unknown
+    href?: unknown
+    excerpt?: unknown
+  }
+
+  interface IndexedSearchItem {
+    title: string
+    chapterTitle: string
+    href: string
+    excerpt: string
+    foldedTitle: string
+    foldedChapter: string
+    foldedExcerpt: string
+  }
+
   const root = document.documentElement
   const docRail = document.getElementById('doc-rail')
-  const contentsToggle = document.querySelector('[data-toggle-contents]')
-  const railBackdrop = document.querySelector('[data-close-contents]')
-  const langMenu = document.querySelector('details.lang-menu')
-  const themeButtons = Array.from(document.querySelectorAll('[data-theme-set]'))
-  const searchOpenBtns = Array.from(document.querySelectorAll('[data-open-search]'))
+  const contentsToggle = document.querySelector<HTMLElement>('[data-toggle-contents]')
+  const railBackdrop = document.querySelector<HTMLElement>('[data-close-contents]')
+  const langMenu = document.querySelector<HTMLDetailsElement>('details.lang-menu')
+  const themeButtons = Array.from(document.querySelectorAll<HTMLElement>('[data-theme-set]'))
+  const searchOpenBtns = Array.from(document.querySelectorAll<HTMLElement>('[data-open-search]'))
   const searchModal = document.getElementById('search-modal')
   const searchInput = document.getElementById('search-input')
   const searchResults = document.getElementById('search-results')
-  const searchCloseBtn = document.querySelector('[data-close-search]')
-  const copyTimers = new WeakMap()
+  const searchCloseBtn = document.querySelector<HTMLElement>('[data-close-search]')
+  const copyTimers = new WeakMap<Element, number>()
 
-  const copyTextToClipboard = async text => {
+  const copyTextToClipboard = async (text: string): Promise<void> => {
     if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
       await navigator.clipboard.writeText(text)
       return
@@ -89,33 +109,33 @@
   })
 
   const THEME_STORAGE_KEY = 'dn-ioc-theme'
-  const VALID_THEME_PREFS = new Set(['auto', 'light', 'dark'])
+  const isThemePref = (value: string | null): value is ThemePref => value === 'auto' || value === 'light' || value === 'dark'
   const colorSchemeQuery = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null
 
-  const readStoredThemePref = () => {
+  const readStoredThemePref = (): ThemePref => {
     try {
       const stored = localStorage.getItem(THEME_STORAGE_KEY)
-      if (stored && VALID_THEME_PREFS.has(stored)) {
+      if (isThemePref(stored)) {
         return stored
       }
     } catch (_err) {
       // Ignore storage read errors in restricted browsing contexts
     }
     const attr = root.getAttribute('data-theme-pref')
-    return attr && VALID_THEME_PREFS.has(attr) ? attr : 'auto'
+    return isThemePref(attr) ? attr : 'auto'
   }
 
-  const resolveThemeMode = pref => {
+  const resolveThemeMode = (pref: ThemePref): ThemeMode => {
     if (pref === 'light' || pref === 'dark') {
       return pref
     }
     return colorSchemeQuery?.matches ? 'dark' : 'light'
   }
 
-  let currentThemePref = readStoredThemePref()
+  let currentThemePref: ThemePref = readStoredThemePref()
 
-  const applyThemePref = (pref, persist) => {
-    currentThemePref = VALID_THEME_PREFS.has(pref) ? pref : 'auto'
+  const applyThemePref = (pref: string | null, persist: boolean): void => {
+    currentThemePref = isThemePref(pref) ? pref : 'auto'
     const resolvedMode = resolveThemeMode(currentThemePref)
     root.setAttribute('data-theme-pref', currentThemePref)
     root.setAttribute('data-mode', resolvedMode)
@@ -143,7 +163,7 @@
   }
 
   if (colorSchemeQuery) {
-    const onSystemSchemeChange = () => {
+    const onSystemSchemeChange = (): void => {
       if (currentThemePref === 'auto') {
         applyThemePref('auto', false)
       }
@@ -155,7 +175,7 @@
     }
   }
 
-  const setContentsOpen = open => {
+  const setContentsOpen = (open: boolean): void => {
     if (docRail) {
       docRail.classList.toggle('is-open', open)
     }
@@ -198,13 +218,13 @@
     }
   })
 
-  const escapeHtml = text =>
+  const escapeHtml = (text: string): string =>
     text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 
   const COMBINING_MARKS_RE = /[\u0300-\u036f\u064B-\u065F\u0670\u0640]/g
   const TRAILING_MARK_RE = /[\u0300-\u036f\u064B-\u065F\u0670]/
 
-  const normalizeTextChunk = value =>
+  const normalizeTextChunk = (value: string): string =>
     value
       .normalize('NFD')
       .replace(COMBINING_MARKS_RE, '')
@@ -214,9 +234,9 @@
       .replace(/ة/g, 'ه')
       .toLowerCase()
 
-  const foldWithOffsets = text => {
+  const foldWithOffsets = (text: string): { folded: string; offsets: [number, number][] } => {
     let folded = ''
-    const offsets = []
+    const offsets: [number, number][] = []
     let idx = 0
     for (const ch of text) {
       const piece = normalizeTextChunk(ch)
@@ -232,14 +252,14 @@
     return { folded, offsets }
   }
 
-  const foldQuery = query => normalizeTextChunk(query).trim()
+  const foldQuery = (query: string): string => normalizeTextChunk(query).trim()
 
-  const highlightText = (text, terms) => {
+  const highlightText = (text: string, terms: readonly string[]): string => {
     if (terms.length === 0 || !text) {
       return escapeHtml(text)
     }
     const { folded, offsets } = foldWithOffsets(text)
-    const ranges = []
+    const ranges: [number, number][] = []
     for (const term of terms) {
       if (!term) {
         continue
@@ -254,7 +274,7 @@
         const endPair = offsets[hit + term.length - 1]
         if (startPair && endPair) {
           let end = endPair[1]
-          while (end < text.length && TRAILING_MARK_RE.test(text[end])) {
+          while (end < text.length && TRAILING_MARK_RE.test(text[end]!)) {
             end += 1
           }
           ranges.push([startPair[0], end])
@@ -266,10 +286,10 @@
       return escapeHtml(text)
     }
     ranges.sort((a, b) => a[0] - b[0] || b[1] - a[1])
-    const merged = [ranges[0]]
+    const merged: [number, number][] = [ranges[0]!]
     for (let i = 1; i < ranges.length; i++) {
-      const prev = merged[merged.length - 1]
-      const curr = ranges[i]
+      const prev = merged[merged.length - 1]!
+      const curr = ranges[i]!
       if (curr[0] <= prev[1]) {
         prev[1] = Math.max(prev[1], curr[1])
       } else {
@@ -291,11 +311,11 @@
     return html
   }
 
-  let searchIndexPromise = null
-  let currentMatches = []
+  let searchIndexPromise: Promise<IndexedSearchItem[]> | null = null
+  let currentMatches: IndexedSearchItem[] = []
   let selectedMatchIdx = 0
 
-  const loadSearchIndex = () => {
+  const loadSearchIndex = (): Promise<IndexedSearchItem[]> => {
     if (searchIndexPromise) {
       return searchIndexPromise
     }
@@ -305,25 +325,31 @@
       return searchIndexPromise
     }
     searchIndexPromise = fetch(url)
-      .then(res => (res.ok ? res.json() : []))
+      .then(res => (res.ok ? (res.json() as Promise<unknown>) : []))
       .then(items =>
         Array.isArray(items)
-          ? items.map(item => ({
-              title: String(item.title || ''),
-              chapterTitle: String(item.chapterTitle || ''),
-              href: String(item.href || '/'),
-              excerpt: String(item.excerpt || ''),
-              foldedTitle: foldQuery(String(item.title || '')),
-              foldedChapter: foldQuery(String(item.chapterTitle || '')),
-              foldedExcerpt: foldQuery(String(item.excerpt || '')),
-            }))
+          ? items.map((raw): IndexedSearchItem => {
+              const item = (raw ?? {}) as RawSearchItem
+              const title = String(item.title || '')
+              const chapterTitle = String(item.chapterTitle || '')
+              const excerpt = String(item.excerpt || '')
+              return {
+                title,
+                chapterTitle,
+                href: String(item.href || '/'),
+                excerpt,
+                foldedTitle: foldQuery(title),
+                foldedChapter: foldQuery(chapterTitle),
+                foldedExcerpt: foldQuery(excerpt),
+              }
+            })
           : [],
       )
       .catch(() => [])
     return searchIndexPromise
   }
 
-  const updateSelectedResult = nextIdx => {
+  const updateSelectedResult = (nextIdx: number): void => {
     if (!searchResults || currentMatches.length === 0) {
       return
     }
@@ -342,7 +368,7 @@
     }
   }
 
-  const renderSearchResults = async rawQuery => {
+  const renderSearchResults = async (rawQuery: string): Promise<void> => {
     if (!searchResults || !searchModal) {
       return
     }
@@ -353,7 +379,7 @@
     if (terms.length === 0) {
       currentMatches = items.slice(0, 10)
     } else {
-      const scored = []
+      const scored: Array<{ item: IndexedSearchItem; score: number }> = []
       for (const item of items) {
         let score = 0
         let matchedAll = true
@@ -399,13 +425,13 @@
       .join('')
   }
 
-  const closeSearch = () => {
+  const closeSearch = (): void => {
     if (searchModal instanceof HTMLDialogElement && searchModal.open) {
       searchModal.close()
     }
   }
 
-  const openSearch = () => {
+  const openSearch = (): void => {
     if (!(searchModal instanceof HTMLDialogElement)) {
       return
     }
@@ -419,7 +445,7 @@
     if (searchInput instanceof HTMLInputElement) {
       searchInput.focus()
       searchInput.select()
-      renderSearchResults(searchInput.value)
+      void renderSearchResults(searchInput.value)
     }
   }
 
@@ -461,7 +487,7 @@
 
   if (searchInput instanceof HTMLInputElement) {
     searchInput.addEventListener('input', () => {
-      renderSearchResults(searchInput.value)
+      void renderSearchResults(searchInput.value)
     })
     searchInput.addEventListener('keydown', event => {
       if (event.isComposing || event.keyCode === 229) {

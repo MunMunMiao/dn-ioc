@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LOCALES } from '../../docs/locales'
 import { resolveActiveLocales, runDocsBuild } from '../build-docs'
-import { buildDocsSite } from './build-site'
+import { buildDocsSite, transpileBrowserAsset } from './build-site'
 
 describe('buildDocsSite', () => {
   test('builds multiple locales, emits search indices and llms.txt, and rejects slug parity mismatch', async () => {
@@ -14,7 +14,7 @@ describe('buildDocsSite', () => {
       await mkdir(join(root, 'content/zh-Hans'), { recursive: true })
       await mkdir(join(root, 'assets'), { recursive: true })
       await writeFile(join(root, 'assets/notebook.css'), 'body {}')
-      await writeFile(join(root, 'assets/notebook.js'), '')
+      await writeFile(join(root, 'assets/notebook.ts'), 'const ready: boolean = true\nvoid ready\n')
       await writeFile(join(root, 'llms.txt'), '# dn-ioc')
 
       const overviewEn = `---\ntitle: Overview\nslug: ""\npart: start\norder: 1\nsummary: Intro\n---\nHello.\n`
@@ -44,6 +44,10 @@ describe('buildDocsSite', () => {
 
       expect(await readFile(join(root, 'dist/llms.txt'), 'utf8')).toBe('# dn-ioc')
       expect(await readFile(join(root, 'dist/assets/notebook.css'), 'utf8')).toBe('body {}')
+      const emittedJs = await readFile(join(root, 'dist/assets/notebook.js'), 'utf8')
+      expect(emittedJs).toContain('ready = true')
+      expect(emittedJs).not.toContain(': boolean')
+      await expect(access(join(root, 'dist/assets/notebook.ts'))).rejects.toThrow()
 
       // Add extra chapter to en-US only -> must fail parity check
       await writeFile(
@@ -74,7 +78,7 @@ describe('buildDocsSite', () => {
       await mkdir(join(root, 'dist'), { recursive: true })
       await writeFile(join(root, 'dist/stale.txt'), 'old')
       await writeFile(join(root, 'assets/notebook.css'), 'body {}')
-      await writeFile(join(root, 'assets/notebook.js'), '')
+      await writeFile(join(root, 'assets/notebook.ts'), 'const ready: boolean = true\nvoid ready\n')
       await writeFile(join(root, 'llms.txt'), '# dn-ioc')
 
       await writeFile(
@@ -130,7 +134,7 @@ describe('buildDocsSite', () => {
       await mkdir(join(root, 'content/en-US'), { recursive: true })
       await mkdir(join(root, 'assets'), { recursive: true })
       await writeFile(join(root, 'assets/notebook.css'), 'body {}')
-      await writeFile(join(root, 'assets/notebook.js'), '')
+      await writeFile(join(root, 'assets/notebook.ts'), 'const ready: boolean = true\nvoid ready\n')
       await writeFile(join(root, 'llms.txt'), '# dn-ioc')
 
       const slugs = [
@@ -198,7 +202,7 @@ describe('buildDocsSite', () => {
       await mkdir(join(root, 'docs/assets'), { recursive: true })
       await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'dn-ioc', version: '0.3.1' }))
       await writeFile(join(root, 'docs/assets/notebook.css'), 'body {}')
-      await writeFile(join(root, 'docs/assets/notebook.js'), '')
+      await writeFile(join(root, 'docs/assets/notebook.ts'), '')
       await writeFile(join(root, 'docs/llms.txt'), '# dn-ioc')
 
       await expect(resolveActiveLocales(join(root, 'docs/content'), false)).rejects.toThrow(/en-US/)
@@ -228,7 +232,7 @@ describe('buildDocsSite', () => {
   test('ships borderless neutral-white paper CSS tokens and streamlined client script', async () => {
     const repoRoot = join(import.meta.dir, '../..')
     const css = await readFile(join(repoRoot, 'docs/assets/notebook.css'), 'utf8')
-    const js = await readFile(join(repoRoot, 'docs/assets/notebook.js'), 'utf8')
+    const js = transpileBrowserAsset(await readFile(join(repoRoot, 'docs/assets/notebook.ts'), 'utf8'))
 
     expect(css).toMatch(/--sheet:\s*#f8f8f7/i)
     expect(css).toMatch(/--vellum:\s*#f0f0ee/i)
@@ -298,7 +302,7 @@ describe('buildDocsSite', () => {
   test('keeps .doc-rail non-clipping for upward language popup, wires mobile drawer toggle, and guards IME composition including keyCode 229', async () => {
     const repoRoot = join(import.meta.dir, '../..')
     const css = await readFile(join(repoRoot, 'docs/assets/notebook.css'), 'utf8')
-    const js = await readFile(join(repoRoot, 'docs/assets/notebook.js'), 'utf8')
+    const js = transpileBrowserAsset(await readFile(join(repoRoot, 'docs/assets/notebook.ts'), 'utf8'))
 
     const extractBlocks = (selector: string): string[] => {
       const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -780,7 +784,7 @@ describe('buildDocsSite', () => {
 
   test('normalizes Arabic harakat, Alef, Alef Maqsura, and Ta Marbuta in search and preserves trailing combining marks inside <mark>', async () => {
     const repoRoot = join(import.meta.dir, '../..')
-    const js = await readFile(join(repoRoot, 'docs/assets/notebook.js'), 'utf8')
+    const js = transpileBrowserAsset(await readFile(join(repoRoot, 'docs/assets/notebook.ts'), 'utf8'))
     const noop = () => undefined
 
     class MockElement {
@@ -966,7 +970,7 @@ describe('buildDocsSite', () => {
 
   test('switches active code panel + filename via file tree and persists auto/light/dark theme preference with live OS tracking', async () => {
     const repoRoot = join(import.meta.dir, '../..')
-    const js = await readFile(join(repoRoot, 'docs/assets/notebook.js'), 'utf8')
+    const js = transpileBrowserAsset(await readFile(join(repoRoot, 'docs/assets/notebook.ts'), 'utf8'))
     const noop = () => undefined
 
     class MockElement {
@@ -1284,6 +1288,10 @@ describe('buildDocsSite', () => {
         const check = Bun.spawnSync(['git', 'check-ignore', '-q', candidate], { cwd: repoRoot })
         expect(check.exitCode, `${candidate} must be ignored by .gitignore`).toBe(0)
       }
+
+      const trackedJs = Bun.spawnSync(['git', 'ls-files', '*.js', '*.mjs', '*.cjs', '*.jsx'], { cwd: repoRoot })
+      expect(trackedJs.exitCode).toBe(0)
+      expect(trackedJs.stdout.toString().trim(), 'Repository must contain TypeScript sources only (zero tracked JS files)').toBe('')
     }
   })
 })

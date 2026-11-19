@@ -1,7 +1,7 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": {
-    "lib": ["ESNext", "DOM"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["bun"],
     "paths": {
       "dn-ioc": ["./../src/index.ts"]
@@ -9,5 +9,5 @@
     "jsx": "react-jsx",
     "jsxImportSource": "../scripts/docs"
   },
-  "include": ["raw.d.ts", "locales.ts", "examples/**/*.ts", "../scripts/docs/**/*.ts"]
+  "include": ["raw.d.ts", "locales.ts", "assets/**/*.ts", "examples/**/*.ts", "../scripts/docs/**/*.ts"]
 }

@@ -1,5 +1,5 @@
 import type { Dirent } from 'node:fs'
-import { copyFile, cp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, posix } from 'node:path'
 import { chapterHref, getLocale, LOCALES, type LocaleCode } from '../../docs/locales'
 import { type CompiledChapter, compileMdxFile, renderChapterPage } from './compile-mdx'
@@ -54,6 +54,34 @@ async function listRelativeFiles(dir: string, prefix = ''): Promise<string[]> {
     }
   }
   return out
+}
+
+const tsAssetTranspiler = new Bun.Transpiler({ loader: 'ts' })
+
+export function transpileBrowserAsset(tsSource: string): string {
+  return tsAssetTranspiler.transformSync(tsSource)
+}
+
+async function emitAssets(assetsDir: string, assetsOutDir: string): Promise<string[]> {
+  const sourceFiles = await listRelativeFiles(assetsDir)
+  const emittedFiles: string[] = []
+  for (const relPath of sourceFiles) {
+    const srcPath = join(assetsDir, ...relPath.split('/'))
+    if (relPath.endsWith('.ts')) {
+      const outRel = `${relPath.slice(0, -3)}.js`
+      const outPath = join(assetsOutDir, ...outRel.split('/'))
+      const tsSource = await readFile(srcPath, 'utf8')
+      await mkdir(dirname(outPath), { recursive: true })
+      await writeFile(outPath, transpileBrowserAsset(tsSource), 'utf8')
+      emittedFiles.push(outRel)
+    } else {
+      const outPath = join(assetsOutDir, ...relPath.split('/'))
+      await mkdir(dirname(outPath), { recursive: true })
+      await copyFile(srcPath, outPath)
+      emittedFiles.push(relPath)
+    }
+  }
+  return emittedFiles
 }
 
 function validateChapterInternalLinks(
@@ -178,8 +206,7 @@ export async function buildDocsSite(options: BuildSiteOptions): Promise<{ pagesW
   }
 
   const assetsOutDir = join(options.outDir, 'assets')
-  await cp(options.assetsDir, assetsOutDir, { recursive: true })
-  const assetFiles = await listRelativeFiles(assetsOutDir)
+  const assetFiles = await emitAssets(options.assetsDir, assetsOutDir)
 
   await copyFile(options.llmsPath, join(options.outDir, 'llms.txt'))
   await writeFile(join(options.outDir, '_redirects'), REDIRECTS_CONTENT, 'utf8')
