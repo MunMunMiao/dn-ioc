@@ -285,6 +285,8 @@ describe('buildDocsSite', () => {
     expect(css).toContain('.p-tree-layout')
     expect(css).toContain('.paper-code .p-tree-list')
     expect(css).toContain('.theme-group')
+    expect(css).toMatch(/\.doc-shell\s*\{[^}]*max-width:\s*1536px/)
+    expect(css).toMatch(/\.doc-shell\s*\{[^}]*grid-template-columns:\s*232px minmax\(0, 1fr\)/)
     expect(css).toContain('@media (max-width: 920px)')
 
     expect(js).toContain('dn-ioc-theme')
@@ -717,6 +719,9 @@ describe('buildDocsSite', () => {
           expect(html, `${normalizedPath} should render file tree`).toContain('class="paper-code paper-code-tree"')
         } else {
           expect(html, `${normalizedPath} should not render file tree`).not.toContain('paper-code-tree')
+        }
+        if (/\/installation\/index\.html$/.test(normalizedPath)) {
+          expect(html, `${normalizedPath} should document skill installation`).toContain('npx skills add MunMunMiao/dn-ioc')
         }
 
         const matches = Array.from(html.matchAll(localeLinkRe))

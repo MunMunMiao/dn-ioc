@@ -116,4 +116,19 @@ deno add npm:dn-ioc`}
 
 </Callout>
 
-ولأن النواة تتجنّب `process` وواجهات DOM والمؤقّتات، تظل مزوّداتك محمولة 100% بين Node.js وBun وDeno والمتصفحات وWeb Workers وبيئات edge. جاهز تركّب أول تطبيق لك؟ انتقل إلى [البدء السريع في خمس دقائق](/ar/quickstart/).
+ولأن النواة تتجنّب `process` وواجهات DOM والمؤقّتات، تظل مزوّداتك محمولة 100% بين Node.js وBun وDeno والمتصفحات وWeb Workers وبيئات edge.
+
+## تثبيت Skill لوكلاء الذكاء الاصطناعي
+
+إذا كنت تستخدم وكيل برمجة مثل Claude Code أو Codex أو Cursor أو Antigravity أو Gemini CLI، ثبّت الـ Skill الإنجليزي الرسمي (`skills/dn-ioc/SKILL.md`) حتى يعرف الوكيل واجهة `dn-ioc` العامة بالضبط، وقواعد الاختيار بين `Ref` و`Token`، ودورة الحياة، ورسائل الأخطاء الحرفية بدون ما يختلق decorators أو حاوية عامة غير موجودة:
+
+<Code
+  title="install-skill.sh"
+  lang="bash"
+  code={`npx skills add MunMunMiao/dn-ioc
+bunx skills add MunMunMiao/dn-ioc`}
+/>
+
+وإذا كانت أداتك تقرأ مرجع نصي واحد مباشرة، وجّهها إلى [`/llms.txt`](/llms.txt).
+
+جاهز تركّب أول تطبيق لك؟ انتقل إلى [البدء السريع في خمس دقائق](/ar/quickstart/).

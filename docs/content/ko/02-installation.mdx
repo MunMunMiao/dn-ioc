@@ -116,4 +116,19 @@ TypeScript 프로젝트에서는 `tsconfig.json`에 `"moduleResolution": "bundle
 
 </Callout>
 
-커널이 `process`나 DOM API, 타이머를 전혀 쓰지 않는 덕분에, 한 번 작성한 프로바이더는 Node.js, Bun, Deno, 브라우저, Web Worker, 엣지 런타임 어디서나 100% 그대로 재사용할 수 있어요. 이제 첫 번째 앱을 조립해 볼 준비가 되셨나요? 바로 [5분 빠른 시작](/ko/quickstart/)으로 넘어가 봐요.
+커널이 `process`나 DOM API, 타이머를 전혀 쓰지 않는 덕분에, 한 번 작성한 프로바이더는 Node.js, Bun, Deno, 브라우저, Web Worker, 엣지 런타임 어디서나 100% 그대로 재사용할 수 있어요.
+
+## AI 에이전트 Skill 설치
+
+Claude Code, Codex, Cursor, Antigravity, Gemini CLI 같은 AI 코딩 에이전트를 쓰고 있다면 공식 영문 Skill(`skills/dn-ioc/SKILL.md`)을 설치해 두세요. 공개 API, `Ref` vs `Token` 기준, 라이프사이클 규칙, 정확한 런타임 오류 문자열을 그대로 전달해서 없는 데코레이터나 전역 컨테이너를 지어내는 일을 막아 줍니다.
+
+<Code
+  title="install-skill.sh"
+  lang="bash"
+  code={`npx skills add MunMunMiao/dn-ioc
+bunx skills add MunMunMiao/dn-ioc`}
+/>
+
+단일 플레인 텍스트 문서를 직접 읽는 도구라면 [`/llms.txt`](/llms.txt)를 바로 넘겨주면 돼요.
+
+이제 첫 번째 앱을 조립해 볼 준비가 되셨나요? 바로 [5분 빠른 시작](/ko/quickstart/)으로 넘어가 봐요.

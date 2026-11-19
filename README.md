@@ -45,6 +45,17 @@ await app.start()
 
 This graph holds no resources, so it does not need `stop()`. Scopes, cleanup, async factories, and the public API are in the docs.
 
+## AI Agent Skill
+
+Install the official English skill (`skills/dn-ioc/SKILL.md`) for AI coding agents (Claude Code, Codex, Cursor, Antigravity, Gemini CLI, etc.):
+
+```bash
+npx skills add MunMunMiao/dn-ioc
+bunx skills add MunMunMiao/dn-ioc
+```
+
+For tools that read a plain-text reference directly, pass <https://dn-ioc.lyz.cloud/llms.txt>.
+
 ## Development
 
 Bun 1.4.3. `bun test --coverage` exits 0 below 100%, so `bun run test` is the test run and the coverage gate together. `bun check` fails on type errors, so that is `bun run type-check`. `bun run docs:dev` previews the documentation site locally, and `bun run docs:build` builds all nine locales into `docs/dist`.

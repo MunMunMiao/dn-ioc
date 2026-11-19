@@ -116,4 +116,19 @@ La résolution de types avec `NodeNext` et `Node16` **n’est pas prise en charg
 
 </Callout>
 
-Comme le noyau n’utilise ni `process`, ni API DOM, ni timers, tes providers restent 100 % portables entre Node.js, Bun, Deno, navigateurs, Web Workers et runtimes edge. Prêt à câbler ta première appli ? Passe à la [Prise en main en 5 minutes](/fr/quickstart/).
+Comme le noyau n’utilise ni `process`, ni API DOM, ni timers, tes providers restent 100 % portables entre Node.js, Bun, Deno, navigateurs, Web Workers et runtimes edge.
+
+## Installer le Skill pour agent IA
+
+Tu utilises un agent de code comme Claude Code, Codex, Cursor, Antigravity ou Gemini CLI ? Installe le Skill officiel en anglais (`skills/dn-ioc/SKILL.md`) pour qu’il connaisse exactement l’API publique de `dn-ioc`, le choix entre `Ref` et `Token`, les règles de cycle de vie et les erreurs exactes sans inventer de décorateurs ni de conteneur global :
+
+<Code
+  title="install-skill.sh"
+  lang="bash"
+  code={`npx skills add MunMunMiao/dn-ioc
+bunx skills add MunMunMiao/dn-ioc`}
+/>
+
+Tu préfères donner un seul fichier texte brut à ton outil ? Pointe-le directement vers [`/llms.txt`](/llms.txt).
+
+Prêt à câbler ta première appli ? Passe à la [Prise en main en 5 minutes](/fr/quickstart/).

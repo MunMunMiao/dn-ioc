@@ -6,6 +6,7 @@ import { renderCodeLines } from './highlight'
 const EXAMPLES_DIR = join(import.meta.dir, '../../docs/examples')
 const LLMS_TXT_PATH = join(import.meta.dir, '../../docs/llms.txt')
 const SKILL_MD_PATH = join(import.meta.dir, '../../skills/dn-ioc/SKILL.md')
+const README_PATH = join(import.meta.dir, '../../README.md')
 
 const EXPECTED_EXAMPLES = [
   'api/signatures.ts',
@@ -144,6 +145,10 @@ describe('docs/examples suite', () => {
   test('preserves updated site URL, public API, and all 8 verbatim runtime error messages in docs/llms.txt and skills/dn-ioc/SKILL.md', async () => {
     const llms = await readFile(LLMS_TXT_PATH, 'utf8')
     const skill = await readFile(SKILL_MD_PATH, 'utf8')
+    const readme = await readFile(README_PATH, 'utf8')
+
+    expect(readme).toContain('npx skills add MunMunMiao/dn-ioc')
+    expect(readme).toContain('skills/dn-ioc/SKILL.md')
 
     expect(llms).toContain('Human reference: https://dn-ioc.lyz.cloud/')
     expect(llms).not.toContain('[index.html](index.html)')

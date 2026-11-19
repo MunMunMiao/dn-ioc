@@ -116,4 +116,19 @@ TypeScript プロジェクトでは、`tsconfig.json` の `"moduleResolution"` �
 
 </Callout>
 
-カーネル内部で `process` や DOM API、タイマーに一切依存していないおかげで、書いたプロバイダは Node.js、Bun、Deno、ブラウザ、Web Worker、エッジランタイムの間で 100% そのまま使い回せます。準備ができたら、さっそく [5分クイックスタート](/ja/quickstart/) で最初のアプリを動かしてみましょう。
+カーネル内部で `process` や DOM API、タイマーに一切依存していないおかげで、書いたプロバイダは Node.js、Bun、Deno、ブラウザ、Web Worker、エッジランタイムの間で 100% そのまま使い回せます。
+
+## AI エージェント向け Skill のインストール
+
+Claude Code、Codex、Cursor、Antigravity、Gemini CLI などの AI コーディングエージェントを使っている場合は、公式の英語 Skill（`skills/dn-ioc/SKILL.md`）を入れておくと便利です。公開 API、`Ref` と `Token` の使い分け、ライフサイクル規約、正確なエラー文字列まで共有できるので、存在しないデコレータやコンテナを勝手に作られる心配がなくなります。
+
+<Code
+  title="install-skill.sh"
+  lang="bash"
+  code={`npx skills add MunMunMiao/dn-ioc
+bunx skills add MunMunMiao/dn-ioc`}
+/>
+
+プレーンテキスト1枚でコンテキストを渡したいツールには、[`/llms.txt`](/llms.txt) をそのまま指定してください。
+
+準備ができたら、さっそく [5分クイックスタート](/ja/quickstart/) で最初のアプリを動かしてみましょう。

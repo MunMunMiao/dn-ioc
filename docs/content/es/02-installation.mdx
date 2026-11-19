@@ -116,4 +116,19 @@ La resolución de declaraciones con `NodeNext` y `Node16` **no está soportada**
 
 </Callout>
 
-Como el núcleo no toca `process`, APIs del DOM ni temporizadores, tus providers son 100 % portables entre Node.js, Bun, Deno, navegadores, Web Workers y entornos edge. ¿Listo para montar tu primera app? Pasa a la [Guía rápida en 5 minutos](/es/quickstart/).
+Como el núcleo no toca `process`, APIs del DOM ni temporizadores, tus providers son 100 % portables entre Node.js, Bun, Deno, navegadores, Web Workers y entornos edge.
+
+## Instalar el Skill para agentes de IA
+
+Si trabajas con agentes de código como Claude Code, Codex, Cursor, Antigravity o Gemini CLI, puedes instalar el Skill oficial en inglés (`skills/dn-ioc/SKILL.md`) para que el agente conozca la API pública exacta, la regla entre `Ref` y `Token`, el ciclo de vida y los mensajes de error literales sin inventar decoradores ni contenedores globales:
+
+<Code
+  title="install-skill.sh"
+  lang="bash"
+  code={`npx skills add MunMunMiao/dn-ioc
+bunx skills add MunMunMiao/dn-ioc`}
+/>
+
+Si tu herramienta lee directamente contexto en texto plano, apúntala a [`/llms.txt`](/llms.txt).
+
+¿Listo para montar tu primera app? Pasa a la [Guía rápida en 5 minutos](/es/quickstart/).

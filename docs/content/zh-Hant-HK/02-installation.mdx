@@ -116,4 +116,19 @@ deno add npm:dn-ioc`}
 
 </Callout>
 
-因為核心完全唔會掂 `process`、DOM API 同 timer，你寫好嘅 provider 可以 100% 原封不動喺 Node.js、Bun、Deno、瀏覽器、Web Worker 同 Edge runtime 之間共用。準備好落手砌第一個 app 未？即刻揭去下一篇[五分鐘快速上手](/zh-hant-hk/quickstart/)。
+因為核心完全唔會掂 `process`、DOM API 同 timer，你寫好嘅 provider 可以 100% 原封不動喺 Node.js、Bun、Deno、瀏覽器、Web Worker 同 Edge runtime 之間共用。
+
+## 安裝 AI Agent Skill
+
+如果你平時有用 Claude Code、Codex、Cursor、Antigravity 或者 Gemini CLI 呢類 AI coding agent，可以直接裝埋官方英文 Skill（`skills/dn-ioc/SKILL.md`），等佢精準跟足 `dn-ioc` 嘅公開 API、`Ref` 同 `Token` 揀法、生命週期守則同精確 error 字串，唔會亂作唔存在嘅 decorator 或者 container：
+
+<Code
+  title="install-skill.sh"
+  lang="bash"
+  code={`npx skills add MunMunMiao/dn-ioc
+bunx skills add MunMunMiao/dn-ioc`}
+/>
+
+如果工具本身可以直接食純文字 context，亦可以直接畀 [`/llms.txt`](/llms.txt) 佢睇。
+
+準備好落手砌第一個 app 未？即刻揭去下一篇[五分鐘快速上手](/zh-hant-hk/quickstart/)。

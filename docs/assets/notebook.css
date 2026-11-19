@@ -168,13 +168,12 @@ body::after {
 /* Borderless Paper Shell */
 
 .doc-shell {
-  max-width: 1120px;
+  max-width: 1536px;
   margin: 0 auto;
-  padding: 56px 40px 104px;
+  padding: 56px clamp(28px, 4vw, 56px) 104px;
   display: grid;
-  grid-template-columns: 204px minmax(0, 740px);
-  justify-content: space-between;
-  gap: 64px;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: clamp(40px, 4.5vw, 72px);
 }
 
 /* Transparent Left Index Rail */
@@ -724,7 +723,7 @@ html[dir="rtl"] .callout {
 
 .p-tree-layout {
   display: grid;
-  grid-template-columns: 214px minmax(0, 1fr);
+  grid-template-columns: 232px minmax(0, 1fr);
 }
 
 .p-tree {

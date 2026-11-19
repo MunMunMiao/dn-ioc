@@ -116,4 +116,19 @@ In TypeScript projects, set `"moduleResolution": "bundler"` in your `tsconfig.js
 
 </Callout>
 
-Because the kernel avoids `process`, DOM APIs, and timers, your providers stay 100% portable across Node.js, Bun, Deno, browsers, Web Workers, and edge runtimes. Ready to wire up your first app? Flip to the [Five-Minute Quickstart](/quickstart/).
+Because the kernel avoids `process`, DOM APIs, and timers, your providers stay 100% portable across Node.js, Bun, Deno, browsers, Web Workers, and edge runtimes.
+
+## AI Agent Skill
+
+Using an AI coding agent such as Claude Code, Codex, Cursor, Antigravity, or Gemini CLI? Install the official English skill (`skills/dn-ioc/SKILL.md`) so the agent knows `dn-ioc`'s exact public API, `Ref` vs `Token` rules, lifecycle invariants, and verbatim runtime errors without guessing:
+
+<Code
+  title="install-skill.sh"
+  lang="bash"
+  code={`npx skills add MunMunMiao/dn-ioc
+bunx skills add MunMunMiao/dn-ioc`}
+/>
+
+Prefer a single plain-text context file? Point your agent straight at [`/llms.txt`](/llms.txt).
+
+Ready to wire up your first app? Flip to the [Five-Minute Quickstart](/quickstart/).
