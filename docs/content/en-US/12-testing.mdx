@@ -27,7 +27,7 @@ Compare the DDD unit test above with the MVC test (`services/user-service.test.t
 
 <Callout kind="tip" title="Keep error traces readable in test failures">
 
-Name tokens after their interface (`token<Mailer>('Mailer')`) and give `provide()` factories a real function name (`provide(function OrderService({ inject }) { ... })`). When a test forgets a binding or introduces a cycle, you'll see `OrderService` and `Mailer` in the error message instead of `<anonymous>`.
+Name tokens after their interface (`token<Mailer>('Mailer')`), and when you want named cycle diagnostics for a `Ref`, assign its arrow factory to a named `const` (`const OrderService = ({ inject }: Context) => { ... }; provide(OrderService)`). When a test forgets a binding or introduces a cycle, you'll see `OrderService` and `Mailer` in the error message instead of `<anonymous>`.
 
 </Callout>
 

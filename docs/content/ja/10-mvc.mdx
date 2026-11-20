@@ -50,7 +50,7 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 
 下のファイルツリーにある6つのファイルを下層から順番にたどって、リクエストがどう流れるか見てみましょう。
 
-1. **`db/database.ts`:** `provide(function Database({ onDispose }) { ... })` と名前付き関数にすることで、循環依存などの診断時に `<anonymous>` ではなく `Database` と表示されるようにしています。状態を閉じる `onDispose` フックも、その状態のすぐ隣で登録します。
+1. **`db/database.ts`:** `provide(({ onDispose }): Database => { ... })` でテーブルの Map を保持し、状態を閉じる `onDispose` フックもそのすぐ隣で登録します。
 2. **`models/user.ts`:** 純粋な TypeScript の `interface User` だけです。DI ライブラリの import すら必要ありません。
 3. **`repositories/user-repository.ts`:** `userRepositoryRef` はファクトリ実行時に1回だけ `inject(databaseRef)` を呼び、`'users'` コレクションを取得して `{ findByEmail, create }` を返します。
 4. **`services/user-service.ts`:** `userServiceRef` が `userRepositoryRef` を受け取り、メールアドレスの検証や重複チェックを HTTP ハンドラから切り離します。
@@ -83,8 +83,8 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 たとえば2つ目の機能として `posts` を足すときも、既存の `user` 周りのファイルには一切触れず、毎回おなじみの4ステップで完了します。
 
 1. **モデルを足す (`models/post.ts`):** `interface Post { id: string; authorId: string; title: string }` をエクスポートします。
-2. **Repository を足す (`repositories/post-repository.ts`):** 既存の `databaseRef` を注入する `postRepositoryRef = provide(function PostRepository({ inject }) { ... })` をエクスポートします。
-3. **Service を足す (`services/post-service.ts`):** `postRepositoryRef`（投稿者の存在確認もするなら `userRepositoryRef` も）を注入する `postServiceRef = provide(function PostService({ inject }) { ... })` をエクスポートします。
+2. **Repository を足す (`repositories/post-repository.ts`):** 既存の `databaseRef` を注入する `postRepositoryRef = provide(({ inject }) => { ... })` をエクスポートします。
+3. **Service を足す (`services/post-service.ts`):** `postRepositoryRef`（投稿者の存在確認もするなら `userRepositoryRef` も）を注入する `postServiceRef = provide(({ inject }) => { ... })` をエクスポートします。
 4. **Controller をつなぐ (`controllers/post-controller.ts` → `main.ts`):** `postControllerRef` をエクスポートし、`main.ts` のルーティング配線で `inject(postControllerRef)` を呼びます。
 
 注目してほしいのは「触らなくてよかった場所」です。Repository や Service を1つ増やすたびに中央の DI 設定ファイルを編集する必要はなく、`databaseRef` も最初からルートで共有されています。

@@ -51,7 +51,7 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
 `application/` 계층은 도메인 엔티티와 포트를 조율해 `OrderService.submit(id)` 같은 유스케이스를 완성해요. 여기서 의도적으로 두 가지 도구를 섞어 쓴 점에 주목해 보세요.
 
 - `OrderService`는 외부 기능을 오직 **도메인 토큰**(`orderRepositoryToken`, `clockToken`, `mailerToken`)으로만 주입받아요. 주문 데이터가 Postgres에 있는지, SQLite에 있는지, 아니면 메모리 `Map`에 있는지 전혀 알지 못하죠.
-- 그런데 정작 `orderServiceRef` 자체는 `provide(function OrderService({ inject }) { ... })`를 통해 **평범한 `Ref`로** 내보내고 있어요! 왜 그럴까요? `application/`을 호출하는 주체들 — HTTP 컨트롤러, CLI 명령어, 큐 워커, 테스트 — 은 모두 *바깥 계층*에 살면서 원래 유스케이스를 직접 `import`하도록 설계된 코드이기 때문이에요. 이미 `import` 화살표가 안쪽을 향하고 있는 서비스에까지 굳이 중복 토큰을 만들 필요는 없어요.
+- 그런데 정작 `orderServiceRef` 자체는 `provide(({ inject }) => { ... })`를 통해 **평범한 `Ref`로** 내보내고 있어요! 왜 그럴까요? `application/`을 호출하는 주체들 — HTTP 컨트롤러, CLI 명령어, 큐 워커, 테스트 — 은 모두 *바깥 계층*에 살면서 원래 유스케이스를 직접 `import`하도록 설계된 코드이기 때문이에요. 이미 `import` 화살표가 안쪽을 향하고 있는 서비스에까지 굳이 중복 토큰을 만들 필요는 없어요.
 
 <Code title="application/order-service.ts" code={orderServiceCode} />
 

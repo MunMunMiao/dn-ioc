@@ -51,7 +51,7 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
 `application/` 層負責協調領域實體與各個連接埠，完成像 `OrderService.submit(id)` 這樣的應用情境。請特別留意這裡刻意採用的混合設計：
 
 - `OrderService` 取得外部能力時，一律只透過**領域層 Token**（`orderRepositoryToken`、`clockToken`、`mailerToken`）注入——它完全不知道、也不在乎訂單實際上是存在 Postgres、SQLite 還是記憶體裡的 `Map`。
-- 然而 `orderServiceRef` 自己卻是透過 `provide(function OrderService({ inject }) { ... })` 匯出成一個 **`Ref`**！為什麼？因為會呼叫 `application/` 的角色——像是 HTTP Controller、CLI 指令、佇列 Worker 與測試程式碼——全都位於*更外層*，本來就應該直接往內匯入應用層服務。既然模組匯入箭頭已經指向內側，就完全沒必要再多包一層多餘的 Token。
+- 然而 `orderServiceRef` 自己卻是透過 `provide(({ inject }) => { ... })` 匯出成一個 **`Ref`**！為什麼？因為會呼叫 `application/` 的角色——像是 HTTP Controller、CLI 指令、佇列 Worker 與測試程式碼——全都位於*更外層*，本來就應該直接往內匯入應用層服務。既然模組匯入箭頭已經指向內側，就完全沒必要再多包一層多餘的 Token。
 
 <Code title="application/order-service.ts" code={orderServiceCode} />
 

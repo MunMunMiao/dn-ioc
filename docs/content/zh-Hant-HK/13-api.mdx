@@ -30,7 +30,7 @@ import providersCode from '../../examples/providers/caching-and-bundle.ts' with 
 將 `factory` 包裝成一個識得自動安裝預設實作嘅 `Ref<T>` handle。
 
 - **`factory`**：`(ctx: Context) => T`。呼叫 `inject()` 嗰陣，如果當前 scope 同所有上層 parent scope 都未綁過呢個 `Ref`，佢就會將預設 factory 安裝落當前 scope、執行一次並快取結果（如果係 `async` factory，就會共用同一個飛緊嘅 `Promise`）。同步拋錯同非同步 reject **唔會**留喺快取入面，只要個 app 仲行緊，之後再 call `inject()` 都可以乾淨重試。
-- **錯誤診斷名稱：** 直接讀取 `factory.name`（例如寫 `provide(function UserService(ctx) { ... })` 會顯示 `UserService`，而無名 arrow function 就會顯示 `<anonymous>`）。
+- **錯誤診斷名稱：** 直接讀取 `factory.name`（例如先寫 `const UserService = (ctx: Context) => { ... }` 再傳 `provide(UserService)` 會顯示 `UserService`，而無名行內 arrow function 就會顯示 `<anonymous>`）。
 - **`options?.providers`**：選填嘅私有子樹，只有呢個 `factory` 自己同佢嘅後代先睇得到。喺呼叫 `provide()` 嗰刻即場做快照，並留返嗰棵子樹第一次被解析嗰陣先做懶驗證。
 
 ### `provideFor<T>(key, factory, options?)`

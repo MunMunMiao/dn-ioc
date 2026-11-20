@@ -40,7 +40,7 @@ import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { typ
 토큰 바인딩을 잊어버렸거나 두 프로바이더가 실수로 서로를 참조해 순환 구조(`Circular dependency detected: A -> B -> A`)가 생겼을 때, 에러 메시지에 정확한 이름이 찍히면 디버깅 시간을 크게 아낄 수 있어요. 진단 이름은 다음 규칙을 따라요.
 
 - **Token은 설명 문자열을 그대로 써요:** `token<OrderRepository>('OrderRepository')`나 `token<string>('DatabaseUrl')`처럼 대표하는 타입이나 설정 이름을 그대로 적어 주세요. 설명을 생략(`token<string>()`)하면 에러 메시지에 `<anonymous>`로 표시돼요.
-- **Ref는 `factory.name`을 읽어요:** `provide()`는 별도의 이름 인자를 받지 않고 JavaScript 함수의 `.name` 프로퍼티를 그대로 읽어요. `provide(function Formatter({ inject }) { ... })`처럼 기명 함수를 쓰면 진단 이름이 `Formatter`가 되지만, 이름 없는 인라인 화살표 함수(`provide(({ inject }) => ...)`)를 쓰면 `<anonymous>`로 표시돼요.
+- **Ref는 `factory.name`을 읽어요:** `provide()`는 별도의 이름 인자를 받지 않고 JavaScript 함수의 `.name` 프로퍼티를 그대로 읽어요. 화살표 함수를 이름 붙은 `const`에 담아 넘기면(`const Formatter = ({ inject }: Context) => { ... }; provide(Formatter)`) 진단 이름이 `Formatter`가 되지만, 이름 없는 인라인 화살표 함수(`provide(({ inject }) => ...)`)를 쓰면 `<anonymous>`로 표시돼요.
 
 <Callout kind="note" title="코드 압축기(Minifier) 주의점과 잘못된 키 검증">
 

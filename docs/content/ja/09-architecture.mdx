@@ -40,7 +40,7 @@ import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' wit
 | **配線のボイラープレート** | ゼロ — アクティブスコープでの初回 `inject()` で自動登録。 | 明示的 — `{ providers }` やバンドル内で `provideFor()` が必須。 |
 | **テストでの差し替え** | `provideFor(ref, fakeFactory)` | `provideFor(token, fakeFactory)` — まったく同じ書き方。 |
 | **単体テストでモックし忘れたら** | **暗黙フォールバック:** 本物の実装がそのまま組み立てられて動く。 | **即座に失敗:** `start()` が `No provider for token: Name` で reject される。 |
-| **エラー時の診断名** | 関数名（`provide(function UserService(...) {})`）、無名なら `<anonymous>`。 | 説明文字列（`token('OrderRepository')`）、省略時は `<anonymous>`。 |
+| **エラー時の診断名** | 関数名（`const UserService = ...; provide(UserService)`）、無名なら `<anonymous>`。 | 説明文字列（`token('OrderRepository')`）、省略時は `<anonymous>`。 |
 | **向いている場所** | MVC の Controller / Service / Repository、ユースケース、内部ヘルパー。 | DDD のドメインポート、横断的ポート（`Clock`, `Mailer`）、実行時の設定やシークレット。 |
 
 ## 1つのコードベースで両方混ぜて使うのが自然です

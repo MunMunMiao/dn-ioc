@@ -1,7 +1,7 @@
 import { provide } from 'dn-ioc'
 import { userServiceRef } from '../services/user-service'
 
-export const userControllerRef = provide(function UserController({ inject }) {
+export const userControllerRef = provide(({ inject }) => {
   const userService = inject(userServiceRef) // [!hl]
 
   return {

@@ -27,7 +27,7 @@ import testingCode from '../../examples/testing/unit-and-integration.ts' with { 
 
 <Callout kind="tip" title="讓測試失敗時的錯誤追蹤更好讀">
 
-建議直接拿介面名稱為 Token 命名（如 `token<Mailer>('Mailer')`），並替 `provide()` 裡的工廠函式寫上真實函式名稱（如 `provide(function OrderService({ inject }) { ... })`）。當測試漏綁了某個相依項目或不小心寫出循環相依時，錯誤訊息裡就會清楚顯示 `OrderService` 與 `Mailer`，不用對著滿畫面的 `<anonymous>` 猜半天。
+建議直接拿介面名稱為 Token 命名（如 `token<Mailer>('Mailer')`），需要排查循環相依時也可以把箭頭工廠指派給具名常數再傳入 `provide()`（如 `const OrderService = ({ inject }: Context) => { ... }; provide(OrderService)`）。當測試漏綁了某個相依項目或不小心寫出循環相依時，錯誤訊息裡就會清楚顯示 `OrderService` 與 `Mailer`，不用對著滿畫面的 `<anonymous>` 猜半天。
 
 </Callout>
 

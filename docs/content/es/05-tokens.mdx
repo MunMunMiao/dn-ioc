@@ -40,7 +40,7 @@ Asegúrate de que la función raíz de `bootstrapApp()` inyecte los controladore
 Un buen mensaje de error te ahorra un buen rato de depuración cuando falta enlazar un token o dos providers forman un bucle sin querer (`Circular dependency detected: A -> B -> A`). De aquí salen esos nombres:
 
 - **Los tokens usan su cadena `description`:** Ponle al token el nombre de la interfaz o ajuste que representa, como `token<OrderRepository>('OrderRepository')` o `token<string>('DatabaseUrl')`. Si omites la descripción (`token<string>()`), los errores mostrarán `<anonymous>`.
-- **Los refs leen `factory.name`:** `provide()` no recibe una etiqueta aparte, sino que lee la propiedad `.name` de la función en JavaScript. Si escribes `provide(function Formatter({ inject }) { ... })`, el ref se mostrará como `Formatter`; en cambio, una función flecha en línea (`provide(({ inject }) => ...)`) no tiene nombre propio y aparecerá como `<anonymous>`.
+- **Los refs leen `factory.name`:** `provide()` no recibe una etiqueta aparte, sino que lee la propiedad `.name` de la función en JavaScript. Si asignas la función flecha a un `const` con nombre (`const Formatter = ({ inject }: Context) => { ... }; provide(Formatter)`), el ref se mostrará como `Formatter`; en cambio, una función flecha en línea (`provide(({ inject }) => ...)`) no tiene nombre propio y aparecerá como `<anonymous>`.
 
 <Callout kind="note" title="Minificadores y claves inválidas">
 

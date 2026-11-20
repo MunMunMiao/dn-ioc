@@ -50,7 +50,7 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 
 沿着下面目录树里的六个文件从底往上翻一遍，就能看清一次请求是怎么穿过整张图的：
 
-1. **`db/database.ts`：** 用具名函数 `provide(function Database({ onDispose }) { ... })` 定义，这样万一写出循环依赖，报错会直接显示 `Database` 而不是 `<anonymous>`；同时把关闭连接的 `onDispose` 钩子紧挨着连接状态写在一起。
+1. **`db/database.ts`：** 用 `provide(({ onDispose }): Database => { ... })` 维护底层表映射，并把关闭连接的 `onDispose` 钩子紧挨着连接状态写在一起。
 2. **`models/user.ts`：** 纯粹的 TypeScript `interface User`，连 `dn-ioc` 都不用引。
 3. **`repositories/user-repository.ts`：** `userRepositoryRef` 在工厂执行时调一次 `inject(databaseRef)` 拿到 `'users'` 集合，对外返回 `{ findByEmail, create }`。
 4. **`services/user-service.ts`：** `userServiceRef` 注入 `userRepositoryRef`，把邮箱格式校验和防重逻辑干净地留在业务层，不往 HTTP 路由里塞。
@@ -83,8 +83,8 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 现在要加第二个业务模块——比如文章 `posts`——完全不用碰已有的用户模块代码，按固定四步走就行：
 
 1. **加数据模型（`models/post.ts`）：** 导出 `interface Post { id: string; authorId: string; title: string }`。
-2. **加 Repository（`repositories/post-repository.ts`）：** 导出 `postRepositoryRef = provide(function PostRepository({ inject }) { ... })`，直接复用现成的 `databaseRef`。
-3. **加 Service（`services/post-service.ts`）：** 导出 `postServiceRef = provide(function PostService({ inject }) { ... })`，注入 `postRepositoryRef`（如果发帖前要校验作者存不存在，顺手再 `inject(userRepositoryRef)` 就行）。
+2. **加 Repository（`repositories/post-repository.ts`）：** 导出 `postRepositoryRef = provide(({ inject }) => { ... })`，直接复用现成的 `databaseRef`。
+3. **加 Service（`services/post-service.ts`）：** 导出 `postServiceRef = provide(({ inject }) => { ... })`，注入 `postRepositoryRef`（如果发帖前要校验作者存不存在，顺手再 `inject(userRepositoryRef)` 就行）。
 4. **挂上 Controller（`controllers/post-controller.ts` → `main.ts`）：** 导出 `postControllerRef`，在 `main.ts` 注册路由的地方 `inject(postControllerRef)`。
 
 注意你**省掉了什么**：没有中心容器清单逼着你每写一个 Service / Repository 都去补一行注册，而且根上的 `databaseRef` 天然就是全站共享的。

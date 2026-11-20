@@ -2,7 +2,7 @@ import { provide } from 'dn-ioc'
 import type { User } from '../models/user'
 import { userRepositoryRef } from '../repositories/user-repository'
 
-export const userServiceRef = provide(function UserService({ inject }) {
+export const userServiceRef = provide(({ inject }) => {
   const users = inject(userRepositoryRef) // [!hl]
 
   return {

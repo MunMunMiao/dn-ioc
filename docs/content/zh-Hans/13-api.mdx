@@ -30,7 +30,7 @@ import providersCode from '../../examples/providers/caching-and-bundle.ts' with 
 把 `factory` 包装成一个自带默认实现的 `Ref<T>` 句柄。
 
 - **`factory`**：`(ctx: Context) => T`。调 `inject()` 时，如果当前激活作用域和所有父作用域里都没绑过这个 `Ref`，它就会把自己的默认工厂装进当前作用域，跑一次并缓存结果（如果是 `async` 工厂，则共享同一个在途 `Promise`）。同步抛错和异步 reject **不会**留在缓存里，应用运行期间后续再调 `inject()` 可以干净重试。
-- **报错诊断名：** 直接取 `factory.name`（比如写 `provide(function UserService(ctx) { ... })` 报错就会显示 `UserService`，写匿名箭头函数则显示 `<anonymous>`）。
+- **报错诊断名：** 直接取 `factory.name`（比如先声明 `const UserService = (ctx: Context) => { ... }` 再传 `provide(UserService)`，报错就会显示 `UserService`；直接写行内匿名箭头函数则显示 `<anonymous>`）。
 - **`options?.providers`**：可选的私有子作用域树，只对当前 `factory` 及其后代可见。在调 `provide()` 时当场做浅拷贝快照，等这棵子树第一次真正被解析时才做懒校验。
 
 ### `provideFor<T>(key, factory, options?)`

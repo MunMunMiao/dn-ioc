@@ -40,7 +40,7 @@ import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' wit
 | **接線樣板碼** | 零樣板碼 —— 第一次 `inject()` 即自動喺當前 scope 掛載。 | 顯式綁定 —— 必須喺 `{ providers }` 或 bundle 入面用 `provideFor()` 掛載。 |
 | **測試替換方式** | `provideFor(ref, fakeFactory)` | `provideFor(token, fakeFactory)` —— 用法完全一模一樣。 |
 | **單元測試漏綁假實作嗰陣** | **靜默行返真嘢：** 核心照樣起個真實實例出嚟行。 | **即刻 Fail fast：** `start()` 即場 reject `No provider for token: Name`。 |
-| **錯誤訊息入面個名** | 取自函式名（`provide(function UserService(...) {})`），否則係 `<anonymous>`。 | 取自描述字串（`token('OrderRepository')`），否則係 `<anonymous>`。 |
+| **錯誤訊息入面個名** | 取自函式名（`const UserService = ...; provide(UserService)`），否則係 `<anonymous>`。 | 取自描述字串（`token('OrderRepository')`），否則係 `<anonymous>`。 |
 | **最啱用喺邊度** | MVC 嘅 Controller / Service / Repository、應用層 Use Case、內部輔助模組。 | DDD 領域 Port、橫切關注點 Port（`Clock`、`Mailer`）、啟動期設定與密鑰。 |
 
 ## 同一個專案入面兩樣夾埋用

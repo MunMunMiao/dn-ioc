@@ -5,7 +5,7 @@ import { clockToken, type Mailer, mailerToken } from '../ddd/domain/ports'
 import { infraProviders } from '../ddd/infra/providers'
 
 // #region unit
-export async function testOrderSubmitUnit() {
+export const testOrderSubmitUnit = async () => {
   const sent: string[] = []
 
   const fakeOrders = (): OrderRepository => ({
@@ -44,7 +44,7 @@ export interface SentMail {
   orderId: string
 }
 
-export async function testOrderSubmitIntegration() {
+export const testOrderSubmitIntegration = async () => {
   const outbox: SentMail[] = []
   const fakeMailer = (): Mailer => ({
     async sendOrderConfirmation(email, orderId) {

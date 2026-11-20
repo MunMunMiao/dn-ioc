@@ -30,7 +30,7 @@ Creates a pure dependency key carrying the TypeScript type `T` and zero runtime 
 Wraps `factory` in a self-providing `Ref<T>` handle.
 
 - **`factory`**: `(ctx: Context) => T`. If no binding for this `Ref` exists in the active scope or its ancestors when `inject()` is called, the `Ref` installs its default factory into the active scope, runs it once, and caches the result (or shares the in-flight `Promise` for an async factory). Sync throws and async rejections are **not** cached, allowing retries while the app is running.
-- **Diagnostic name:** Taken from `factory.name` (for example, `provide(function UserService(ctx) { ... })` reports `UserService`, whereas an unnamed inline arrow reports `<anonymous>`).
+- **Diagnostic name:** Taken from `factory.name` (for example, `const UserService = (ctx: Context) => { ... }; provide(UserService)` reports `UserService`, whereas an unnamed inline arrow reports `<anonymous>`).
 - **`options?.providers`**: Optional private child subtree visible only to `factory` and its descendants. Snapshotted when `provide()` is called and validated lazily when that subtree is first resolved.
 
 ### `provideFor<T>(key, factory, options?)`

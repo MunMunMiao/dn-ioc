@@ -50,7 +50,7 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 
 아래 파일 트리의 여섯 파일을 맨 아래 계층부터 위로 따라가면서 요청 하나가 그래프를 어떻게 통과하는지 살펴보세요.
 
-1. **`db/database.ts`:** `provide(function Database({ onDispose }) { ... })`처럼 기명 함수를 써서 순환 참조 진단 메시지에 `<anonymous>` 대신 `Database`가 찍히도록 했고, 닫아야 할 상태 바로 옆에서 `onDispose` 훅을 등록했어요.
+1. **`db/database.ts`:** `provide(({ onDispose }): Database => { ... })`가 테이블 Map을 보관하고, 닫아야 할 상태 바로 옆에서 `onDispose` 훅을 등록해요.
 2. **`models/user.ts`:** 순수 TypeScript `interface User`만 들어 있어요. DI 관련 `import`는 하나도 필요 없죠.
 3. **`repositories/user-repository.ts`:** `userRepositoryRef`는 팩토리가 실행될 때 `inject(databaseRef)`를 한 번 호출해 `'users'` 컬렉션을 가져오고 `{ findByEmail, create }` 메서드를 반환해요.
 4. **`services/user-service.ts`:** `userServiceRef`는 `userRepositoryRef`를 주입받아 이메일 형식 검사와 중복 체크 로직을 HTTP 핸들러 바깥으로 깔끔하게 분리해요.
@@ -83,8 +83,8 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 여기에 두 번째 기능으로 `posts`를 추가한다고 해 볼게요. 기존 `user` 모듈은 전혀 건드릴 필요 없이 예측 가능한 네 단계만 밟으면 돼요.
 
 1. **모델 추가 (`models/post.ts`):** `interface Post { id: string; authorId: string; title: string }`을 내보내요.
-2. **리포지토리 추가 (`repositories/post-repository.ts`):** 기존 `databaseRef`를 주입받는 `postRepositoryRef = provide(function PostRepository({ inject }) { ... })`를 내보내요.
-3. **서비스 추가 (`services/post-service.ts`):** `postRepositoryRef`(작성자 존재 여부를 확인해야 한다면 `userRepositoryRef`까지)를 주입받는 `postServiceRef = provide(function PostService({ inject }) { ... })`를 내보내요.
+2. **리포지토리 추가 (`repositories/post-repository.ts`):** 기존 `databaseRef`를 주입받는 `postRepositoryRef = provide(({ inject }) => { ... })`를 내보내요.
+3. **서비스 추가 (`services/post-service.ts`):** `postRepositoryRef`(작성자 존재 여부를 확인해야 한다면 `userRepositoryRef`까지)를 주입받는 `postServiceRef = provide(({ inject }) => { ... })`를 내보내요.
 4. **컨트롤러 연결 (`controllers/post-controller.ts` → `main.ts`):** `postControllerRef`를 내보내고 `main.ts`에서 라우트를 연결할 때 `inject(postControllerRef)`를 호출해요.
 
 무엇을 *건드리지 않았는지* 확인해 보세요. 리포지토리와 서비스를 하나 만들 때마다 중앙 DI 목록 파일을 열어 수정할 필요가 없고, `databaseRef`는 이미 루트에서 안전하게 공유되고 있어요.

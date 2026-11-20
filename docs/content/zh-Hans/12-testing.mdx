@@ -27,7 +27,7 @@ import testingCode from '../../examples/testing/unit-and-integration.ts' with { 
 
 <Callout kind="tip" title="给 Token 和工厂起好名字，单测挂了一秒定位">
 
-平时写代码顺手把 Token 按接口名命名（`token<Mailer>('Mailer')`），给 `provide()` 传具名函数（`provide(function OrderService({ inject }) { ... })`）。测试里一旦漏绑依赖或者不小心写出循环引用，报错里直接就能看到 `OrderService` 和 `Mailer`，不用对着一堆 `<anonymous>` 抓瞎。
+平时写代码顺手把 Token 按接口名命名（`token<Mailer>('Mailer')`），需要排查循环依赖时也可以把箭头工厂赋给具名常量再传给 `provide()`（`const OrderService = ({ inject }: Context) => { ... }; provide(OrderService)`）。测试里一旦漏绑依赖或者不小心写出循环引用，报错里直接就能看到 `OrderService` 和 `Mailer`，不用对着一堆 `<anonymous>` 抓瞎。
 
 </Callout>
 

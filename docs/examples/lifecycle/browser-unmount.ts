@@ -9,14 +9,14 @@ export const socketRef = provide(({ onDispose }) => {
   return socket
 })
 
-export function mountLiveWidget() {
+export const mountLiveWidget = () => {
   const app = bootstrapApp(({ inject }) => {
     inject(socketRef)
   })
   const ready = app.start()
 
   // Call from React useEffect cleanup, Vue onScopeDispose, or router leave hook
-  return async function unmount() {
+  return async () => {
     await ready
     await app.stop() // [!hl]
   }

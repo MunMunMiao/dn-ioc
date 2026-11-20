@@ -30,7 +30,7 @@ TypeScript の型 `T` だけを持ち、実行時の実装を一切持たない�
 `factory` を包み、自動登録に対応した `Ref<T>` ハンドルを返します。
 
 - **`factory`**: `(ctx: Context) => T`。`inject()` が呼ばれた時点で現在のスコープにも親スコープにもこの `Ref` のバインドがなければ、現在のスコープにデフォルトファクトリを登録して1回だけ実行し、結果をキャッシュします（`async` ファクトリの場合は実行中の `Promise` を共有します）。同期例外や非同期の reject はキャッシュ **されない** ため、アプリ稼働中であれば後から再試行できます。
-- **診断名:** `factory.name` から取得されます（たとえば `provide(function UserService(ctx) { ... })` なら `UserService`、無名のアロー関数なら `<anonymous>` になります）。
+- **診断名:** `factory.name` から取得されます（たとえば `const UserService = (ctx: Context) => { ... }; provide(UserService)` なら `UserService`、無名のインラインアロー関数なら `<anonymous>` になります）。
 - **`options?.providers`**: `factory` とその子孫からしか見えないプライベートな子サブツリーを定義します。`provide()` 呼び出し時にスナップショットされ、そのサブツリーが初めて解決されるときに遅延検証されます。
 
 ### `provideFor<T>(key, factory, options?)`

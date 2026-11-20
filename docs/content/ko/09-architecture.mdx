@@ -40,7 +40,7 @@ import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' wit
 | **배선 보일러플레이트** | 없어요 — 활성 스코프에서 첫 `inject()` 시 자동 설치돼요. | 명시적이에요 — `{ providers }`나 번들 안에서 `provideFor()`로 연결해야 해요. |
 | **테스트 대역 교체** | `provideFor(ref, fakeFactory)` | `provideFor(token, fakeFactory)` — 완전히 똑같은 함수를 써요. |
 | **단위 테스트에서 모킹을 깜빡했을 때** | **조용히 폴백:** 실제 구현체를 그대로 생성해 실행해요. | **즉시 실패:** `start()`가 `No provider for token: Name`으로 거부돼요. |
-| **에러 메시지의 진단 이름** | 함수 이름(`provide(function UserService(...) {})`), 없으면 `<anonymous>`. | 설명 문자열(`token('OrderRepository')`), 없으면 `<anonymous>`. |
+| **에러 메시지의 진단 이름** | 함수 이름(`const UserService = ...; provide(UserService)`), 없으면 `<anonymous>`. | 설명 문자열(`token('OrderRepository')`), 없으면 `<anonymous>`. |
 | **잘 어울리는 곳** | MVC 컨트롤러, 서비스, 리포지토리, 유스케이스, 내부 헬퍼. | DDD 도메인 포트, 횡단 관심사 포트(`Clock`, `Mailer`), 런타임 설정/시크릿. |
 
 ## 한 프로젝트 안에서 둘을 자연스럽게 섞어 쓰세요

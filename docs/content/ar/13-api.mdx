@@ -30,7 +30,7 @@ import providersCode from '../../examples/providers/caching-and-bundle.ts' with 
 تغلّف دالة `factory` داخل مقبض `Ref<T>` يثبّت نفسه عند الحاجة.
 
 - **`factory`**: دالة بتوقيع `(ctx: Context) => T`. لو ما كان في ربط لهذا الـ `Ref` في النطاق النشط أو نطاقاته الأب وقت استدعاء `inject()`، يثبّت الـ `Ref` دالة الإنشاء الافتراضية في النطاق النشط، ويشغّلها مرة واحدة، ويخزّن النتيجة في الكاش (أو يشارك الـ `Promise` الجاري إذا كانت `async`). الأخطاء المتزامنة وحالات رفض الـ `Promise` **لا** تُخزّن في الكاش، وهذا يسمح بإعادة المحاولة طالما التطبيق شغّال.
-- **اسم التشخيص:** يُقرأ من `factory.name` (مثلاً `provide(function UserService(ctx) { ... })` يطبع `UserService`، بينما دالة السهم المجهولة تطبع `<anonymous>`).
+- **اسم التشخيص:** يُقرأ من `factory.name` (مثلاً `const UserService = (ctx: Context) => { ... }; provide(UserService)` يطبع `UserService`، بينما دالة السهم المضمّنة المجهولة تطبع `<anonymous>`).
 - **`options?.providers`**: شجرة فرعية خاصة اختيارية تكون مرئية فقط لـ `factory` وتوابعها. تُؤخذ منها نسخة لحظة استدعاء `provide()` ويتم التحقق منها عند الطلب في أول مرة تُحلّ فيها تلك الشجرة الفرعية.
 
 ### `provideFor<T>(key, factory, options?)`

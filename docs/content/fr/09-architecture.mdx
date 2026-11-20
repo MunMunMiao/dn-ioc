@@ -40,7 +40,7 @@ Parcours les quatre fichiers dans l’arborescence ci-dessus (`mvc/` vs `ddd/`) 
 | **Câblage nécessaire** | Zéro — s’auto-installe au premier `inject()` dans le scope actif. | Explicite — doit être lié avec `provideFor()` dans `{ providers }` ou dans un bundle. |
 | **Remplacement en test** | `provideFor(ref, fakeFactory)` | `provideFor(token, fakeFactory)` — exactement le même helper. |
 | **Fake oublié dans un test unitaire** | **Repli silencieux :** construit et exécute la vraie implémentation. | **Échec immédiat :** rejette `start()` avec `No provider for token: Name`. |
-| **Nom dans les erreurs** | Nom de la fonction (`provide(function UserService(...) {})`), ou `<anonymous>`. | Chaîne de description (`token('OrderRepository')`), ou `<anonymous>`. |
+| **Nom dans les erreurs** | Nom de la fonction (`const UserService = ...; provide(UserService)`), ou `<anonymous>`. | Chaîne de description (`token('OrderRepository')`), ou `<anonymous>`. |
 | **Cas d’usage idéal** | Contrôleurs MVC, services, repositories, cas d’usage, helpers internes. | Ports métier DDD, ports transverses (`Clock`, `Mailer`), config et secrets au runtime. |
 
 ## Combiner les deux dans un même projet

@@ -40,7 +40,7 @@ Browse the four files in the tree above (`mvc/` vs `ddd/`) against the practical
 | **Wiring boilerplate** | Zero—self-installs on first `inject()` in the active scope. | Explicit—must be bound via `provideFor()` in `{ providers }` or a bundle. |
 | **Swapping in tests** | `provideFor(ref, fakeFactory)` | `provideFor(token, fakeFactory)` — exact same helper. |
 | **Forgotten fake in a unit test** | **Silent fallback:** builds and runs the real implementation. | **Fast failure:** rejects `start()` with `No provider for token: Name`. |
-| **Diagnostic name in errors** | Function name (`provide(function UserService(...) {})`), or `<anonymous>`. | Description string (`token('OrderRepository')`), or `<anonymous>`. |
+| **Diagnostic name in errors** | Function name (`const UserService = ...; provide(UserService)`), or `<anonymous>`. | Description string (`token('OrderRepository')`), or `<anonymous>`. |
 | **Best fit** | MVC controllers, services, repositories, use cases, internal helpers. | DDD domain ports, cross-cutting ports (`Clock`, `Mailer`), runtime config/secrets. |
 
 ## Mixing Both in the Same Codebase

@@ -40,7 +40,7 @@ Recorre los cuatro archivos en el árbol de arriba (`mvc/` frente a `ddd/`) y co
 | **Código de cableado** | Cero: se autoinstala con el primer `inject()` en el ámbito activo. | Explícito: hay que enlazarlo con `provideFor()` en `{ providers }` o en un bundle. |
 | **Sustitución en tests** | `provideFor(ref, fakeFactory)` | `provideFor(token, fakeFactory)` — exactamente la misma función. |
 | **Si olvidas un fake en un test unitario** | **Caída silenciosa:** construye y ejecuta la implementación real. | **Fallo inmediato:** rechaza `start()` con `No provider for token: Name`. |
-| **Nombre en errores** | Nombre de la función (`provide(function UserService(...) {})`) o `<anonymous>`. | Cadena descriptiva (`token('OrderRepository')`) o `<anonymous>`. |
+| **Nombre en errores** | Nombre de la función (`const UserService = ...; provide(UserService)`) o `<anonymous>`. | Cadena descriptiva (`token('OrderRepository')`) o `<anonymous>`. |
 | **Dónde encaja mejor** | Controladores MVC, servicios, repositorios, casos de uso y helpers internos. | Puertos de dominio DDD, puertos transversales (`Clock`, `Mailer`), secretos y configuración de entorno. |
 
 ## Mezclar ambos en el mismo repositorio

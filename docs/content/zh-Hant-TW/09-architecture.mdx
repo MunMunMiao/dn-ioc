@@ -40,7 +40,7 @@ import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' wit
 | **組裝樣板程式碼** | 零樣板 —— 在當前作用域首次 `inject()` 時自動掛載。 | 明確綁定 —— 必須在 `{ providers }` 或 bundle 中透過 `provideFor()` 掛載。 |
 | **測試中的抽換寫法** | `provideFor(ref, fakeFactory)` | `provideFor(token, fakeFactory)` —— 完全同一個輔助函式。 |
 | **單元測試忘記換成測試替身時** | **靜默退回真實實作：** 直接建立並執行真實工廠函式。 | **立即快速失敗：** `start()` 直接以 `No provider for token: Name` 報錯拒絕。 |
-| **錯誤訊息中的診斷名稱** | 函式名稱（`provide(function UserService(...) {})`），否則為 `<anonymous>`。 | 描述字串（`token('OrderRepository')`），否則為 `<anonymous>`。 |
+| **錯誤訊息中的診斷名稱** | 函式名稱（`const UserService = ...; provide(UserService)`），否則為 `<anonymous>`。 | 描述字串（`token('OrderRepository')`），否則為 `<anonymous>`。 |
 | **最適合的場景** | MVC 的 Controller / Service / Repository、應用層 Use Case、內部輔助工具。 | DDD 領域連接埠、橫切連接埠（`Clock`、`Mailer`）、啟動期設定與機密資訊。 |
 
 ## 在同一個專案裡彈性混用

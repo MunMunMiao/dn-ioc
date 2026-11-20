@@ -40,7 +40,7 @@ import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' wit
 | **组装样板代码** | 零样板——首次 `inject()` 时在当前作用域自动挂载。 | 显式绑定——必须在 `{ providers }` 或 bundle 里通过 `provideFor()` 绑好。 |
 | **测试里怎么换实现** | `provideFor(ref, fakeFactory)` | `provideFor(token, fakeFactory)` —— 用的是同一个函数。 |
 | **单测里忘了塞假实现** | **静默兜底：** 直接跑真实实现。 | **立刻报错：** `start()` 当场 reject `No provider for token: Name`。 |
-| **报错里的诊断名** | 函数名（`provide(function UserService(...) {})`），匿名则显示 `<anonymous>`。 | 描述字符串（`token('OrderRepository')`），不传则显示 `<anonymous>`。 |
+| **报错里的诊断名** | 函数名（`const UserService = ...; provide(UserService)`），匿名则显示 `<anonymous>`。 | 描述字符串（`token('OrderRepository')`），不传则显示 `<anonymous>`。 |
 | **最适合什么** | MVC 的 Controller、Service、Repository、应用层用例、内部工具。 | DDD 领域端口、横切外部能力（`Clock`、`Mailer`）、运行时配置与密钥。 |
 
 ## 同一个项目里完全可以混着用

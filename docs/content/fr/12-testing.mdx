@@ -27,7 +27,7 @@ Compare le test unitaire DDD ci-dessus avec le test MVC (`services/user-service.
 
 <Callout kind="tip" title="Garde des traces lisibles quand un test casse">
 
-Nomme tes tokens d’après leur interface (`token<Mailer>('Mailer')`) et donne un vrai nom de fonction à tes factories `provide()` (`provide(function OrderService({ inject }) { ... })`). Si un test oublie une liaison ou introduit un cycle, tu verras `OrderService` et `Mailer` dans le message d’erreur au lieu de `<anonymous>`.
+Nomme tes tokens d’après leur interface (`token<Mailer>('Mailer')`) et, si tu veux des diagnostics de cycle nommés pour un `Ref`, assigne sa factory fléchée à un `const` nommé (`const OrderService = ({ inject }: Context) => { ... }; provide(OrderService)`). Si un test oublie une liaison ou introduit un cycle, tu verras `OrderService` et `Mailer` dans le message d’erreur au lieu de `<anonymous>`.
 
 </Callout>
 

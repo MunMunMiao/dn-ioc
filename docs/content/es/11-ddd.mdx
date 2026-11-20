@@ -51,7 +51,7 @@ Cada puerto empareja un `interface` de TypeScript con un `token<T>('Name')` que 
 La capa `application/` coordina entidades y puertos de dominio para resolver un caso de uso concreto como `OrderService.submit(id)`. Fíjate en la combinación deliberada que usamos aquí:
 
 - `OrderService` pide capacidades externas exclusivamente mediante **tokens de dominio** (`orderRepositoryToken`, `clockToken`, `mailerToken`): no tiene ni idea de si los pedidos viven en Postgres, SQLite o un `Map`.
-- Sin embargo, el propio `orderServiceRef` se exporta como un **`Ref`** con `provide(function OrderService({ inject }) { ... })`. ¿Por qué? Porque quienes llaman a `application/` — controladores HTTP, comandos CLI, workers de colas y tests — viven en capas *externas* que están pensadas para importar los casos de uso directamente. No hace falta inventar tokens redundantes cuando la flecha del import ya apunta hacia adentro.
+- Sin embargo, el propio `orderServiceRef` se exporta como un **`Ref`** con `provide(({ inject }) => { ... })`. ¿Por qué? Porque quienes llaman a `application/` — controladores HTTP, comandos CLI, workers de colas y tests — viven en capas *externas* que están pensadas para importar los casos de uso directamente. No hace falta inventar tokens redundantes cuando la flecha del import ya apunta hacia adentro.
 
 <Code title="application/order-service.ts" code={orderServiceCode} />
 

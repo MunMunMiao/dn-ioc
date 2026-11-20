@@ -6,7 +6,7 @@ export interface Database {
 }
 
 // Stands in for a stateful SQL or document connection pool
-export const databaseRef = provide(function Database({ onDispose }): Database {
+export const databaseRef = provide(({ onDispose }): Database => {
   const tables = new Map<string, Map<string, unknown>>()
   let closed = false
 

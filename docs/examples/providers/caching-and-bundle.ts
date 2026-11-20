@@ -20,7 +20,7 @@ await cachingApp.start()
 export const themeToken = token<{ palette: string }>('Theme')
 export const themeOptionsToken = token<{ palette: string }>('ThemeOptions')
 
-export function provideTheme(options: { palette: string }) {
+export const provideTheme = (options: { palette: string }) => {
   return bundleProviders(
     provideFor(themeOptionsToken, () => options), // [!hl]
     provideFor(themeToken, ({ inject }) => ({

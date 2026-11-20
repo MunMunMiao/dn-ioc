@@ -51,7 +51,7 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
 `application/` 层负责把领域实体和端口串起来，跑通像 `OrderService.submit(id)` 这样的完整用例。留意这里一个非常实用的“混搭”设计：
 
 - `OrderService` 拿外部能力时，一律走 **domain 层的 token**（`orderRepositoryToken`、`clockToken`、`mailerToken`）——它压根不知道订单底下存的是 Postgres、SQLite 还是内存 `Map`。
-- 但 `orderServiceRef` 自己却是通过 `provide(function OrderService({ inject }) { ... })` 导出的一个 **`Ref`**！为什么？因为调用 `application/` 的人——不管是 HTTP Controller、CLI 命令、消息队列 Worker 还是测试用例——本来就处在**更外层**，本来就该直接 `import` 应用层用例。既然依赖箭头已经朝内了，完全没必要画蛇添足再给应用层套一层 Token。
+- 但 `orderServiceRef` 自己却是通过 `provide(({ inject }) => { ... })` 导出的一个 **`Ref`**！为什么？因为调用 `application/` 的人——不管是 HTTP Controller、CLI 命令、消息队列 Worker 还是测试用例——本来就处在**更外层**，本来就该直接 `import` 应用层用例。既然依赖箭头已经朝内了，完全没必要画蛇添足再给应用层套一层 Token。
 
 <Code title="application/order-service.ts" code={orderServiceCode} />
 

@@ -27,7 +27,7 @@ import testingCode from '../../examples/testing/unit-and-integration.ts' with { 
 
 <Callout kind="tip" title="テスト失敗時のエラートレースを読みやすくするコツ">
 
-トークンにはインターフェース名をそのまま付け（`token<Mailer>('Mailer')`）、`provide()` のファクトリには名前付き関数を使いましょう（`provide(function OrderService({ inject }) { ... })`）。テストでバインドを忘れたり循環依存を作ったりしたとき、エラーメッセージに `<anonymous>` ではなく `OrderService` や `Mailer` とハッキリ表示されます。
+トークンにはインターフェース名をそのまま付け（`token<Mailer>('Mailer')`）、`Ref` の循環依存を追いやすくしたいときはアロー関数を名前付き `const` に代入して `provide()` に渡しましょう（`const OrderService = ({ inject }: Context) => { ... }; provide(OrderService)`）。テストでバインドを忘れたり循環依存を作ったりしたとき、エラーメッセージに `<anonymous>` ではなく `OrderService` や `Mailer` とハッキリ表示されます。
 
 </Callout>
 

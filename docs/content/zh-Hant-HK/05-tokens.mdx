@@ -40,7 +40,7 @@ import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { typ
 萬一漏綁咗 Token，或者兩個 provider 唔小心互相依賴形成死圈（`Circular dependency detected: A -> B -> A`），清清楚楚嘅錯誤訊息真係可以幫你慳返大把 debug 時間。錯誤訊息入面啲名係咁樣嚟嘅：
 
 - **Token 用傳入去嘅描述字串：** 最直接嘅做法係跟返介面名或者設定名去改，例如 `token<OrderRepository>('OrderRepository')` 或 `token<string>('DatabaseUrl')`。如果留空唔傳（`token<string>()`），報錯嗰陣就會顯示 `<anonymous>`。
-- **Ref 直接讀取 `factory.name`：** `provide()` 冇額外嘅名參數，佢會直接讀 JS function 本身個 `.name` 屬性。寫成具名函式 `provide(function Formatter({ inject }) { ... })` 就會顯示 `Formatter`；如果直接寫匿名 arrow function（`provide(({ inject }) => ...)`），因為本身冇名，報錯就會顯示 `<anonymous>`。
+- **Ref 直接讀取 `factory.name`：** `provide()` 冇額外嘅名參數，佢會直接讀 JS function 本身個 `.name` 屬性。將 arrow function 賦值畀有名字嘅 `const` 再傳入（`const Formatter = ({ inject }: Context) => { ... }; provide(Formatter)`）就會顯示 `Formatter`；如果直接寫行內匿名 arrow function（`provide(({ inject }) => ...)`），因為本身冇名，報錯就會顯示 `<anonymous>`。
 
 <Callout kind="note" title="壓縮工具（Minifier）與非法 Key 檢查">
 

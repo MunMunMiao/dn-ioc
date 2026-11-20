@@ -40,7 +40,7 @@ Assure-toi que la fonction racine de `bootstrapApp()` injecte les contrôleurs, 
 Des messages d’erreur lisibles font gagner un temps précieux quand un token n’est pas lié ou que deux providers tournent en boucle (`Circular dependency detected: A -> B -> A`). Voici d’où viennent ces noms :
 
 - **Les tokens utilisent leur chaîne `description` :** Nomme ton token d’après l’interface ou le réglage qu’il représente, par exemple `token<OrderRepository>('OrderRepository')` ou `token<string>('DatabaseUrl')`. Si tu omets la description (`token<string>()`), les erreurs afficheront `<anonymous>`.
-- **Les refs lisent `factory.name` :** `provide()` ne prend pas de libellé séparé, il lit la propriété JavaScript `.name` de la fonction. Écrire `provide(function Formatter({ inject }) { ... })` donne au ref le nom de diagnostic `Formatter`, alors qu’une fonction fléchée anonyme (`provide(({ inject }) => ...)`) n’a pas de nom propre et ressortira sous `<anonymous>`.
+- **Les refs lisent `factory.name` :** `provide()` ne prend pas de libellé séparé, il lit la propriété JavaScript `.name` de la fonction. Assigner une fonction fléchée à un `const` nommé (`const Formatter = ({ inject }: Context) => { ... }; provide(Formatter)`) donne au ref le nom de diagnostic `Formatter`, alors qu’une fonction fléchée anonyme en ligne (`provide(({ inject }) => ...)`) n’a pas de nom propre et ressortira sous `<anonymous>`.
 
 <Callout kind="note" title="Minifieurs et clés invalides">
 

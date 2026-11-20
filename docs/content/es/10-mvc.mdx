@@ -50,7 +50,7 @@ En un proyecto MVC sano, los imports fluyen estrictamente de arriba hacia abajo:
 
 Recorre los seis archivos del árbol de código desde la base hacia arriba para seguir el viaje de una petición por todo el grafo:
 
-1. **`db/database.ts`:** `provide(function Database({ onDispose }) { ... })` usa una función con nombre para que los errores de ciclos muestren `Database` en lugar de `<anonymous>`, y registra su hook `onDispose` justo al lado del estado que cierra.
+1. **`db/database.ts`:** `provide(({ onDispose }): Database => { ... })` mantiene el mapa de tablas en memoria y registra su hook `onDispose` justo al lado del estado que cierra.
 2. **`models/user.ts`:** Un `interface User` puro de TypeScript, sin un solo import de DI.
 3. **`repositories/user-repository.ts`:** `userRepositoryRef` llama una vez a `inject(databaseRef)` cuando corre su factoría, toma la colección `'users'` y devuelve `{ findByEmail, create }`.
 4. **`services/user-service.ts`:** `userServiceRef` inyecta `userRepositoryRef` y saca las validaciones y comprobaciones de unicidad fuera de los handlers HTTP.
@@ -83,8 +83,8 @@ En una app plana de un único ámbito, sí: el primer `inject(databaseRef)` en l
 Añadir una segunda funcionalidad — por ejemplo, `posts` — sigue un ciclo predecible de cuatro pasos sin tocar los módulos existentes de usuarios:
 
 1. **Añade el modelo (`models/post.ts`):** Exporta `interface Post { id: string; authorId: string; title: string }`.
-2. **Añade el repositorio (`repositories/post-repository.ts`):** Exporta `postRepositoryRef = provide(function PostRepository({ inject }) { ... })` inyectando el `databaseRef` ya existente.
-3. **Añade el servicio (`services/post-service.ts`):** Exporta `postServiceRef = provide(function PostService({ inject }) { ... })` inyectando `postRepositoryRef` (y `userRepositoryRef` si necesita comprobar que el autor exista).
+2. **Añade el repositorio (`repositories/post-repository.ts`):** Exporta `postRepositoryRef = provide(({ inject }) => { ... })` inyectando el `databaseRef` ya existente.
+3. **Añade el servicio (`services/post-service.ts`):** Exporta `postServiceRef = provide(({ inject }) => { ... })` inyectando `postRepositoryRef` (y `userRepositoryRef` si necesita comprobar que el autor exista).
 4. **Monta el controlador (`controllers/post-controller.ts` → `main.ts`):** Exporta `postControllerRef` y haz `inject(postControllerRef)` dentro de `main.ts` al conectar las rutas.
 
 Fíjate en lo que *no* tuviste que tocar: no hay ningún manifiesto central de DI que editar por cada nuevo repositorio o servicio, y `databaseRef` ya está compartido en la raíz.

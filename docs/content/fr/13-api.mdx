@@ -30,7 +30,7 @@ Crée une pure clé de dépendance portant le type TypeScript `T` et zéro impl�
 Enveloppe `factory` dans un handle auto-installable `Ref<T>`.
 
 - **`factory`** : `(ctx: Context) => T`. Si aucune liaison pour ce `Ref` n’existe dans le scope actif ni dans ses ancêtres au moment d’appeler `inject()`, le `Ref` installe sa factory par défaut dans le scope actif, l’exécute une fois et met le résultat en cache (ou partage la `Promise` en vol pour une factory `async`). Les exceptions synchrones et rejets asynchrones ne sont **pas** mis en cache, ce qui autorise de nouveaux essais tant que l’appli tourne.
-- **Nom de diagnostic :** Lu depuis `factory.name` (par exemple, `provide(function UserService(ctx) { ... })` affiche `UserService`, tandis qu’une fonction fléchée anonyme affiche `<anonymous>`).
+- **Nom de diagnostic :** Lu depuis `factory.name` (par exemple, `const UserService = (ctx: Context) => { ... }; provide(UserService)` affiche `UserService`, tandis qu’une fonction fléchée anonyme en ligne affiche `<anonymous>`).
 - **`options?.providers`** : Sous-arbre enfant privé optionnel visible uniquement par `factory` et ses descendants. Copié lors de l’appel à `provide()` et validé paresseusement lors de la première résolution de ce sous-arbre.
 
 ### `provideFor<T>(key, factory, options?)`

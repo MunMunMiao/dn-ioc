@@ -27,7 +27,7 @@ import testingCode from '../../examples/testing/unit-and-integration.ts' with { 
 
 <Callout kind="tip" title="حافظ على وضوح تتبّع الأخطاء عند فشل الاختبارات">
 
-سمِّ التوكنز باسم واجهتها (`token<Mailer>('Mailer')`) وأعطِ دوال إنشاء `provide()` اسم دالة حقيقياً (`provide(function OrderService({ inject }) { ... })`). ولما ينسى اختبار معيّن ربطاً أو يدخل في حلقة دائرية، راح تشوف `OrderService` و`Mailer` في رسالة الخطأ بدل `<anonymous>`.
+سمِّ التوكنز باسم واجهتها (`token<Mailer>('Mailer')`)، ولو بغيت أسماء واضحة في تشخيص الدوائر الاعتمادية لـ `Ref`، أسند دالة السهم إلى ثابت مسمّى قبل تمريرها إلى `provide()` (`const OrderService = ({ inject }: Context) => { ... }; provide(OrderService)`). ولما ينسى اختبار معيّن ربطاً أو يدخل في حلقة دائرية، راح تشوف `OrderService` و`Mailer` في رسالة الخطأ بدل `<anonymous>`.
 
 </Callout>
 

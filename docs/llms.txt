@@ -78,7 +78,7 @@ Import direction decides `Ref` vs `Token`:
 - **Testing:** `provideFor()` overrides both refs and tokens identically.
   - Unit tests: install only fakes. Missing token fake fails fast (`No provider for token: Name`); missing ref fake silently builds the real ref.
   - Integration tests: list real bundle **first**, overrides **after**: `[infraProviders, provideFor(orderRepositoryToken, fake)]`.
-  - Name tokens after their interface; use named functions in `provide(function OrderService(ctx) { ... })` for readable cycle traces.
+  - Name tokens after their interface; assign an arrow factory to a named `const` (`const OrderService = (ctx: Context) => ...; provide(OrderService)`) when you want readable cycle traces instead of `<anonymous>`.
 
 ## Exact Runtime Errors
 
@@ -97,7 +97,7 @@ Import direction decides `Ref` vs `Token`:
 import { bootstrapApp, provide } from 'dn-ioc'
 
 const configRef = provide(() => ({ greeting: 'hello' }))
-const greeterRef = provide(function Greeter({ inject }) {
+const greeterRef = provide(({ inject }) => {
   const config = inject(configRef)
   return { greet: (name: string) => `${config.greeting}, ${name}` }
 })

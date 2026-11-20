@@ -50,7 +50,7 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 
 由底至頂逐個點開下面目錄樹入面六個檔案，就可以睇晒一個請求係點樣穿過成張依賴圖：
 
-1. **`db/database.ts`：** `provide(function Database({ onDispose }) { ... })` 特登寫成具名函式，萬一撞正循環依賴嗰陣會清晰顯示 `Database` 而唔係 `<anonymous>`，同時將 `onDispose` 清理 hook 就地寫喺連線狀態隔離。
+1. **`db/database.ts`：** `provide(({ onDispose }): Database => { ... })` 持有底層資料表 Map，同時將 `onDispose` 清理 hook 就地寫喺連線狀態隔離。
 2. **`models/user.ts`：** 純粹嘅 TypeScript `interface User`——連 `dn-ioc` 都唔使 import。
 3. **`repositories/user-repository.ts`：** `userRepositoryRef` 喺 factory 執行期間 call 一次 `inject(databaseRef)`，攞到 `'users'` 集合之後回傳 `{ findByEmail, create }`。
 4. **`services/user-service.ts`：** `userServiceRef` 注入 `userRepositoryRef`，將格式驗證同重複檢查留返喺業務層，唔好塞爆 HTTP handler。
@@ -83,8 +83,8 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 當你要加多個新資源模組——例如 `posts` 文章模組——只需要照住下面四步曲行一次，原有嘅 user 檔案完全唔使郁：
 
 1. **加個 Model（`models/post.ts`）：** 匯出 `interface Post { id: string; authorId: string; title: string }`。
-2. **加個 Repository（`repositories/post-repository.ts`）：** 匯出 `postRepositoryRef = provide(function PostRepository({ inject }) { ... })`，直接注入現成嘅 `databaseRef`。
-3. **加個 Service（`services/post-service.ts`）：** 匯出 `postServiceRef = provide(function PostService({ inject }) { ... })`，注入 `postRepositoryRef`（如果要檢查作者存唔存在，順手 `inject(userRepositoryRef)` 埋就得）。
+2. **加個 Repository（`repositories/post-repository.ts`）：** 匯出 `postRepositoryRef = provide(({ inject }) => { ... })`，直接注入現成嘅 `databaseRef`。
+3. **加個 Service（`services/post-service.ts`）：** 匯出 `postServiceRef = provide(({ inject }) => { ... })`，注入 `postRepositoryRef`（如果要檢查作者存唔存在，順手 `inject(userRepositoryRef)` 埋就得）。
 4. **掛載 Controller（`controllers/post-controller.ts` → `main.ts`）：** 匯出 `postControllerRef`，然後喺 `main.ts` 綁路由嗰陣 `inject(postControllerRef)`。
 
 留意吓你有啲咩係*完全唔使煩*嘅：每加一個 Repository 同 Service 都唔使走去改中央 DI 註冊檔，而底層個 `databaseRef` 亦一早喺頂層準備好畀大家共用。

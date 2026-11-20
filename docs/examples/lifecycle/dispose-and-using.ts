@@ -42,7 +42,7 @@ export const startWorker = ({ inject }: Context) => {
   inject(workerRef)
 }
 
-export async function runScopedTask() {
+export const runScopedTask = async () => {
   await using app = bootstrapApp(startWorker) // [!hl]
   await app.start()
 } // app.stop() runs automatically here, even on throw // [!hl]

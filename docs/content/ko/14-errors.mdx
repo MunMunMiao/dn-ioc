@@ -58,7 +58,7 @@ import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { typ
 ## 빠른 해결 레시피
 
 - **`No provider for token: Name`:** 루트 `providers`나 `infraProviders` 번들 안에서 `provideFor(myToken, ...)`로 토큰을 바인딩해 주세요. 통합 테스트에서 발생했다면 `infraProviders`를 빠뜨리지 않았는지 확인하고, 자식 서브트리에서 발생했다면 소비자가 바인딩 없는 부모 스코프 소유로 되어 있지 않은지 [스코프와 프라이빗 서브트리](/ko/scopes/)를 확인해 보세요.
-- **`Circular dependency detected: A -> B -> A`:** `A`와 `B`가 공통으로 필요로 하는 상태나 헬퍼를 제3의 프로바이더 `C`로 분리해 주세요(`A -> C`, `B -> C`). 경로에 `<anonymous>`가 보인다면 `provide(({ inject }) => ...)`를 `provide(function MyService({ inject }) { ... })`로 바꿔 정확한 원인을 찾아내세요.
+- **`Circular dependency detected: A -> B -> A`:** `A`와 `B`가 공통으로 필요로 하는 상태나 헬퍼를 제3의 프로바이더 `C`로 분리해 주세요(`A -> C`, `B -> C`). 경로에 `<anonymous>`가 보인다면 인라인 화살표 함수를 이름 있는 `const` 변수로 빼서 넘기면(`const MyService = ({ inject }: Context) => { ... }; provide(MyService)`) 정확한 원인을 바로 찾아낼 수 있어요.
 - **`Invalid provider input received`:** `providers: [...]` 배열이나 `bundleProviders(...)` 안에 `provideFor(myToken, factory)` 대신 생 `token()`을 그대로 넣었거나, ES 모듈 순환 참조로 인한 `undefined`, 혹은 복사된 객체가 들어가지 않았는지 점검해 보세요.
 - **`Invalid inject key received`:** `inject()`나 `provideFor()`에 `provideFor()`가 반환한 `ProviderDef`나 `bundleProviders()`가 반환한 `ProviderBundle`이 아니라 진짜 `Token` 또는 `Ref`를 넘겼는지 확인해 주세요.
 - **`Cannot inject after the app has stopped`:** 종료 시점에 `inject()`를 부르지 않도록 `onDispose(() => { ... })`를 등록하기 *전에* 팩토리 상단에서 `const dep = inject(depRef)`로 값을 미리 받아 두세요([생명주기와 리소스 정리](/ko/lifecycle/) 참고). 우아한 종료 도중 요청 핸들러에서 이 에러가 났다면 `app.stop()`을 호출하기 전에 신규 요청 유입부터 먼저 닫아 주세요.

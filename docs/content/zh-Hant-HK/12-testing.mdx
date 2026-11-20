@@ -27,7 +27,7 @@ import testingCode from '../../examples/testing/unit-and-integration.ts' with { 
 
 <Callout kind="tip" title="令測試失敗時嘅錯誤訊息更易睇">
 
-記得幫每個 Token 寫返清楚個介面描述名（例如 `token<Mailer>('Mailer')`），同時幫 `provide()` 嘅 factory 改返個真函式名（例如 `provide(function OrderService({ inject }) { ... })`）。咁樣萬一測試漏綁咗依賴或者唔小心寫出循環依賴，錯誤訊息會直接指明 `OrderService` 同 `Mailer`，唔使對住堆 `<anonymous>` 估餐死。
+記得幫每個 Token 寫返清楚個介面描述名（例如 `token<Mailer>('Mailer')`），想排查循環依賴時亦可以將 arrow factory 賦值畀具名 `const` 再傳入 `provide()`（例如 `const OrderService = ({ inject }: Context) => { ... }; provide(OrderService)`）。咁樣萬一測試漏綁咗依賴或者唔小心寫出循環依賴，錯誤訊息會直接指明 `OrderService` 同 `Mailer`，唔使對住堆 `<anonymous>` 估餐死。
 
 </Callout>
 

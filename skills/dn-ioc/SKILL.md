@@ -40,7 +40,7 @@ Choose by import direction:
 - **Scopes:** Lookups walk active scope to root. `options.providers` creates an isolated private subtree. A consumer bound in a parent scope resolves dependencies there; to change a dependency for that consumer in a child scope, rebind both in the child scope.
 - **Overrides & snapshots:** Provider arrays/bundles snapshot at creation and flatten in order. Duplicate keys in one scope: **later binding wins silently**.
 - **Async factories:** `inject()` returns a shared `Promise` and evicts rejected promises from cache so later injections can retry. Type async tokens with `Promise`: `token<Promise<Config>>('Config')`.
-- **Diagnostics:** Name tokens after their interface; pass named functions to `provide(function UserService(ctx) { ... })` so errors avoid `<anonymous>`.
+- **Diagnostics:** Name tokens after their interface; assign arrow factories to a named `const` (`const UserService = (ctx: Context) => ...; provide(UserService)`) when you want readable cycle names instead of `<anonymous>`.
 
 ## Lifecycle & Testing
 
@@ -68,7 +68,7 @@ Choose by import direction:
 import { bootstrapApp, provide, provideFor, token } from 'dn-ioc'
 
 const clockToken = token<() => number>('Clock')
-const serviceRef = provide(function Service({ inject }) {
+const serviceRef = provide(({ inject }) => {
   const now = inject(clockToken)
   return { stamp: () => now() }
 })

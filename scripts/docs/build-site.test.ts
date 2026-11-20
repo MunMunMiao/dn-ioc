@@ -714,6 +714,7 @@ describe('buildDocsSite', () => {
         expect(html).not.toContain('mobile-deck')
         expect(html).not.toMatch(/dn-ioc@\d|@0\.\d+\.\d+|v0\.\d+\.\d+/)
         expect(html).not.toMatch(/\b\d+(?:\.\d+)?\s*kB\b|gzip/i)
+        expect(html).not.toContain('provide(function ')
 
         const normalizedPath = htmlFile.replaceAll('\\', '/')
         const expectsTree = /\/(?:architecture|mvc|ddd)\/index\.html$/.test(normalizedPath)

@@ -51,7 +51,7 @@ Chaque port associe une `interface` TypeScript à un `token<T>('Name')` nommé d
 La couche `application/` coordonne entités et ports du domaine pour accomplir un cas d’usage comme `OrderService.submit(id)`. Remarque l’approche hybride assumée ici :
 
 - `OrderService` récupère ses capacités externes exclusivement via les **tokens du domaine** (`orderRepositoryToken`, `clockToken`, `mailerToken`) — il ignore complètement si les commandes vivent dans Postgres, SQLite ou une simple `Map`.
-- Pourtant, `orderServiceRef` lui-même est exporté sous forme de **`Ref`** via `provide(function OrderService({ inject }) { ... })` ! Pourquoi ? Parce que les appelants de `application/` — contrôleurs HTTP, commandes CLI, workers de file d’attente et tests — vivent dans des couches *externes* faites pour importer directement les cas d’usage. Inutile d’empiler des tokens redondants quand la flèche d’import pointe déjà vers l’intérieur.
+- Pourtant, `orderServiceRef` lui-même est exporté sous forme de **`Ref`** via `provide(({ inject }) => { ... })` ! Pourquoi ? Parce que les appelants de `application/` — contrôleurs HTTP, commandes CLI, workers de file d’attente et tests — vivent dans des couches *externes* faites pour importer directement les cas d’usage. Inutile d’empiler des tokens redondants quand la flèche d’import pointe déjà vers l’intérieur.
 
 <Code title="application/order-service.ts" code={orderServiceCode} />
 

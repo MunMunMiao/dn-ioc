@@ -50,7 +50,7 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 
 由下往上依序點開底下目錄樹裡的六個檔案，就能清楚追蹤一筆請求是如何走過整張依賴圖：
 
-1. **`db/database.ts`：** `provide(function Database({ onDispose }) { ... })` 刻意寫成具名函式，萬一遇到循環相依時錯誤訊息會清楚印出 `Database` 而非 `<anonymous>`，同時把 `onDispose` 清理掛鉤直接寫在它負責關閉的資源旁邊。
+1. **`db/database.ts`：** `provide(({ onDispose }): Database => { ... })` 持有底層資料表 Map，同時把 `onDispose` 清理掛鉤直接寫在它負責關閉的資源旁邊。
 2. **`models/user.ts`：** 純粹的 TypeScript `interface User`——連半個 DI 匯入都不需要。
 3. **`repositories/user-repository.ts`：** `userRepositoryRef` 在工廠執行期間呼叫一次 `inject(databaseRef)`，取得 `'users'` 集合後回傳 `{ findByEmail, create }`。
 4. **`services/user-service.ts`：** `userServiceRef` 注入 `userRepositoryRef`，把驗證與唯一性檢查留在商業邏輯層，不讓 HTTP 處理函式變得肥大混亂。
@@ -83,8 +83,8 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 當你要擴充第二個功能模組——例如 `posts` 文章功能——只要照著固定的四個步驟走一輪，原本的使用者模組一行都不用改：
 
 1. **新增資料模型（`models/post.ts`）：** 匯出 `interface Post { id: string; authorId: string; title: string }`。
-2. **新增儲存庫（`repositories/post-repository.ts`）：** 匯出 `postRepositoryRef = provide(function PostRepository({ inject }) { ... })`，直接注入現有的 `databaseRef`。
-3. **新增服務層（`services/post-service.ts`）：** 匯出 `postServiceRef = provide(function PostService({ inject }) { ... })`，注入 `postRepositoryRef`（若需要檢查作者是否存在，順手一起注入 `userRepositoryRef` 即可）。
+2. **新增儲存庫（`repositories/post-repository.ts`）：** 匯出 `postRepositoryRef = provide(({ inject }) => { ... })`，直接注入現有的 `databaseRef`。
+3. **新增服務層（`services/post-service.ts`）：** 匯出 `postServiceRef = provide(({ inject }) => { ... })`，注入 `postRepositoryRef`（若需要檢查作者是否存在，順手一起注入 `userRepositoryRef` 即可）。
 4. **掛載控制器（`controllers/post-controller.ts` → `main.ts`）：** 匯出 `postControllerRef`，接著在 `main.ts` 綁定路由時呼叫 `inject(postControllerRef)`。
 
 注意到了嗎？你完全不需要為了每一個新增的 Repository 與 Service 跑去修改某個中央 DI 清單，而且底層的 `databaseRef` 早已在根層級準備好供所有模組共用。

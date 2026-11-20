@@ -51,7 +51,7 @@ Each port pairs a TypeScript `interface` with a `token<T>('Name')` named directl
 The `application/` layer coordinates domain entities and ports to fulfill a use case like `OrderService.submit(id)`. Notice an intentional hybrid here:
 
 - `OrderService` pulls in external capabilities exclusively through **domain tokens** (`orderRepositoryToken`, `clockToken`, `mailerToken`)—it has no idea whether orders live in Postgres, SQLite, or a `Map`.
-- Yet `orderServiceRef` itself is exported as a **`Ref`** via `provide(function OrderService({ inject }) { ... })`! Why? Because callers of `application/`—HTTP controllers, CLI commands, queue workers, and tests—live in *outer* layers that are supposed to import use cases directly. You don't need redundant tokens for services whose import arrow already points inward.
+- Yet `orderServiceRef` itself is exported as a **`Ref`** via `provide(({ inject }) => { ... })`! Why? Because callers of `application/`—HTTP controllers, CLI commands, queue workers, and tests—live in *outer* layers that are supposed to import use cases directly. You don't need redundant tokens for services whose import arrow already points inward.
 
 <Code title="application/order-service.ts" code={orderServiceCode} />
 

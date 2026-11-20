@@ -51,7 +51,7 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
 `application/` レイヤーは、ドメインエンティティとポートを組み合わせて `OrderService.submit(id)` のようなユースケースを実行します。ここで意図的にハイブリッドな使い分けをしている点に注目してください。
 
 - `OrderService` が外部の機能を呼び出すときは、すべて **ドメイントークン**（`orderRepositoryToken`、`clockToken`、`mailerToken`）経由で注入します。注文データが Postgres にあるのか SQLite にあるのか、それともオンメモリの `Map` にあるのかは一切知りません。
-- なのに、`orderServiceRef` 自身は `provide(function OrderService({ inject }) { ... })` で作った **`Ref`** としてエクスポートしています！ なぜかというと、`application/` を呼ぶ側（HTTP コントローラ、CLI コマンド、キューワーカー、テスト）はいずれも *外側のレイヤー* にあり、ユースケースを直接 import するのが本来あるべき方向だからです。すでに矢印が内側を向いている箇所にまで、冗長なトークンを作る必要はありません。
+- なのに、`orderServiceRef` 自身は `provide(({ inject }) => { ... })` で作った **`Ref`** としてエクスポートしています！ なぜかというと、`application/` を呼ぶ側（HTTP コントローラ、CLI コマンド、キューワーカー、テスト）はいずれも *外側のレイヤー* にあり、ユースケースを直接 import するのが本来あるべき方向だからです。すでに矢印が内側を向いている箇所にまで、冗長なトークンを作る必要はありません。
 
 <Code title="application/order-service.ts" code={orderServiceCode} />
 

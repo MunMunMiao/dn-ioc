@@ -51,7 +51,7 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
 `application/` 層負責協調領域實體同各個 Port，去完成好似 `OrderService.submit(id)` 咁嘅業務流程。留意呢度特登採用咗一種好實用嘅混合寫法：
 
 - `OrderService` 攞外部能力嗰陣，清一色透過 **domain token**（`orderRepositoryToken`、`clockToken`、`mailerToken`）注入——佢完全唔知亦唔理啲訂單到底擺喺 Postgres、SQLite 定係記憶體 `Map` 入面。
-- 但係 `orderServiceRef` 自己本身，就係用 `provide(function OrderService({ inject }) { ... })` 匯出成一個 **`Ref`**！點解呢？因為會去呼叫 `application/` 嘅人——無論係 HTTP Controller、CLI 指令、Queue Worker 定係測試——全部都住喺*更外層*，本來就應該直接向內 `import` 業務 Use Case。既然 import 箭嘴方向已經指緊向內，就完全冇必要畫蛇添足再整多個多餘 Token。
+- 但係 `orderServiceRef` 自己本身，就係用 `provide(({ inject }) => { ... })` 匯出成一個 **`Ref`**！點解呢？因為會去呼叫 `application/` 嘅人——無論係 HTTP Controller、CLI 指令、Queue Worker 定係測試——全部都住喺*更外層*，本來就應該直接向內 `import` 業務 Use Case。既然 import 箭嘴方向已經指緊向內，就完全冇必要畫蛇添足再整多個多餘 Token。
 
 <Code title="application/order-service.ts" code={orderServiceCode} />
 

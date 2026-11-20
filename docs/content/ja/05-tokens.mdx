@@ -40,7 +40,7 @@ import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { typ
 トークンのバインド漏れや、うっかりプロバイダ同士がループしてしまったとき（`Circular dependency detected: A -> B -> A`）、エラーメッセージにちゃんとした名前が出ていると原因特定が一瞬で終わります。診断用の名前は次のルールで決まります。
 
 - **Token は `description` 文字列を使う:** `token<OrderRepository>('OrderRepository')` や `token<string>('DatabaseUrl')` のように、型名や設定名をそのまま渡しておくのが定番です。引数を省略（`token<string>()`）すると、エラー表示は `<anonymous>` になります。
-- **Ref は `factory.name` を読む:** `provide()` にはラベル用の引数がなく、JavaScript 関数の `.name` プロパティをそのまま使います。`provide(function Formatter({ inject }) { ... })` のように名前付き関数で書けば診断名は `Formatter` になりますが、無名アロー関数（`provide(({ inject }) => ...)`）で書くと名前がないため `<anonymous>` と表示されます。
+- **Ref は `factory.name` を読む:** `provide()` にはラベル用の引数がなく、JavaScript 関数の `.name` プロパティをそのまま使います。アロー関数を名前付きの `const` に代入して渡せば（`const Formatter = ({ inject }: Context) => { ... }; provide(Formatter)`）診断名は `Formatter` になりますが、インラインの無名アロー関数（`provide(({ inject }) => ...)`）で書くと名前がないため `<anonymous>` と表示されます。
 
 <Callout kind="note" title="minify 時の注意点と不正キーのチェック">
 

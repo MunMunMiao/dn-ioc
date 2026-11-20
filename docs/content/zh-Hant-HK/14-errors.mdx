@@ -58,7 +58,7 @@ import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { typ
 ## 常見報錯急救包
 
 - **`No provider for token: Name`：** 喺頂層 `providers` 或者 `infraProviders` bundle 入面用 `provideFor(myToken, ...)` 補返個綁定。如果係喺整合測試撞正，檢查吓係咪漏裝咗 `infraProviders`；如果係喺局部子樹撞正，去睇返[作用域與私有子樹](/zh-hant-hk/scopes/)確認個 consumer 係咪其實歸上層 parent scope 管（而上層冇綁呢個 Token）。
-- **`Circular dependency detected: A -> B -> A`：** 將 `A` 同 `B` 共同需要用到嘅狀態或邏輯抽離成第三個 provider `C`（改成 `A -> C` 同 `B -> C`）。如果條鏈入面見到 `<anonymous>`，將 `provide(({ inject }) => ...)` 改成具名函式 `provide(function MyService({ inject }) { ... })` 就即刻捉到邊個出事。
+- **`Circular dependency detected: A -> B -> A`：** 將 `A` 同 `B` 共同需要用到嘅狀態或邏輯抽離成第三個 provider `C`（改成 `A -> C` 同 `B -> C`）。如果條鏈入面見到 `<anonymous>`，將行內 arrow function 抽成具名 `const`（`const MyService = ({ inject }: Context) => { ... }; provide(MyService)`）就即刻捉到邊個出事。
 - **`Invalid provider input received`：** 檢查你個 `providers: [...]` 陣列同 `bundleProviders(...)`，睇吓係咪漏寫 `provideFor(myToken, factory)` 直接塞咗個裸 `token()` 入去、因為 ES 模組循環引用搞到 import 咗個 `undefined` 入嚟，或者傳咗個淺複製過嘅物件。
 - **`Invalid inject key received`：** 確認傳入 `inject()` 或 `provideFor()` 嘅真係 `Token` 或 `Ref`，千祈唔好錯手將 `provideFor()` 回傳嘅 `ProviderDef` 或者 `bundleProviders()` 回傳嘅 `ProviderBundle` 當成 key 傳入去。
 - **`Cannot inject after the app has stopped`：** 將 `const dep = inject(depRef)` 搬返上 factory 開頭、寫喺 `onDispose(() => { ... })` *之前*，等清理 hook 直接閉包拎住解析好嘅變數，唔好等到熄機嗰陣先喺入面 call `inject()`（詳見[生命週期與資源清理](/zh-hant-hk/lifecycle/)）。如果係 HTTP handler 喺優雅熄機期間撞正呢個錯，記得先閂閘停收新 request，然後先至 call `app.stop()`。

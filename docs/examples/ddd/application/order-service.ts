@@ -2,7 +2,7 @@ import { provide } from 'dn-ioc'
 import { type Order, orderRepositoryToken } from '../domain/order'
 import { clockToken, mailerToken } from '../domain/ports'
 
-export const orderServiceRef = provide(function OrderService({ inject }) {
+export const orderServiceRef = provide(({ inject }) => {
   const orders = inject(orderRepositoryToken) // [!hl]
   const clock = inject(clockToken) // [!hl]
   const mailer = inject(mailerToken) // [!hl]

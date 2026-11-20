@@ -27,7 +27,7 @@ Compara el test unitario DDD de arriba con el test MVC (`services/user-service.t
 
 <Callout kind="tip" title="Mantén trazas claras cuando falle un test">
 
-Ponles a los tokens el nombre de su interfaz (`token<Mailer>('Mailer')`) y usa funciones con nombre en `provide()` (`provide(function OrderService({ inject }) { ... })`). Cuando en un test falte un enlace o se cuele un ciclo, verás `OrderService` y `Mailer` en el error en vez de `<anonymous>`.
+Ponles a los tokens el nombre de su interfaz (`token<Mailer>('Mailer')`) y, cuando quieras diagnósticos con nombre en un `Ref`, asigna su factory flecha a un `const` con nombre (`const OrderService = ({ inject }: Context) => { ... }; provide(OrderService)`). Cuando en un test falte un enlace o se cuele un ciclo, verás `OrderService` y `Mailer` en el error en vez de `<anonymous>`.
 
 </Callout>
 

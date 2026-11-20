@@ -51,7 +51,7 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
 طبقة `application/` تنسّق كيانات المجال ومنافذه لإنجاز حالة استخدام مثل `OrderService.submit(id)`. لاحظ هنا الدمج المقصود بين الأسلوبين:
 
 - `OrderService` تجلب الإمكانيات الخارجية حصراً عبر **توكنز المجال** (`orderRepositoryToken` و`clockToken` و`mailerToken`) — ما عندها أي فكرة هل الطلبات محفوظة في Postgres أم SQLite أم مجرد `Map`.
-- ومع ذلك، المرجع `orderServiceRef` نفسه متصدّر كـ **`Ref`** عبر `provide(function OrderService({ inject }) { ... })`! لماذا؟ لأن مستدعي `application/` — وحدات تحكم HTTP، وأوامر CLI، وعمال الطوابير، والاختبارات — يعيشون في الطبقات *الخارجية* والمفروض يستوردون حالات الاستخدام مباشرة. ما تحتاج توكنز زائدة لخدمات أصلاً سهم استيرادها متّجه للداخل.
+- ومع ذلك، المرجع `orderServiceRef` نفسه متصدّر كـ **`Ref`** عبر `provide(({ inject }) => { ... })`! لماذا؟ لأن مستدعي `application/` — وحدات تحكم HTTP، وأوامر CLI، وعمال الطوابير، والاختبارات — يعيشون في الطبقات *الخارجية* والمفروض يستوردون حالات الاستخدام مباشرة. ما تحتاج توكنز زائدة لخدمات أصلاً سهم استيرادها متّجه للداخل.
 
 <Code title="application/order-service.ts" code={orderServiceCode} />
 

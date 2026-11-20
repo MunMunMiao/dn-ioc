@@ -3,7 +3,7 @@ import { bootstrapApp, provide, provideFor, token } from 'dn-ioc'
 // #region bound
 export const prefixToken = token<string>('Prefix') // [!hl]
 
-export const formatterRef = provide(function Formatter({ inject }) {
+export const formatterRef = provide(({ inject }) => {
   const prefix = inject(prefixToken) // [!hl]
   return {
     format: (value: string) => `${prefix}${value}`,

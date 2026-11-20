@@ -30,7 +30,7 @@ import providersCode from '../../examples/providers/caching-and-bundle.ts' with 
 將 `factory` 包裝成一個具備自動掛載能力的 `Ref<T>` 控柄。
 
 - **`factory`**：`(ctx: Context) => T`。呼叫 `inject()` 時，若當前作用域及其所有上層父作用域都尚未綁定此 `Ref`，它就會把預設工廠掛載進當前作用域、執行一次並快取結果（若為 `async` 工廠，則共用同一個執行中的 `Promise`）。同步拋錯與非同步 reject **不會**被寫入快取，只要應用程式仍在運作中，後續再次呼叫 `inject()` 都能乾淨重試。
-- **診斷名稱：** 直接取自 `factory.name`（例如 `provide(function UserService(ctx) { ... })` 會顯示 `UserService`，而未命名的行內箭頭函式則會顯示 `<anonymous>`）。
+- **診斷名稱：** 直接取自 `factory.name`（例如先宣告 `const UserService = (ctx: Context) => { ... }` 再傳 `provide(UserService)` 會顯示 `UserService`，而未命名的行內箭頭函式則會顯示 `<anonymous>`）。
 - **`options?.providers`**：選填的私有子作用域樹，僅對此 `factory` 及其後代可見。會在呼叫 `provide()` 當下建立淺層快照，並等到該子樹首次被解析時才進行延遲驗證。
 
 ### `provideFor<T>(key, factory, options?)`

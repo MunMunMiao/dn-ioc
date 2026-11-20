@@ -50,7 +50,7 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 
 تنقّل بين الملفات الستة في شجرة الملفات أدناه من الأسفل للأعلى حتى تشوف كيف يمشي الطلب عبر المخطط:
 
-1. **`db/database.ts`:** استدعاء `provide(function Database({ onDispose }) { ... })` يستخدم دالة مسمّاة حتى تطبع أخطاء الدوائر الاعتمادية اسم `Database` بدل `<anonymous>`، ويسجّل خطاف `onDispose` بجانب الحالة التي يغلقها مباشرة.
+1. **`db/database.ts`:** استدعاء `provide(({ onDispose }): Database => { ... })` يحتفظ بخريطة الجداول في الذاكرة ويسجّل خطاف `onDispose` بجانب الحالة التي يغلقها مباشرة.
 2. **`models/user.ts`:** مجرّد `interface User` صافية في TypeScript — بدون أي استيراد لمكتبة الحقن.
 3. **`repositories/user-repository.ts`:** المرجع `userRepositoryRef` يستدعي `inject(databaseRef)` مرة واحدة أثناء تشغيل دالة الإنشاء، ويمسك مجموعة `'users'`، ويرجّع `{ findByEmail, create }`.
 4. **`services/user-service.ts`:** المرجع `userServiceRef` يحقن `userRepositoryRef` ويبقي منطق التحقق وفحوصات التفرّد خارج معالجات HTTP.
@@ -83,8 +83,8 @@ import mvcTestCode from '../../examples/mvc/user-service-fake-example.ts' with {
 إضافة ميزة ثانية — خلّينا نقول `posts` — تمشي على حلقة متوقعة من أربع خطوات بدون ما تلمس وحدات المستخدمين الحالية:
 
 1. **أضف النموذج (`models/post.ts`):** صدّر `interface Post { id: string; authorId: string; title: string }`.
-2. **أضف المستودع (`repositories/post-repository.ts`):** صدّر `postRepositoryRef = provide(function PostRepository({ inject }) { ... })` ليحقن `databaseRef` الموجود أصلاً.
-3. **أضف الخدمة (`services/post-service.ts`):** صدّر `postServiceRef = provide(function PostService({ inject }) { ... })` ليحقن `postRepositoryRef` (و`userRepositoryRef` لو احتاج يتأكّد من وجود الكاتب).
+2. **أضف المستودع (`repositories/post-repository.ts`):** صدّر `postRepositoryRef = provide(({ inject }) => { ... })` ليحقن `databaseRef` الموجود أصلاً.
+3. **أضف الخدمة (`services/post-service.ts`):** صدّر `postServiceRef = provide(({ inject }) => { ... })` ليحقن `postRepositoryRef` (و`userRepositoryRef` لو احتاج يتأكّد من وجود الكاتب).
 4. **اربط وحدة التحكم (`controllers/post-controller.ts` ← `main.ts`):** صدّر `postControllerRef` واحقن `inject(postControllerRef)` داخل `main.ts` وقت ربط المسارات.
 
 لاحظ الشيء اللي *ما اضطرّيت* تلمسه: ما في قائمة DI مركزية تعدّلها لكل مستودع وخدمة، و`databaseRef` أصلاً مشتركة في الجذر.

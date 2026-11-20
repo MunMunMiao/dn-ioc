@@ -40,7 +40,7 @@ import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { typ
 رسائل الأخطاء المقروءة توفّر وقت تتبّع حقيقي لما يُترك توكن بدون ربط أو لما يكوّن مزوّدان حلقة دائرية بالغلط (`Circular dependency detected: A -> B -> A`). إليك من أين تأتي هذه الأسماء:
 
 - **التوكنز تستخدم نص الوصف:** سمِّ التوكن باسم النوع أو الإعداد الذي يمثله — مثلاً `token<OrderRepository>('OrderRepository')` أو `token<string>('DatabaseUrl')`. ولو تركته بدون وصف (`token<string>()`)، الأخطاء تطبع `<anonymous>`.
-- **المراجع تستخدم `factory.name`:** دالة `provide()` ما تاخذ معامل اسم منفصل — تقرأ خاصية `.name` لدالة JavaScript. كتابة `provide(function Formatter({ inject }) { ... })` تعطي المرجع اسم التشخيص `Formatter`، بينما دالة السهم المجهولة (`provide(({ inject }) => ...)`) ما لها اسم وتطبع `<anonymous>`.
+- **المراجع تستخدم `factory.name`:** دالة `provide()` ما تاخذ معامل اسم منفصل — تقرأ خاصية `.name` لدالة JavaScript. إسناد دالة سهم إلى ثابت مسمّى (`const Formatter = ({ inject }: Context) => { ... }; provide(Formatter)`) يعطي المرجع اسم التشخيص `Formatter`، بينما دالة السهم المضمّنة (`provide(({ inject }) => ...)`) ما لها اسم وتطبع `<anonymous>`.
 
 <Callout kind="note" title="تنبيه حول أدوات التصغير (Minifiers) والمفاتيح غير الصالحة">
 

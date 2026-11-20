@@ -30,7 +30,7 @@ import providersCode from '../../examples/providers/caching-and-bundle.ts' with 
 `factory`를 감싸 스스로 등록 가능한 `Ref<T>` 핸들을 반환해요.
 
 - **`factory`**: `(ctx: Context) => T`. `inject()`가 호출될 때 현재 활성 스코프나 상위 조상 스코프에 이 `Ref`에 대한 바인딩이 없으면, 활성 스코프에 기본 팩토리를 설치하고 한 번 실행한 뒤 결과를 캐시해요(비동기 팩토리라면 진행 중인 `Promise`를 공유해요). 동기 예외와 비동기 거부(rejection)는 캐시되지 **않으므로** 앱이 실행 중인 동안 언제든 재시도할 수 있어요.
-- **진단 이름:** `factory.name`에서 가져와요(예를 들어 `provide(function UserService(ctx) { ... })`는 `UserService`로 표시되고, 이름 없는 화살표 함수는 `<anonymous>`로 표시돼요).
+- **진단 이름:** `factory.name`에서 가져와요(예를 들어 `const UserService = (ctx: Context) => { ... }; provide(UserService)`는 `UserService`로 표시되고, 이름 없는 인라인 화살표 함수는 `<anonymous>`로 표시돼요).
 - **`options?.providers`**: 오직 `factory` 자신과 하위 자손에게만 보이는 선택적 프라이빗 자식 서브트리예요. `provide()` 호출 시점에 스냅샷으로 복사되며, 해당 서브트리가 처음 해석될 때 지연 검증돼요.
 
 ### `provideFor<T>(key, factory, options?)`

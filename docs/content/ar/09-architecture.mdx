@@ -40,7 +40,7 @@ import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' wit
 | **كود الربط المطلوب** | صفر — يثبّت نفسه تلقائياً عند أول `inject()` في النطاق النشط. | صريح — لازم يُربط عبر `provideFor()` داخل `{ providers }` أو حزمة. |
 | **التبديل في الاختبارات** | `provideFor(ref, fakeFactory)` | `provideFor(token, fakeFactory)` — نفس الأداة بالضبط. |
 | **نسيان البديل في اختبار وحدة** | **تراجع صامت:** يبني التنفيذ الحقيقي ويشغّله. | **فشل فوري:** ترفض `start()` بالخطأ `No provider for token: Name`. |
-| **اسم التشخيص في الأخطاء** | اسم الدالة (`provide(function UserService(...) {})`)، أو `<anonymous>`. | نص الوصف (`token('OrderRepository')`)، أو `<anonymous>`. |
+| **اسم التشخيص في الأخطاء** | اسم الدالة (`const UserService = ...; provide(UserService)`)، أو `<anonymous>`. | نص الوصف (`token('OrderRepository')`)، أو `<anonymous>`. |
 | **الأنسب لـ** | وحدات تحكم وخدمات ومستودعات MVC، وحالات الاستخدام، والأدوات الداخلية. | منافذ المجال في DDD، والمنافذ العابرة للطبقات (`Clock`, `Mailer`)، وإعدادات/أسرار وقت التشغيل. |
 
 ## الجمع بين الاثنين في نفس المشروع

@@ -30,7 +30,7 @@ Crea una clave pura de dependencia que transporta el tipo `T` de TypeScript y ce
 Envuelve `factory` en un manejador autoinstalable `Ref<T>`.
 
 - **`factory`**: `(ctx: Context) => T`. Si al llamar a `inject()` no existe ningún enlace para este `Ref` ni en el ámbito activo ni en sus ancestros, el `Ref` instala su factoría por defecto en el ámbito activo, la ejecuta una vez y guarda el resultado en caché (o comparte la `Promise` en vuelo si la factoría es `async`). Los errores síncronos y rechazos asíncronos **no** se guardan en caché, permitiendo reintentar mientras la app siga en marcha.
-- **Nombre de diagnóstico:** Se toma de `factory.name` (por ejemplo, `provide(function UserService(ctx) { ... })` muestra `UserService`, mientras que una flecha anónima muestra `<anonymous>`).
+- **Nombre de diagnóstico:** Se toma de `factory.name` (por ejemplo, `const UserService = (ctx: Context) => { ... }; provide(UserService)` muestra `UserService`, mientras que una flecha anónima en línea muestra `<anonymous>`).
 - **`options?.providers`**: Subárbol hijo privado opcional visible únicamente para `factory` y sus descendientes. Se copia al llamar a `provide()` y se valida de forma perezosa la primera vez que se resuelve ese subárbol.
 
 ### `provideFor<T>(key, factory, options?)`

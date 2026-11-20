@@ -100,6 +100,9 @@ describe('docs/examples suite', () => {
   test('renders every full example and every #region slice cleanly without leaked directives', async () => {
     for (const relPath of EXPECTED_EXAMPLES) {
       const source = await readFile(join(EXAMPLES_DIR, relPath), 'utf8')
+      expect(source, `${relPath}: use arrow functions instead of named function declarations/expressions`).not.toMatch(
+        /\bfunction\s+[A-Za-z_$]/,
+      )
       const full = renderCodeLines(source, { lang: 'ts' })
       assertCleanRender(full.html, full.rawClean, full.highlightedLines, relPath)
 

@@ -40,7 +40,7 @@ import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { typ
 碰到漏绑 Token 或者两个模块不小心写出循环依赖（`Circular dependency detected: A -> B -> A`）时，报错信息里能不能直接喊出名字，排查效率差得不是一星半点。内核是按下面这套规则取名字的：
 
 - **Token 取它的描述字符串：** 直接按它代表的接口或配置项起名就行，比如 `token<OrderRepository>('OrderRepository')` 或 `token<string>('DatabaseUrl')`。如果省掉不传（`token<string>()`），报错里就会显示 `<anonymous>`。
-- **Ref 取工厂函数的 `factory.name`：** `provide()` 没有单独的命名参数，它直接读 JavaScript 函数的 `.name` 属性。写成具名函数 `provide(function Formatter({ inject }) { ... })`，报错时就能清楚显示 `Formatter`；如果随手写成匿名箭头函数 `provide(({ inject }) => ...)`，没有函数名，报错里就只能看到 `<anonymous>`。
+- **Ref 取工厂函数的 `factory.name`：** `provide()` 没有单独的命名参数，它直接读 JavaScript 函数的 `.name` 属性。把箭头函数赋给带名字的 `const` 再传入（`const Formatter = ({ inject }: Context) => { ... }; provide(Formatter)`），报错时就能清楚显示 `Formatter`；直接写行内匿名箭头函数（`provide(({ inject }) => ...)`）没有函数名，报错里就只能看到 `<anonymous>`。
 
 <Callout kind="note" title="代码压缩器与非法 Key 校验">
 

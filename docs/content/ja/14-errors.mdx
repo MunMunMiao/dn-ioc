@@ -58,7 +58,7 @@ import tokenBindingCode from '../../examples/tokens/token-binding.ts' with { typ
 ## エラー別の最短修正レシピ
 
 - **`No provider for token: Name`:** ルートの `providers` か `infraProviders` バンドルの中で `provideFor(myToken, ...)` を登録してください。結合テストで出た場合は `infraProviders` の入れ忘れを、子サブツリーで出た場合は [スコープとプライベートサブツリー](/ja/scopes/) を見て「利用側が親スコープ所有になっていないか」を確認しましょう。
-- **`Circular dependency detected: A -> B -> A`:** `A` と `B` の両方が必要としている共通の状態やヘルパーを、第3のプロバイダ `C` に切り出してください（`A -> C` かつ `B -> C`）。経路に `<anonymous>` が出ている場合は、`provide(({ inject }) => ...)` を `provide(function MyService({ inject }) { ... })` のように名前付き関数へ変えると犯人がすぐ特定できます。
+- **`Circular dependency detected: A -> B -> A`:** `A` と `B` の両方が必要としている共通の状態やヘルパーを、第3のプロバイダ `C` に切り出してください（`A -> C` かつ `B -> C`）。経路に `<anonymous>` が出ている場合は、インラインアロー関数を名前付き `const` に切り出す（`const MyService = ({ inject }: Context) => { ... }; provide(MyService)`）と犯人がすぐ特定できます。
 - **`Invalid provider input received`:** `providers: [...]` 配列や `bundleProviders(...)` の中に、`provideFor(myToken, factory)` で包んでいない生の `token()` や、ES モジュールの循環参照による `undefined`、コピーしたオブジェクトが紛れ込んでいないか確認してください。
 - **`Invalid inject key received`:** `inject()` や `provideFor()` の第1引数に、`provideFor()` の戻り値（`ProviderDef`）や `bundleProviders()` の戻り値（`ProviderBundle`）ではなく、正しい `Token` または `Ref` を渡しているか確認してください。
 - **`Cannot inject after the app has stopped`:** `onDispose(() => { ... })` を登録する **前** に、ファクトリの先頭で `const dep = inject(depRef)` と変数へ取っておき、クリーンアップ時はその変数を参照するように直してください（[ライフサイクルとクリーンアップ](/ja/lifecycle/) 参照）。グレースフルシャットダウン中にリクエストハンドラから出た場合は、`app.stop()` を呼ぶ前に新規リクエストの受付を止めるようにします。
