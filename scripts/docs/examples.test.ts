@@ -152,6 +152,7 @@ describe('docs/examples suite', () => {
 
     expect(readme).toContain('npx skills add MunMunMiao/dn-ioc')
     expect(readme).toContain('skills/dn-ioc/SKILL.md')
+    expect(readme).toContain('./docs/assets/social-preview.png')
 
     expect(llms).toContain('Human reference: https://dn-ioc.lyz.cloud/')
     expect(llms).not.toContain('[index.html](index.html)')

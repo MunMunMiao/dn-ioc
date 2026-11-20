@@ -3,7 +3,16 @@ import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { compile } from '@mdx-js/mdx'
 import remarkGfm from 'remark-gfm'
-import { absoluteChapterUrl, chapterHref, getLocale, LOCALES, type LocaleCode, type LocaleConfig, type PartId } from '../../docs/locales'
+import {
+  absoluteChapterUrl,
+  chapterHref,
+  getLocale,
+  LOCALES,
+  type LocaleCode,
+  type LocaleConfig,
+  type PartId,
+  SITE_ORIGIN,
+} from '../../docs/locales'
 import { Callout, Code, CodeTabs } from './components'
 import {
   escapeAttr,
@@ -571,6 +580,7 @@ export function renderChapterPage(chapter: CompiledChapter, allChapters: readonl
   const pageTitle = chapter.meta.slug === '' ? `dn-ioc — ${chapter.meta.title}` : `${chapter.meta.title} — dn-ioc`
   const canonicalUrl = absoluteChapterUrl(chapter.locale, chapter.meta.slug)
   const defaultEnUrl = absoluteChapterUrl('en-US', chapter.meta.slug)
+  const socialImageUrl = `${SITE_ORIGIN}/assets/social-preview.png`
 
   const hreflangLinks = [
     ...LOCALES.map(
@@ -626,6 +636,18 @@ ${section.html}
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(pageTitle)}</title>
   <meta name="description" content="${escapeAttr(chapter.meta.summary)}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="dn-ioc">
+  <meta property="og:title" content="${escapeAttr(pageTitle)}">
+  <meta property="og:description" content="${escapeAttr(chapter.meta.summary)}">
+  <meta property="og:url" content="${escapeAttr(canonicalUrl)}">
+  <meta property="og:image" content="${escapeAttr(socialImageUrl)}">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escapeAttr(pageTitle)}">
+  <meta name="twitter:description" content="${escapeAttr(chapter.meta.summary)}">
+  <meta name="twitter:image" content="${escapeAttr(socialImageUrl)}">
   <link rel="canonical" href="${escapeAttr(canonicalUrl)}">
 ${hreflangLinks}
   <link rel="alternate" type="text/plain" href="/llms.txt" title="dn-ioc LLM Reference">
