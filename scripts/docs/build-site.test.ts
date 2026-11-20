@@ -679,6 +679,7 @@ describe('buildDocsSite', () => {
       expect(llmsOut).not.toMatch(/dn-ioc@\d|Version \d+\.\d+/i)
       expect(llmsOut).not.toMatch(/\b\d+(?:\.\d+)?\s*kB\b|gzip/i)
       await access(join(outDir, 'assets/social-preview.png'))
+      await access(join(outDir, 'assets/social-preview.svg'))
       await access(join(outDir, '_redirects'))
 
       const collectHtmlFiles = async (dir: string): Promise<string[]> => {

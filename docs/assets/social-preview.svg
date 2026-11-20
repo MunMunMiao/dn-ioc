@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-labelledby="title desc">
+  <title id="title">dn-ioc — TypeScript DI Kernel</title>
+  <desc id="desc">A provider is a factory. Type-safe dependency injection with plain arrow functions — no decorators, no reflection, no global container.</desc>
+  <defs>
+    <clipPath id="clip-light">
+      <polygon points="0,0 939.08,0 767.59,640 0,640" />
+    </clipPath>
+    <clipPath id="clip-card">
+      <rect x="594" y="94.5" width="614" height="451" rx="8" />
+    </clipPath>
+    <filter id="grain-light" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.82" numOctaves="3" stitchTiles="stitch" result="noise" />
+      <feColorMatrix type="matrix" values="0 0 0 0 0.06  0 0 0 0 0.06  0 0 0 0 0.05  0 0 0 0.022 0" />
+    </filter>
+    <filter id="grain-dark" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.82" numOctaves="3" stitchTiles="stitch" result="noise" />
+      <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.022 0" />
+    </filter>
+    <filter id="shadow-light" x="-10%" y="-10%" width="120%" height="126%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#0f0f0e" flood-opacity="0.14" />
+    </filter>
+    <filter id="shadow-dark" x="-10%" y="-10%" width="120%" height="126%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.62" />
+    </filter>
+    <style>
+      .sans { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .mono { font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace; font-variant-ligatures: none; }
+    </style>
+  </defs>
+
+  <!-- DARK BASE LAYER (right 1/3 visible beyond 75-deg diagonal at x = 853.33) -->
+  <g id="layer-dark">
+    <rect width="1280" height="640" fill="#161617" />
+    <rect x="26" y="26" width="1228" height="588" rx="6" fill="none" stroke="#f7f7f5" stroke-opacity="0.11" stroke-width="1" />
+    <rect x="72" y="26" width="56" height="3" rx="1.5" fill="#f27a5d" />
+
+    <!-- Code card (dark): separate shadow backdrop prevents filter color distortion -->
+    <rect x="594" y="94.5" width="614" height="451" rx="8" fill="#000000" filter="url(#shadow-dark)" />
+    <rect x="594" y="94.5" width="614" height="451" rx="8" fill="#111112" />
+    <g clip-path="url(#clip-card)">
+      <rect x="594" y="94.5" width="614" height="44" fill="#1c1c1e" />
+      <line x1="594" y1="138.5" x2="1208" y2="138.5" stroke="#f7f7f5" stroke-opacity="0.11" stroke-width="1" />
+      <text x="613" y="121.5" class="mono" font-size="13.5" font-weight="500" fill="#f7f7f5">app.ts</text>
+      <text x="1189" y="121" text-anchor="end" class="mono" font-size="12" fill="#a5a5a0">TypeScript · ESM</text>
+
+      <!-- Highlighted line backgrounds (lines 3, 6, 15) -->
+      <rect x="594" y="204.4" width="614" height="25" fill="#f27a5d" fill-opacity="0.14" />
+      <rect x="594" y="204.4" width="3" height="25" fill="#f27a5d" />
+      <rect x="594" y="279.2" width="614" height="25" fill="#f27a5d" fill-opacity="0.14" />
+      <rect x="594" y="279.2" width="3" height="25" fill="#f27a5d" />
+      <rect x="594" y="503.7" width="614" height="25" fill="#f27a5d" fill-opacity="0.14" />
+      <rect x="594" y="503.7" width="3" height="25" fill="#f27a5d" />
+
+      <!-- Line numbers -->
+      <g class="mono" font-size="14.5" text-anchor="end" fill="#a5a5a0" opacity="0.72">
+        <text x="638" y="172">1</text>
+        <text x="638" y="196.9">2</text>
+        <text x="638" y="221.9">3</text>
+        <text x="638" y="246.8">4</text>
+        <text x="638" y="271.8">5</text>
+        <text x="638" y="296.7">6</text>
+        <text x="638" y="321.6">7</text>
+        <text x="638" y="346.6">8</text>
+        <text x="638" y="371.5">9</text>
+        <text x="638" y="396.5">10</text>
+        <text x="638" y="421.4">11</text>
+        <text x="638" y="446.3">12</text>
+        <text x="638" y="471.3">13</text>
+        <text x="638" y="496.2">14</text>
+        <text x="638" y="521.2">15</text>
+      </g>
+
+      <!-- Code text (dark syntax palette; explicit x offsets guarantee indent across all SVG engines) -->
+      <g class="mono" font-size="14.5" fill="#f7f7f5">
+        <text x="652" y="172"><tspan fill="#f58c73">import</tspan> { bootstrapApp, provide } <tspan fill="#f58c73">from</tspan> <tspan fill="#92cfa4">'dn-ioc'</tspan></text>
+        <text x="652" y="221.9"><tspan fill="#f58c73">const</tspan> configRef = <tspan fill="#8ec0e8">provide</tspan>(() =&gt; ({ greeting: <tspan fill="#92cfa4">'hello'</tspan> }))</text>
+        <text x="652" y="271.8"><tspan fill="#f58c73">const</tspan> greeterRef = <tspan fill="#8ec0e8">provide</tspan>(({ inject }) =&gt; {</text>
+        <text x="669.4" y="296.7"><tspan fill="#f58c73">const</tspan> { greeting } = <tspan fill="#8ec0e8">inject</tspan>(configRef)</text>
+        <text x="669.4" y="321.6"><tspan fill="#f58c73">return</tspan> {</text>
+        <text x="686.8" y="346.6">greet: (name: <tspan fill="#cdaef0">string</tspan>) =&gt; <tspan fill="#92cfa4">`${</tspan>greeting<tspan fill="#92cfa4">}, ${</tspan>name<tspan fill="#92cfa4">}`</tspan>,</text>
+        <text x="669.4" y="371.5">}</text>
+        <text x="652" y="396.5">})</text>
+        <text x="652" y="446.3"><tspan fill="#f58c73">const</tspan> app = <tspan fill="#8ec0e8">bootstrapApp</tspan>(({ inject }) =&gt; {</text>
+        <text x="669.4" y="471.3"><tspan fill="#8ec0e8">inject</tspan>(greeterRef).<tspan fill="#8ec0e8">greet</tspan>(<tspan fill="#92cfa4">'world'</tspan>)</text>
+        <text x="652" y="496.2">})</text>
+        <text x="652" y="521.2"><tspan fill="#f58c73">await</tspan> app.<tspan fill="#8ec0e8">start</tspan>()</text>
+      </g>
+    </g>
+    <rect x="594" y="94.5" width="614" height="451" rx="8" fill="none" stroke="#f7f7f5" stroke-opacity="0.2" stroke-width="1" />
+    <rect width="1280" height="640" filter="url(#grain-dark)" pointer-events="none" />
+  </g>
+
+  <!-- LIGHT TOP LAYER (left 2/3 clipped cleanly along 75-deg diagonal) -->
+  <g id="layer-light" clip-path="url(#clip-light)">
+    <rect width="1280" height="640" fill="#f8f8f7" />
+    <rect x="26" y="26" width="1228" height="588" rx="6" fill="none" stroke="#0f0f0e" stroke-opacity="0.12" stroke-width="1" />
+    <rect x="72" y="26" width="56" height="3" rx="1.5" fill="#b5381c" />
+    <!-- Brand column (light) -->
+    <g>
+      <circle cx="75.5" cy="160.5" r="3.5" fill="#b5381c" />
+      <text x="89" y="165" class="mono" font-size="13" font-weight="500" letter-spacing="1.3" fill="#b5381c">TYPESCRIPT DI KERNEL</text>
+      <path transform="translate(72, 263)" fill="#0f0f0e" aria-label="dn-ioc" d="M38.02 -38.35 Q38.02 -42.53 35.54 -45.02 Q33.07 -47.52 29.09 -47.52 Q25.49 -47.52 22.92 -45.31 Q20.35 -43.1 18.98 -38.47 Q17.62 -33.84 17.62 -26.45 Q17.62 -19.49 18.96 -15.17 Q20.3 -10.85 23.02 -8.88 Q25.73 -6.91 29.9 -6.91 Q33.02 -6.91 35.66 -7.94 Q38.3 -8.98 40.56 -11.42 L40.99 -10.18 Q38.16 -6.72 35.83 -4.51 Q33.5 -2.3 31.46 -1.06 Q29.42 0.19 27.46 0.67 Q25.49 1.15 23.47 1.15 Q17.18 1.15 12.62 -1.78 Q8.06 -4.7 5.57 -9.96 Q3.07 -15.22 3.07 -22.18 Q3.07 -28.94 5.11 -34.18 Q7.15 -39.41 10.87 -43.01 Q14.59 -46.61 19.66 -48.46 Q24.72 -50.3 30.72 -50.3 Q33.7 -50.3 36.65 -49.92 Q39.6 -49.54 42.43 -48.7 Q45.26 -47.86 47.81 -46.51 L38.02 -45.7 L38.02 -60.14 Q37.44 -60.53 36.1 -61.46 Q34.75 -62.4 33.17 -63.5 Q31.58 -64.61 30.19 -65.57 L30.19 -66.72 L51.74 -71.42 L52.37 -71.42 L51.98 -62.74 L51.98 -6.53 Q52.42 -6.29 53.3 -5.83 Q54.19 -5.38 55.27 -4.85 Q56.35 -4.32 57.41 -3.79 Q58.46 -3.26 59.23 -2.83 L59.23 -1.63 L39.31 1.58 L38.59 1.58 L38.02 -6.24 Z M78.96 -39.79 L78.96 -2.88 L84.48 -1.44 L84.48 0 L59.28 0 L59.28 -1.44 L64.99 -2.98 L64.99 -38.69 Q64.18 -39.41 62.74 -40.78 Q61.3 -42.14 58.75 -44.11 L58.75 -45.31 L78.34 -50.64 L78.96 -50.64 Z M90.86 -1.44 L96.38 -2.88 L96.38 -32.74 Q96.38 -35.57 95.47 -37.34 Q94.56 -39.12 92.74 -39.98 Q90.91 -40.85 88.03 -40.85 Q85.15 -40.85 82.46 -40.06 Q79.78 -39.26 77.42 -38.16 L77.04 -39.07 Q80.78 -42.67 83.47 -44.88 Q86.16 -47.09 88.3 -48.22 Q90.43 -49.34 92.47 -49.73 Q94.51 -50.11 97.01 -50.11 Q103.78 -50.11 107.09 -46.39 Q110.4 -42.67 110.4 -35.23 L110.4 -2.98 L116.06 -1.44 L116.06 0 L90.86 0 Z M119.09 -28.32 L139.73 -28.32 L139.73 -21.5 L119.09 -21.5 Z M155.04 -56.06 Q151.44 -56.06 149.35 -58.42 Q147.26 -60.77 147.26 -63.79 Q147.26 -66.77 149.35 -68.88 Q151.44 -70.99 155.04 -70.99 Q158.64 -70.99 160.63 -68.88 Q162.62 -66.77 162.62 -63.79 Q162.62 -60.77 160.63 -58.42 Q158.64 -56.06 155.04 -56.06 Z M162.62 -50.64 L162.62 -40.8 L162.62 -2.88 L168.14 -1.44 L168.14 0 L142.94 0 L142.94 -1.44 L148.66 -2.98 L148.66 -38.69 Q148.13 -39.17 147.22 -39.94 Q146.3 -40.7 145.1 -41.76 Q143.9 -42.82 142.42 -44.11 L142.42 -45.31 L162 -50.64 Z M195.07 -1.68 Q198.67 -1.68 200.98 -4.03 Q203.28 -6.38 204.36 -11.28 Q205.44 -16.18 205.44 -23.71 Q205.44 -31.58 204.38 -36.86 Q203.33 -42.14 201.05 -44.81 Q198.77 -47.47 195.12 -47.47 Q191.52 -47.47 189.22 -45.12 Q186.91 -42.77 185.81 -37.87 Q184.7 -32.98 184.7 -25.44 Q184.7 -17.62 185.76 -12.31 Q186.82 -7.01 189.1 -4.34 Q191.38 -1.68 195.07 -1.68 Z M194.64 1.15 Q187.49 1.15 181.92 -2.11 Q176.35 -5.38 173.16 -11.16 Q169.97 -16.94 169.97 -24.48 Q169.97 -32.11 173.33 -37.94 Q176.69 -43.78 182.47 -47.04 Q188.26 -50.3 195.5 -50.3 Q202.8 -50.3 208.37 -47.06 Q213.94 -43.82 217.08 -38.04 Q220.22 -32.26 220.22 -24.67 Q220.22 -17.04 216.79 -11.21 Q213.36 -5.38 207.58 -2.11 Q201.79 1.15 194.64 1.15 Z M250.08 -50.3 Q255.7 -50.3 259.13 -49.1 Q262.56 -47.9 264.1 -46.06 Q265.63 -44.21 265.63 -42.19 Q265.63 -40.51 264.84 -39.24 Q264.05 -37.97 262.78 -37.3 Q261.5 -36.62 259.92 -36.62 Q259.44 -36.62 258.46 -37.7 Q257.47 -38.78 256.13 -40.37 Q254.78 -41.95 253.13 -43.56 Q251.47 -45.17 249.7 -46.25 Q247.92 -47.33 246.1 -47.33 Q243.36 -47.33 241.25 -45.7 Q239.14 -44.06 237.96 -40.39 Q236.78 -36.72 236.78 -30.62 Q236.78 -22.61 238.58 -17.69 Q240.38 -12.77 243.84 -10.58 Q247.3 -8.4 252.34 -8.4 Q256.27 -8.4 259.54 -9.77 Q262.8 -11.14 265.73 -14.45 L266.74 -13.58 Q263.62 -8.06 260.45 -4.85 Q257.28 -1.63 253.8 -0.24 Q250.32 1.15 246.14 1.15 Q239.47 1.15 234.31 -1.75 Q229.15 -4.66 226.22 -10.2 Q223.3 -15.74 223.3 -23.66 Q223.3 -29.42 225.34 -34.3 Q227.38 -39.17 231.05 -42.77 Q234.72 -46.37 239.59 -48.34 Q244.46 -50.3 250.08 -50.3 Z" />
+      <text x="72" y="329" class="sans" font-size="21" font-weight="600" fill="#0f0f0e">A provider is a factory.</text>
+      <text x="72" y="360.5" class="sans" font-size="21" font-weight="400" fill="#1f1f1d">Type-safe dependency injection with plain</text>
+      <text x="72" y="392" class="sans" font-size="21" font-weight="400" fill="#1f1f1d">arrow functions—no decorators, no</text>
+      <text x="72" y="423.5" class="sans" font-size="21" font-weight="400" fill="#1f1f1d">reflection, no global container.</text>
+
+      <!-- Feature pills (light) -->
+      <g transform="translate(72, 457)">
+        <rect x="0" y="0" width="98" height="31" rx="4" fill="#f0f0ee" stroke="#0f0f0e" stroke-opacity="0.2" stroke-width="1" />
+        <text x="49" y="20" text-anchor="middle" class="mono" font-size="13" font-weight="500" fill="#0f0f0e">Zero deps</text>
+
+        <rect x="108" y="0" width="122" height="31" rx="4" fill="#f0f0ee" stroke="#0f0f0e" stroke-opacity="0.2" stroke-width="1" />
+        <text x="169" y="20" text-anchor="middle" class="mono" font-size="13" font-weight="500" fill="#0f0f0e">Strict types</text>
+
+        <rect x="240" y="0" width="122" height="31" rx="4" fill="#f0f0ee" stroke="#0f0f0e" stroke-opacity="0.2" stroke-width="1" />
+        <text x="301" y="20" text-anchor="middle" class="mono" font-size="13" font-weight="500" fill="#0f0f0e">Async &amp; LIFO</text>
+
+        <rect x="372" y="0" width="52" height="31" rx="4" fill="#f0f0ee" stroke="#0f0f0e" stroke-opacity="0.2" stroke-width="1" />
+        <text x="398" y="20" text-anchor="middle" class="mono" font-size="13" font-weight="500" fill="#0f0f0e">ESM</text>
+      </g>
+    </g>
+
+    <!-- Code card (light): separate shadow backdrop prevents filter color distortion -->
+    <rect x="594" y="94.5" width="614" height="451" rx="8" fill="#000000" filter="url(#shadow-light)" />
+    <rect x="594" y="94.5" width="614" height="451" rx="8" fill="#f0f0ee" />
+    <g clip-path="url(#clip-card)">
+      <rect x="594" y="94.5" width="614" height="44" fill="#e8e8e5" />
+      <line x1="594" y1="138.5" x2="1208" y2="138.5" stroke="#0f0f0e" stroke-opacity="0.12" stroke-width="1" />
+      <text x="613" y="121.5" class="mono" font-size="13.5" font-weight="500" fill="#0f0f0e">app.ts</text>
+      <text x="1189" y="121" text-anchor="end" class="mono" font-size="12" fill="#52524e">TypeScript · ESM</text>
+
+      <!-- Highlighted line backgrounds (lines 3, 6, 15) -->
+      <rect x="594" y="204.4" width="614" height="25" fill="#b5381c" fill-opacity="0.09" />
+      <rect x="594" y="204.4" width="3" height="25" fill="#b5381c" />
+      <rect x="594" y="279.2" width="614" height="25" fill="#b5381c" fill-opacity="0.09" />
+      <rect x="594" y="279.2" width="3" height="25" fill="#b5381c" />
+      <rect x="594" y="503.7" width="614" height="25" fill="#b5381c" fill-opacity="0.09" />
+      <rect x="594" y="503.7" width="3" height="25" fill="#b5381c" />
+
+      <!-- Line numbers -->
+      <g class="mono" font-size="14.5" text-anchor="end" fill="#52524e" opacity="0.72">
+        <text x="638" y="172">1</text>
+        <text x="638" y="196.9">2</text>
+        <text x="638" y="221.9">3</text>
+        <text x="638" y="246.8">4</text>
+        <text x="638" y="271.8">5</text>
+        <text x="638" y="296.7">6</text>
+        <text x="638" y="321.6">7</text>
+        <text x="638" y="346.6">8</text>
+        <text x="638" y="371.5">9</text>
+        <text x="638" y="396.5">10</text>
+        <text x="638" y="421.4">11</text>
+        <text x="638" y="446.3">12</text>
+        <text x="638" y="471.3">13</text>
+        <text x="638" y="496.2">14</text>
+        <text x="638" y="521.2">15</text>
+      </g>
+
+      <!-- Code text (light syntax palette; explicit x offsets guarantee indent across all SVG engines) -->
+      <g class="mono" font-size="14.5" fill="#0f0f0e">
+        <text x="652" y="172"><tspan fill="#a62e14">import</tspan> { bootstrapApp, provide } <tspan fill="#a62e14">from</tspan> <tspan fill="#1c5e3a">'dn-ioc'</tspan></text>
+        <text x="652" y="221.9"><tspan fill="#a62e14">const</tspan> configRef = <tspan fill="#174b78">provide</tspan>(() =&gt; ({ greeting: <tspan fill="#1c5e3a">'hello'</tspan> }))</text>
+        <text x="652" y="271.8"><tspan fill="#a62e14">const</tspan> greeterRef = <tspan fill="#174b78">provide</tspan>(({ inject }) =&gt; {</text>
+        <text x="669.4" y="296.7"><tspan fill="#a62e14">const</tspan> { greeting } = <tspan fill="#174b78">inject</tspan>(configRef)</text>
+        <text x="669.4" y="321.6"><tspan fill="#a62e14">return</tspan> {</text>
+        <text x="686.8" y="346.6">greet: (name: <tspan fill="#522b7d">string</tspan>) =&gt; <tspan fill="#1c5e3a">`${</tspan>greeting<tspan fill="#1c5e3a">}, ${</tspan>name<tspan fill="#1c5e3a">}`</tspan>,</text>
+        <text x="669.4" y="371.5">}</text>
+        <text x="652" y="396.5">})</text>
+        <text x="652" y="446.3"><tspan fill="#a62e14">const</tspan> app = <tspan fill="#174b78">bootstrapApp</tspan>(({ inject }) =&gt; {</text>
+        <text x="669.4" y="471.3"><tspan fill="#174b78">inject</tspan>(greeterRef).<tspan fill="#174b78">greet</tspan>(<tspan fill="#1c5e3a">'world'</tspan>)</text>
+        <text x="652" y="496.2">})</text>
+        <text x="652" y="521.2"><tspan fill="#a62e14">await</tspan> app.<tspan fill="#174b78">start</tspan>()</text>
+      </g>
+    </g>
+    <rect x="594" y="94.5" width="614" height="451" rx="8" fill="none" stroke="#0f0f0e" stroke-opacity="0.2" stroke-width="1" />
+    <rect width="1280" height="640" filter="url(#grain-light)" pointer-events="none" />
+  </g>
+</svg>

@@ -7,6 +7,7 @@ const EXAMPLES_DIR = join(import.meta.dir, '../../docs/examples')
 const LLMS_TXT_PATH = join(import.meta.dir, '../../docs/llms.txt')
 const SKILL_MD_PATH = join(import.meta.dir, '../../skills/dn-ioc/SKILL.md')
 const README_PATH = join(import.meta.dir, '../../README.md')
+const SOCIAL_PREVIEW_SVG_PATH = join(import.meta.dir, '../../docs/assets/social-preview.svg')
 
 const EXPECTED_EXAMPLES = [
   'api/signatures.ts',
@@ -152,7 +153,17 @@ describe('docs/examples suite', () => {
 
     expect(readme).toContain('npx skills add MunMunMiao/dn-ioc')
     expect(readme).toContain('skills/dn-ioc/SKILL.md')
-    expect(readme).toContain('./docs/assets/social-preview.png')
+    expect(readme).toContain('./docs/assets/social-preview.svg')
+    expect(readme).not.toContain('./docs/assets/social-preview.png')
+
+    const socialSvg = await readFile(SOCIAL_PREVIEW_SVG_PATH, 'utf8')
+    expect(socialSvg).toContain('<svg ')
+    expect(socialSvg).toContain('viewBox="0 0 1280 640"')
+    expect(socialSvg).not.toContain('<foreignObject')
+    expect(socialSvg.replaceAll('xmlns="http://www.w3.org/2000/svg"', '')).not.toMatch(/https?:\/\//i)
+    expect(socialSvg).not.toContain('dn-ioc.lyz.cloud')
+    expect(socialSvg).not.toContain('provide(function ')
+    expect(socialSvg).not.toMatch(/\b\d+(?:\.\d+)?\s*kB\b|gzip/i)
 
     expect(llms).toContain('Human reference: https://dn-ioc.lyz.cloud/')
     expect(llms).not.toContain('[index.html](index.html)')

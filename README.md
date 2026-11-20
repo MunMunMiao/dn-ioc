@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://dn-ioc.lyz.cloud/">
-    <img src="./docs/assets/social-preview.png" alt="dn-ioc — TypeScript DI Kernel" width="100%">
+    <img src="./docs/assets/social-preview.svg" alt="dn-ioc — TypeScript DI Kernel" width="100%">
   </a>
 </p>
 
