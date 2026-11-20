@@ -74,7 +74,7 @@ Import direction decides `Ref` vs `Token`:
 - **MVC (inward/downward imports):** Layers import the layer below → use `Ref` (`provide()`). List stateful/connection refs in bootstrap `providers` to share one instance.
 - **DDD / Clean Architecture (inverted imports):** `domain/` declares interfaces + `token()` ports (imports no other project layer); `application/` uses `provide()` and injects domain tokens; `infra/` imports `domain/`, binds adapters with `provideFor()`, and exports one `bundleProviders(...)`; entrypoints (`main.ts`) install the bundle once.
 - Never export a DDD adapter as a `Ref` imported by `domain/` or `application/` (creates an outward dependency / module cycle). Adding a new adapter is two edits in `infra/`: its `provideFor()` + one entry in the bundle.
-- Inject entry dependencies inside the root factory so missing bindings reject `start()` instead of failing mid-request. Enforce layer import rules with Biome or ESLint.
+- Inject entry dependencies inside the root factory so missing bindings reject `start()` instead of failing mid-request.
 - **Testing:** `provideFor()` overrides both refs and tokens identically.
   - Unit tests: install only fakes. Missing token fake fails fast (`No provider for token: Name`); missing ref fake silently builds the real ref.
   - Integration tests: list real bundle **first**, overrides **after**: `[infraProviders, provideFor(orderRepositoryToken, fake)]`.

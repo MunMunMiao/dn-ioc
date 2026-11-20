@@ -3,7 +3,7 @@ title: "DDD 與整潔架構實戰"
 slug: "ddd"
 part: patterns
 order: 11
-summary: "利用零實作嘅 token() port、基礎設施 adapter bundle 同埋 Linter 邊界規則，令 domain 同 application 層徹底擺脫 SQL、HTTP 與第三方 SDK 依賴。"
+summary: "利用零實作嘅 token() port、基礎設施 adapter bundle 同清晰分層邊界，令 domain 同 application 層徹底擺脫 SQL、HTTP 與第三方 SDK 依賴。"
 ---
 import orderServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
 import domainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
@@ -94,9 +94,9 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
   ]}
 />
 
-## 5. 用 Biome 或 ESLint 鎖死分層 Import 方向
+## 5. 分層 Import 邊界速查
 
-由於 `dn-ioc` 喺 runtime 只認得 handle，核心本身阻止唔到同事個編輯器自動補全唔小心將 `../infra/sql-order-repository` 拉咗入 `application/order-service.ts`。最穩陣嘅做法係直接用 Linter 規則鎖死 import 箭嘴，一旦有人過界，跑 `lint:check` 嗰陣即刻自動紅燈：
+由於 `dn-ioc` 喺 runtime 只處理 handle，唔會干預靜態 `import` 語句，日常開發記實下面張分層依賴方向表就夠：
 
 | 分層目錄 | 准許引入嘅專案路徑 | 嚴禁引入嘅專案路徑 |
 | --- | --- | --- |
@@ -104,93 +104,5 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
 | **`application/`** | `domain/` | `infra/`、`main.ts` |
 | **`infra/`** | `domain/` | `application/`、`main.ts` |
 | **`main.ts`（各個入口檔）** | `application/`、`infra/`、`domain/` | — |
-
-<Code
-  title="biome.json"
-  lang="json"
-  code={`{
-  "overrides": [
-    {
-      "includes": ["src/domain/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["../application/**", "../infra/**", "**/application/**", "**/infra/**"],
-                    "message": "domain/ must stay pure and cannot import application/ or infra/."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "includes": ["src/application/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["../infra/**", "**/infra/**"],
-                    "message": "application/ must depend on domain/ tokens, not infra/ adapters."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    }
-  ]
-}`}
-/>
-
-<Code
-  title="eslint.config.js"
-  lang="js"
-  code={`export default [
-  {
-    files: ['src/domain/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['../application/*', '../application/**', '../infra/*', '../infra/**'],
-              message: 'domain/ must stay pure and cannot import application/ or infra/.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ['src/application/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['../infra/*', '../infra/**'],
-              message: 'application/ must depend on domain/ tokens, not infra/ adapters.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-]`}
-/>
 
 睇完兩種專案架構之後，下一篇我哋將單元測試同整合測試擺埋一齊對比——即刻揭去[測試與替身模擬](/zh-hant-hk/testing/)。

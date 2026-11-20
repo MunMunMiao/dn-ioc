@@ -50,10 +50,4 @@ import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' wit
 - 엄격한 DDD 서비스라 하더라도 **애플리케이션 유스케이스**(`orderServiceRef`)나 **인프라 내부 전용 클라이언트**(`sqlTableRef`)는 평범한 `Ref`로 만들어요. 이들을 호출하는 쪽은 이미 바깥 계층이거나 같은 계층에 있어서 직접 `import`하는 게 자연스럽기 때문이에요. 안쪽 계층에서 바깥쪽 어댑터로 향하는 경계 포트에만 `token()`을 쓰면 충분해요.
 - 반대로 단순한 MVC 앱이라도 런타임 `DatabaseUrl` 문자열이나 단위 테스트에서 실수로 실제 결제를 호출하면 큰일 나는 외부 결제 게이트웨이에는 언제든 `token()`을 섞어 쓸 수 있어요.
 
-<Callout kind="note" title="아키텍처 경계는 린터(Linter)로 함께 잠가 두세요">
-
-`dn-ioc`는 런타임에 핸들을 해석할 뿐 TypeScript의 `import` 구문 자체를 검사하지는 않아요. `domain/`이 `infra/`에 의존하지 않도록 `Token`을 선택했다면, Biome나 ESLint의 `noRestrictedImports` 규칙을 함께 걸어서 실수로 들어간 역방향 `import`가 CI에서 바로 잡히게 만들어 두세요.
-
-</Callout>
-
 이제 완성된 멀티 파일 프로젝트를 따라가며 두 패턴을 직접 확인해 볼까요? 위에서 아래로 직관적으로 조립하는 [실전 MVC 패턴](/ko/mvc/)부터 보셔도 좋고, 포트와 어댑터로 의존성을 역전시키는 [DDD와 클린 아키텍처](/ko/ddd/)로 바로 넘어가셔도 좋아요.

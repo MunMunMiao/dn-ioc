@@ -3,7 +3,7 @@ title: "DDD y Arquitectura Limpia"
 slug: "ddd"
 part: patterns
 order: 11
-summary: "Mantén las capas de dominio y aplicación libres de imports de SQL, HTTP y SDKs usando puertos puros con token(), paquetes de adaptadores de infraestructura y reglas de linter."
+summary: "Mantén las capas de dominio y aplicación libres de imports de SQL, HTTP y SDKs usando puertos puros con token(), paquetes de adaptadores de infraestructura y límites claros entre capas."
 ---
 import orderServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
 import domainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
@@ -94,9 +94,9 @@ Como `infraProviders` es un valor reutilizable y `orderServiceRef` no arrastra n
   ]}
 />
 
-## 5. Blindar la dirección de las capas con Biome o ESLint
+## 5. Fronteras de importación entre capas
 
-Como `dn-ioc` trabaja con manejadores en tiempo de ejecución, nada dentro del núcleo impide que el auto-import del editor de alguien cuele `../infra/sql-order-repository` en `application/order-service.ts`. Fija la dirección de los imports con una regla del linter para que cualquier desvío rompa `lint:check` automáticamente:
+Como `dn-ioc` solo trabaja con manejadores en tiempo de ejecución, ten presentes estas reglas de dirección de imports entre carpetas:
 
 | Capa | Imports del proyecto permitidos | Imports del proyecto prohibidos |
 | --- | --- | --- |
@@ -104,93 +104,5 @@ Como `dn-ioc` trabaja con manejadores en tiempo de ejecución, nada dentro del n
 | **`application/`** | `domain/` | `infra/`, `main.ts` |
 | **`infra/`** | `domain/` | `application/`, `main.ts` |
 | **`main.ts` (Puntos de entrada)** | `application/`, `infra/`, `domain/` | — |
-
-<Code
-  title="biome.json"
-  lang="json"
-  code={`{
-  "overrides": [
-    {
-      "includes": ["src/domain/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["../application/**", "../infra/**", "**/application/**", "**/infra/**"],
-                    "message": "domain/ must stay pure and cannot import application/ or infra/."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "includes": ["src/application/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["../infra/**", "**/infra/**"],
-                    "message": "application/ must depend on domain/ tokens, not infra/ adapters."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    }
-  ]
-}`}
-/>
-
-<Code
-  title="eslint.config.js"
-  lang="js"
-  code={`export default [
-  {
-    files: ['src/domain/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['../application/*', '../application/**', '../infra/*', '../infra/**'],
-              message: 'domain/ must stay pure and cannot import application/ or infra/.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ['src/application/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['../infra/*', '../infra/**'],
-              message: 'application/ must depend on domain/ tokens, not infra/ adapters.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-]`}
-/>
 
 Ahora pongamos mano a mano las estrategias de tests unitarios y de integración en [Pruebas y mocks](/es/testing/).

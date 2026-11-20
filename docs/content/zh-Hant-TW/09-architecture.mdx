@@ -50,10 +50,4 @@ import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' wit
 - 即使在嚴格的 DDD 專案裡，**應用層 Use Case**（`orderServiceRef`）與 **`infra/` 內部私有的底層客戶端**（`sqlTableRef`）依然會直接寫成普通的 `Ref`，因為呼叫它們的模組本來就位於外層或同一層，直接匯入完全合理。只有真正從內層跨越到外層轉接器的邊界連接埠，才需要動用 `token()`。
 - 即使在單純的 MVC 專案裡，遇到執行期 `DatabaseUrl` 字串或絕對不想在單元測試裡不小心打出去的第三方金流閘道，同樣可以用 `token()` 把關。
 
-<Callout kind="note" title="搭配 Linter 守住架構匯入邊界">
-
-`dn-ioc` 只在執行期解析控柄，並不會檢查你的 TypeScript `import` 語句。如果你選擇用 `Token` 讓 `domain/` 遠離 `infra/` 相依套件，記得搭配 Biome 或 ESLint 的 `noRestrictedImports` 規則，萬一編輯器自動匯入不小心拉錯路徑，CI 檢查就能第一時間擋下來。
-
-</Callout>
-
 接下來，我們直接透過完整的多檔案範例走過這兩種架構：想看直覺的自頂向下分層組裝，請先翻到 [MVC 架構實戰](/zh-hant-tw/mvc/)；想看連接埠與轉接器（Port & Adapter）的依賴反轉，請前往 [DDD 與整潔架構實戰](/zh-hant-tw/ddd/)。

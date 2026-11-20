@@ -50,10 +50,4 @@ Choosing between `Ref` and `Token` isn't a repo-wide religion—most production 
 - Even in a strict DDD service, **application use cases** (`orderServiceRef`) and **private infrastructure clients** (`sqlTableRef`) are plain `Ref`s because their callers live in outer or same-tier modules that are meant to import them. Only the boundary ports crossing from inner layers to outer adapters need `token()`.
 - Even in a straightforward MVC app, you can reach for `token()` for a runtime `DatabaseUrl` string or a third-party payment gateway you never want unit tests hitting by accident.
 
-<Callout kind="note" title="Back up architectural boundaries with a linter">
-
-`dn-ioc` resolves handles at runtime—it never sees your TypeScript `import` statements. If you choose `Token` to keep `domain/` free of `infra/` dependencies, pair it with a Biome or ESLint `noRestrictedImports` rule so accidental outward imports fail in CI.
-
-</Callout>
-
 Next, let's walk through both patterns across complete, multi-file projects: start with [MVC Pattern in Practice](/mvc/) for direct top-down composition, or flip to [DDD & Clean Architecture](/ddd/) for port-and-adapter inversion.

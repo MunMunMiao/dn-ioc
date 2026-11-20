@@ -715,6 +715,7 @@ describe('buildDocsSite', () => {
         expect(html).not.toMatch(/dn-ioc@\d|@0\.\d+\.\d+|v0\.\d+\.\d+/)
         expect(html).not.toMatch(/\b\d+(?:\.\d+)?\s*kB\b|gzip/i)
         expect(html).not.toContain('provide(function ')
+        expect(html).not.toMatch(/biome\.json|eslint\.config|\bbiome\b|\beslint\b/i)
 
         const normalizedPath = htmlFile.replaceAll('\\', '/')
         const expectsTree = /\/(?:architecture|mvc|ddd)\/index\.html$/.test(normalizedPath)

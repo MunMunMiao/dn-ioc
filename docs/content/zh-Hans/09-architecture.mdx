@@ -50,10 +50,4 @@ import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' wit
 - 就算在最严格的 DDD 服务里，**应用层用例**（`orderServiceRef`）和 **`infra/` 内部的私有底层客户端**（`sqlTableRef`）照样写成普通 `Ref`，因为调用它们的人本来就处在外层或同层，本来就该直接 `import` 它们。只有从内层跨越边界指向外层适配器的端口，才需要动用 `token()`。
 - 就算在最直白的 MVC 项目里，碰到 `DatabaseUrl` 连接串，或者单测里绝对不想误调扣钱的第三方支付网关，也完全可以单拎出来用 `token()` 锁死。
 
-<Callout kind="note" title="别忘了用 Linter 守住架构边界">
-
-`dn-ioc` 只在运行时解析句柄，管不到你源码顶部的 TypeScript `import` 语句。如果你选了 `Token` 来保证 `domain/` 不去碰 `infra/`，记得顺手配一条 Biome 或 ESLint 的 `noRestrictedImports` 规则，谁在编辑器里手滑自动导入了外层目录，CI 直接挂红拦住。
-
-</Callout>
-
 接下来我们直接拆两个完整的多文件实战项目：想看自顶向下清爽直连的写法，先看 [MVC 工程实战指南](/zh-hans/mvc/)；想看端口与适配器依赖倒置的写法，直接翻到 [DDD 与整洁架构实战](/zh-hans/ddd/)。

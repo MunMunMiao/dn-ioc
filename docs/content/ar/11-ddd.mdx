@@ -3,7 +3,7 @@ title: "DDD والعمارة النظيفة"
 slug: "ddd"
 part: patterns
 order: 11
-summary: "أبقِ طبقات المجال والتطبيق نظيفة من استيرادات SQL و HTTP و SDK عبر منافذ token() الصافية، وحزم محوّلات البنية التحتية، وقواعد اللينت."
+summary: "أبقِ طبقات المجال والتطبيق نظيفة من استيرادات SQL و HTTP و SDK عبر منافذ token() الصافية، وحزم محوّلات البنية التحتية، وحدود طبقات واضحة."
 ---
 import orderServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
 import domainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
@@ -94,9 +94,9 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
   ]}
 />
 
-## 5. فرض اتجاه الطبقات عبر Biome أو ESLint
+## 5. حدود الاستيراد بين الطبقات
 
-بما أن `dn-ioc` ما تشوف إلا المقابض في وقت التشغيل، فما في شيء داخل النواة نفسها يمنع الإكمال التلقائي في محرّر زميلك من سحب `../infra/sql-order-repository` إلى `application/order-service.ts`. قفّل أسهم الاستيراد في مكانها بقاعدة linter حتى يكسر أي انحراف معماري أمر `lint:check` تلقائياً:
+بما أن `dn-ioc` تتعامل مع المقابض في وقت التشغيل فقط، التزم بجدول اتجاهات الاستيراد التالي بين مجلدات المشروع:
 
 | الطبقة | استيرادات المشروع المسموحة | استيرادات المشروع الممنوعة |
 | --- | --- | --- |
@@ -104,93 +104,5 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
 | **`application/`** | `domain/` | `infra/`, `main.ts` |
 | **`infra/`** | `domain/` | `application/`, `main.ts` |
 | **`main.ts` (نقاط الدخول)** | `application/`, `infra/`, `domain/` | — |
-
-<Code
-  title="biome.json"
-  lang="json"
-  code={`{
-  "overrides": [
-    {
-      "includes": ["src/domain/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["../application/**", "../infra/**", "**/application/**", "**/infra/**"],
-                    "message": "domain/ must stay pure and cannot import application/ or infra/."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "includes": ["src/application/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["../infra/**", "**/infra/**"],
-                    "message": "application/ must depend on domain/ tokens, not infra/ adapters."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    }
-  ]
-}`}
-/>
-
-<Code
-  title="eslint.config.js"
-  lang="js"
-  code={`export default [
-  {
-    files: ['src/domain/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['../application/*', '../application/**', '../infra/*', '../infra/**'],
-              message: 'domain/ must stay pure and cannot import application/ or infra/.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ['src/application/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['../infra/*', '../infra/**'],
-              message: 'application/ must depend on domain/ tokens, not infra/ adapters.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-]`}
-/>
 
 الآن خلّينا نحط أنماط اختبارات الوحدة والتكامل جنباً إلى جنب في [الاختبارات و Mocking](/ar/testing/).

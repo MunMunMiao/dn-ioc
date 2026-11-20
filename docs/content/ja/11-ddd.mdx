@@ -3,7 +3,7 @@ title: "DDD とクリーンアーキテクチャ"
 slug: "ddd"
 part: patterns
 order: 11
-summary: "純粋な token() ポート、インフラ層の bundleProviders()、そして Linter による境界保護で、ドメイン層とアプリケーション層から SQL や外部 SDK の import を完全に排除します。"
+summary: "純粋な token() ポート、インフラ層の bundleProviders()、明確なレイヤー境界によって、ドメイン層とアプリケーション層から SQL や外部 SDK の import を完全に排除します。"
 ---
 import orderServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
 import domainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
@@ -94,9 +94,9 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
   ]}
 />
 
-## 5. Biome / ESLint でレイヤーの依存方向を強制する
+## 5. レイヤー間の import 境界まとめ
 
-`dn-ioc` が扱うのは実行時のハンドルだけなので、チームメンバーのエディタ自動補完がうっかり `application/order-service.ts` に `../infra/sql-order-repository` を import してしまうこと自体はカーネルでは止められません。Linter のルールで import の矢印を固定しておけば、アーキテクチャ違反が混入した瞬間に `lint:check` で自動的に弾けます。
+`dn-ioc` が扱うのは実行時のハンドルだけで、静的な `import` 文までは監視しません。各ディレクトリ間の依存方向は次のルールを目安に保ちましょう。
 
 | レイヤー | 許可するプロジェクト内 import | 禁止するプロジェクト内 import |
 | --- | --- | --- |
@@ -104,93 +104,5 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
 | **`application/`** | `domain/` | `infra/`, `main.ts` |
 | **`infra/`** | `domain/` | `application/`, `main.ts` |
 | **`main.ts`（エントリポイント）** | `application/`, `infra/`, `domain/` | — |
-
-<Code
-  title="biome.json"
-  lang="json"
-  code={`{
-  "overrides": [
-    {
-      "includes": ["src/domain/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["../application/**", "../infra/**", "**/application/**", "**/infra/**"],
-                    "message": "domain/ must stay pure and cannot import application/ or infra/."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "includes": ["src/application/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["../infra/**", "**/infra/**"],
-                    "message": "application/ must depend on domain/ tokens, not infra/ adapters."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    }
-  ]
-}`}
-/>
-
-<Code
-  title="eslint.config.js"
-  lang="js"
-  code={`export default [
-  {
-    files: ['src/domain/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['../application/*', '../application/**', '../infra/*', '../infra/**'],
-              message: 'domain/ must stay pure and cannot import application/ or infra/.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ['src/application/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['../infra/*', '../infra/**'],
-              message: 'application/ must depend on domain/ tokens, not infra/ adapters.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-]`}
-/>
 
 続いて、[テストとモック差し替え](/ja/testing/) で単体テストと結合テストの実践パターンを並べて見ていきましょう。

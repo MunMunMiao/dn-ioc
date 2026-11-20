@@ -50,10 +50,4 @@ import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' wit
 - 就算係最嚴格嘅 DDD 服務，**應用層 Use Case**（`orderServiceRef`）同埋 **`infra/` 內部私有嘅底層 client**（`sqlTableRef`）一樣係直接寫成普通 `Ref`，因為呼叫佢哋嘅人本來就喺外層或者同一層，直接 `import` 係天經地義。只有真正由內層跨出去外層 adapter 嗰道邊界 port，先至需要動用 `token()`。
 - 就算係最直白嘅 MVC 專案，遇到連線字串 `DatabaseUrl` 或者第三方扣數金流 SDK 呢類「單元測試死都唔應該唔小心打真電話出去」嘅外部邊界，一樣可以抽個 `token()` 出嚟守住門口。
 
-<Callout kind="note" title="記住配埋 Linter 鎖實架構邊界">
-
-`dn-ioc` 只負責喺 runtime 解析 handle，佢睇唔到你喺 TypeScript 檔案頭寫咗邊句 `import`。如果你揀咗用 `Token` 嚟保護 `domain/` 唔好掂到 `infra/`，記得順手配返條 Biome 或 ESLint 嘅 `noRestrictedImports` 規則，萬一同事個編輯器自動 import 錯咗方向，CI 一跑即刻攔截到。
-
-</Callout>
-
 跟住落嚟，我哋會用兩個完整嘅多檔案範例，由頭到尾行一次呢兩種架構：想睇直接自頂向下組裝，先揭去 [MVC 架構實戰](/zh-hant-hk/mvc/)；想睇 Port 與 Adapter 依賴倒置，可以跳去 [DDD 與整潔架構實戰](/zh-hant-hk/ddd/)。

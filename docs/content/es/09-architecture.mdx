@@ -50,10 +50,4 @@ Elegir entre `Ref` y `Token` no es una religión de todo o nada: casi cualquier 
 - Incluso en un servicio DDD estricto, los **casos de uso de aplicación** (`orderServiceRef`) y los **clientes privados de infraestructura** (`sqlTableRef`) son simples `Ref` porque quienes los llaman viven en capas externas o del mismo nivel que sí deben importarlos. Solo los puertos de frontera que cruzan desde capas internas hacia adaptadores externos necesitan `token()`.
 - E incluso en una app MVC sencilla puedes tirar de `token()` para una cadena `DatabaseUrl` cargada al arrancar o una pasarela de pagos externa que jamás querrías disparar por descuido desde un test unitario.
 
-<Callout kind="note" title="Respalda las fronteras de arquitectura con el linter">
-
-`dn-ioc` resuelve manejadores en tiempo de ejecución: nunca inspecciona tus sentencias `import` de TypeScript. Si eliges `Token` para mantener `domain/` libre de dependencias hacia `infra/`, acompáñalo con una regla `noRestrictedImports` en Biome o ESLint para que cualquier auto-import despistado falle en CI.
-
-</Callout>
-
 Ahora recorramos ambos patrones en proyectos completos de varios archivos: empieza por [Patrón MVC en la práctica](/es/mvc/) para composición directa de arriba abajo, o salta a [DDD y Arquitectura Limpia](/es/ddd/) para inversión de puertos y adaptadores.

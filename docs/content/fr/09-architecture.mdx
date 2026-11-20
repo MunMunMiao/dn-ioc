@@ -50,10 +50,4 @@ Choisir entre `Ref` et `Token` n’a rien d’un dogme à appliquer à tout le d
 - Même dans un service DDD très strict, les **cas d’usage applicatifs** (`orderServiceRef`) et les **clients privés d’infrastructure** (`sqlTableRef`) restent de simples `Ref`, parce que leurs appelants vivent dans des couches externes ou de même niveau censées les importer. Seuls les ports de frontière qui traversent des couches internes vers les adaptateurs externes ont besoin de `token()`.
 - Et même dans une appli MVC classique, rien ne t’empêche d’utiliser `token()` pour une chaîne `DatabaseUrl` résolue au lancement ou une passerelle de paiement externe que tu ne veux surtout jamais appeler par erreur dans un test unitaire.
 
-<Callout kind="note" title="Verrouille tes frontières d’architecture avec un linter">
-
-`dn-ioc` résout des handles à l’exécution : il ne voit jamais tes instructions `import` TypeScript. Si tu choisis `Token` pour garder `domain/` isolé de `infra/`, ajoute une règle `noRestrictedImports` dans Biome ou ESLint afin que tout import accidentel vers l’extérieur casse immédiatement en CI.
-
-</Callout>
-
 Voyons maintenant ces deux approches sur des projets complets multi-fichiers : commence par [Pattern MVC en pratique](/fr/mvc/) pour une composition directe de haut en bas, ou passe à [DDD et Clean Architecture](/fr/ddd/) pour l’inversion par ports et adaptateurs.

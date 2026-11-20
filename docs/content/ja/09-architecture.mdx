@@ -50,10 +50,4 @@ import mvcUserServiceCode from '../../examples/mvc/services/user-service.ts' wit
 - かっちりした DDD のサービスであっても、**アプリケーション層のユースケース**（`orderServiceRef`）や **`infra/` 内部のプライベートなクライアント**（`sqlTableRef`）はただの `Ref` で十分です。これらを呼ぶ側は外側または同じ層にいて、直接 import するのが正しい方向だからです。`token()` が必要なのは、内側の層から外側のアダプタへ矢印を逆転させたい境界ポートだけです。
 - シンプルな MVC アプリであっても、実行時にしか決まらない `DatabaseUrl` 文字列や、「単体テストでうっかり本物を叩いたら大事故になる外部決済 API」などにはピンポイントで `token()` を混ぜることができます。
 
-<Callout kind="note" title="アーキテクチャ境界は Linter でも守ろう">
-
-`dn-ioc` が解決するのは実行時のハンドルであり、TypeScript の `import` 文そのものを監視するわけではありません。`domain/` から `infra/` への依存を断つために `Token` を選んだなら、Biome や ESLint の `noRestrictedImports` ルールもセットで入れて、うっかり逆方向の自動 import が混ざったら CI で落とすようにしておくのが鉄板です。
-
-</Callout>
-
 次の2章では、複数ファイルで構成された実践プロジェクトを通して両方のパターンを丸ごと追いかけていきます。上から下へ素直に組む [実践 MVC パターン](/ja/mvc/) から読んでも、ポートとアダプタで依存を逆転させる [DDD とクリーンアーキテクチャ](/ja/ddd/) から読んでもOKです。

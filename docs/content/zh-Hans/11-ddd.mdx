@@ -3,7 +3,7 @@ title: "DDD 与整洁架构实战"
 slug: "ddd"
 part: patterns
 order: 11
-summary: "用零实现的 token() 端口、基础设施适配器 bundle 与 Linter 边界规则，让 domain 和 application 层彻底摆脱 SQL、HTTP 和第三方 SDK 依赖。"
+summary: "用零实现的 token() 端口、基础设施适配器 bundle 与清晰的分层边界，让 domain 和 application 层彻底摆脱 SQL、HTTP 和第三方 SDK 依赖。"
 ---
 import orderServiceCode from '../../examples/ddd/application/order-service.ts' with { type: 'text' }
 import domainOrderCode from '../../examples/ddd/domain/order.ts' with { type: 'text' }
@@ -94,9 +94,9 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
   ]}
 />
 
-## 5. 用 Biome 或 ESLint 把分层方向锁死
+## 5. 分层导入边界速查
 
-`dn-ioc` 只管运行时的依赖句柄，拦不住队友写代码时被编辑器自动补全悄悄把 `../infra/sql-order-repository` 引进 `application/order-service.ts`。最稳的做法是直接上 Linter 规则把导入方向焊死，谁破了规矩 `lint:check` 当场报错：
+`dn-ioc` 只在运行时解析依赖句柄，不会干预静态 `import` 语句；日常协作时按下面这张表守住各层目录的导入方向即可：
 
 | 目录分层 | 允许引用的项目内目录 | 严禁引用的项目内目录 |
 | --- | --- | --- |
@@ -104,93 +104,5 @@ import dddUnitTestCode from '../../examples/ddd/order-service-unit-example.ts' w
 | **`application/`** | `domain/` | `infra/`、`main.ts` |
 | **`infra/`** | `domain/` | `application/`、`main.ts` |
 | **`main.ts`（各入口文件）** | `application/`、`infra/`、`domain/` | — |
-
-<Code
-  title="biome.json"
-  lang="json"
-  code={`{
-  "overrides": [
-    {
-      "includes": ["src/domain/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["../application/**", "../infra/**", "**/application/**", "**/infra/**"],
-                    "message": "domain/ must stay pure and cannot import application/ or infra/."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "includes": ["src/application/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["../infra/**", "**/infra/**"],
-                    "message": "application/ must depend on domain/ tokens, not infra/ adapters."
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    }
-  ]
-}`}
-/>
-
-<Code
-  title="eslint.config.js"
-  lang="js"
-  code={`export default [
-  {
-    files: ['src/domain/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['../application/*', '../application/**', '../infra/*', '../infra/**'],
-              message: 'domain/ must stay pure and cannot import application/ or infra/.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ['src/application/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['../infra/*', '../infra/**'],
-              message: 'application/ must depend on domain/ tokens, not infra/ adapters.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-]`}
-/>
 
 架构搭清楚了，下一章我们把单元测试和集成测试的实战套路摆到一块儿细聊，请翻到[测试与依赖替换](/zh-hans/testing/)。
