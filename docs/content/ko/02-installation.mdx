@@ -6,7 +6,7 @@ order: 2
 summary: "패키지 매니저로 dn-ioc를 설치하거나 Deno·브라우저 CDN에서 바로 불러오는 방법, 그리고 TypeScript bundler 해상도 설정을 안내해요."
 ---
 
-`dn-ioc`는 외부 의존성이 하나도 없는 순수 ESM 패키지(`4.8 kB` minified, `1.9 kB` gzipped)로 배포돼요. 명령어 한 줄이면 설치가 끝나고 `node_modules`에 불필요한 하위 패키지를 잔뜩 끌고 오지도 않죠. 프로젝트에서 쓰던 패키지 매니저로 바로 설치하거나, Deno의 `npm:` 지정자나 브라우저 CDN에서 곧장 불러와 보세요.
+`dn-ioc`는 외부 의존성이 하나도 없는 가벼운 순수 ESM 패키지로 배포돼요. 명령어 한 줄이면 설치가 끝나고 `node_modules`에 불필요한 하위 패키지를 잔뜩 끌고 오지도 않죠. 프로젝트에서 쓰던 패키지 매니저로 바로 설치하거나, Deno의 `npm:` 지정자나 브라우저 CDN에서 곧장 불러와 보세요.
 
 <Code
   title="install.sh"
@@ -34,7 +34,7 @@ deno add npm:dn-ioc`}
 
 | CDN | URL | 제공하는 파일 |
 | --- | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js` (`4.8 kB`, gzip `1.9 kB`) |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js` (압축된 ESM 빌드) |
 | unpkg | `https://unpkg.com/dn-ioc` | `index.min.js` — 완전히 동일한 파일 |
 | esm.sh | `https://esm.sh/dn-ioc` | esm.sh가 자체 변환한 빌드 |
 

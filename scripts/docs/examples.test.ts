@@ -153,10 +153,12 @@ describe('docs/examples suite', () => {
     expect(llms).toContain('Human reference: https://dn-ioc.lyz.cloud/')
     expect(llms).not.toContain('[index.html](index.html)')
     expect(llms).not.toMatch(/dn-ioc@\d|Version \d+\.\d+/i)
+    expect(llms).not.toMatch(/\b\d+(?:\.\d+)?\s*kB\b|gzip/i)
 
     expect(skill).toMatch(/^---\nname: dn-ioc\ndescription: Use when [^\n]+\n---/)
     expect(skill).not.toMatch(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\u0600-\u06ff]/)
     expect(skill).not.toMatch(/dn-ioc@\d|Version \d+\.\d+/i)
+    expect(skill).not.toMatch(/\b\d+(?:\.\d+)?\s*kB\b|gzip/i)
     expect(skill.split('\n').length).toBeLessThanOrEqual(120)
 
     const requiredFunctions = ['token', 'provide', 'provideFor', 'bundleProviders', 'isProvideRef', 'bootstrapApp']

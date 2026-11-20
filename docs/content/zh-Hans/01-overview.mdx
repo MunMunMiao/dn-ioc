@@ -42,7 +42,7 @@ import minimalCode from '../../examples/overview/minimal.ts' with { type: 'text'
 
 ## 只要能跑 JavaScript 的地方都能跑
 
-`dn-ioc` 零运行时依赖，压缩后仅 `4.8 kB`（gzip 后 `1.9 kB`）。
+`dn-ioc` 是一个轻量的零运行时依赖纯 ESM 包。
 
 更关键的是，内核**不碰任何平台专属 API**——不读 `process`，不碰 DOM 全局对象，也不挂定时器。同一套依赖图，放到 Node.js、Bun、Deno、浏览器、Web Worker，甚至 Serverless 和边缘运行时里，一行不改照样跑。各个平台的退出信号长得完全不一样，内核不会替你瞎猜；需要优雅退出时，把 `app.stop()` 接到对应运行时的信号或组件卸载钩子上就行（详见[生命周期与资源清理](/zh-hans/lifecycle/)）。
 

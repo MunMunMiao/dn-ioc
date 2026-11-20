@@ -6,7 +6,7 @@ order: 2
 summary: "普段使いのパッケージマネージャでの導入から、Deno の直接 import、ブラウザ CDN、TypeScript の bundler 設定までをまとめます。"
 ---
 
-`dn-ioc` は依存ゼロの単一 ESM パッケージ（minify 後 `4.8 kB`、gzip `1.9 kB`）として配布されています。コマンド1つで入りますし、`node_modules` に余計な間接依存を持ち込むこともありません。普段プロジェクトで使っているパッケージマネージャで入れるのはもちろん、Deno の `npm:` 指定子やブラウザの CDN から直接読み込むこともできます。
+`dn-ioc` は軽量かつ依存ゼロの単一 ESM パッケージとして配布されています。コマンド1つで入りますし、`node_modules` に余計な間接依存を持ち込むこともありません。普段プロジェクトで使っているパッケージマネージャで入れるのはもちろん、Deno の `npm:` 指定子やブラウザの CDN から直接読み込むこともできます。
 
 <Code
   title="install.sh"
@@ -34,7 +34,7 @@ Web ページで `dn-ioc` を使うのにバンドラは必須ではありませ
 
 | CDN | URL | 配信される中身 |
 | --- | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js`（`4.8 kB`、gzip `1.9 kB`） |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js`（minify 済み ESM ビルド） |
 | unpkg | `https://unpkg.com/dn-ioc` | `index.min.js` — 上とまったく同じファイル |
 | esm.sh | `https://esm.sh/dn-ioc` | esm.sh 側でトランスパイルされたビルド |
 

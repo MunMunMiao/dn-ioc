@@ -42,7 +42,7 @@ Toute l’API publique au runtime tient en six fonctions. Une fois que tu vois c
 
 ## Tourne partout où JavaScript tourne
 
-`dn-ioc` n’a aucune dépendance au runtime et pèse `4.8 kB` minifié (`1.9 kB` en gzip).
+`dn-ioc` est un paquet ESM léger, sans aucune dépendance au runtime.
 
 Surtout, le noyau ne touche à **aucune API spécifique à une plateforme** : pas de `process`, pas de globales DOM, pas de timers. Exactement le même graphe de dépendances tourne tel quel sur Node.js, Bun, Deno, dans les navigateurs, les Web Workers et les environnements serverless ou edge. Comme les signaux d’arrêt diffèrent d’un environnement à l’autre, le noyau ne devine rien à ta place : tu branches `app.stop()` sur le signal ou le démontage propre à ta cible quand c’est utile (voir [Cycle de vie et nettoyage](/fr/lifecycle/)).
 

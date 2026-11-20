@@ -6,7 +6,7 @@ order: 2
 summary: "用開慣嘅套件管理工具安裝 dn-ioc、喺 Deno 或瀏覽器 CDN 直接引入，以及設定好 TypeScript bundler 解析模式。"
 ---
 
-`dn-ioc` 係一個零外部依賴嘅純 ESM 套件（minify 後 `4.8 kB`，gzip 後 `1.9 kB`），一行指令就裝好，唔會順手拖一大堆雜七雜八嘅間接依賴入 `node_modules`。你平時個專案用開邊套套件管理工具就照用邊套，喺 Deno 用 `npm:` 或者喺瀏覽器直接拉 CDN 都一樣咁方便。
+`dn-ioc` 係一個輕量、零外部依賴嘅純 ESM 套件，一行指令就裝好，唔會順手拖一大堆雜七雜八嘅間接依賴入 `node_modules`。你平時個專案用開邊套套件管理工具就照用邊套，喺 Deno 用 `npm:` 或者喺瀏覽器直接拉 CDN 都一樣咁方便。
 
 <Code
   title="install.sh"
@@ -34,7 +34,7 @@ deno add npm:dn-ioc`}
 
 | CDN | URL | 實際派發內容 |
 | --- | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js`（`4.8 kB`，gzip 後 `1.9 kB`） |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js`（minify 後嘅 ESM 檔案） |
 | unpkg | `https://unpkg.com/dn-ioc` | `index.min.js` —— 同上面完全同一個檔案 |
 | esm.sh | `https://esm.sh/dn-ioc` | esm.sh 自己轉譯出嚟嘅產物 |
 

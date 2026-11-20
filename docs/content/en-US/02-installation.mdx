@@ -6,7 +6,7 @@ order: 2
 summary: "Install dn-ioc with your package manager, import it directly on Deno or from a browser CDN, and configure TypeScript bundler resolution."
 ---
 
-`dn-ioc` ships as a zero-dependency ESM package (`4.8 kB` minified, `1.9 kB` gzipped), so installing it takes one command and brings zero transitive baggage into `node_modules`. Grab it with whichever package manager your project already uses, or pull it straight from `npm:` on Deno or a CDN in the browser.
+`dn-ioc` ships as a lightweight, zero-dependency ESM package, so installing it takes one command and brings zero transitive baggage into `node_modules`. Grab it with whichever package manager your project already uses, or pull it straight from `npm:` on Deno or a CDN in the browser.
 
 <Code
   title="install.sh"
@@ -34,7 +34,7 @@ You don't need a bundler to use `dn-ioc` in a web page. Modern browsers can load
 
 | CDN | URL | What it serves |
 | --- | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js` (`4.8 kB`, `1.9 kB` gzipped) |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js` (minified ESM build) |
 | unpkg | `https://unpkg.com/dn-ioc` | `index.min.js` — exact same file |
 | esm.sh | `https://esm.sh/dn-ioc` | esm.sh's own transpiled build |
 

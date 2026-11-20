@@ -6,7 +6,7 @@ order: 2
 summary: "用常用包管理器安装 dn-ioc，在 Deno 或浏览器 CDN 中直接加载，并配好 TypeScript 的 bundler 模块解析。"
 ---
 
-`dn-ioc` 发布的是零依赖纯 ESM 包（压缩后 `4.8 kB`，gzip 后 `1.9 kB`），一行命令装完，不会往你的 `node_modules` 里塞任何传递依赖。平时项目里用什么包管理器就用什么装；如果在写 Deno 脚本或纯静态网页，直接走 `npm:` 协议或浏览器 CDN 拉下来就能跑。
+`dn-ioc` 发布的是轻量的零依赖纯 ESM 包，一行命令装完，不会往你的 `node_modules` 里塞任何传递依赖。平时项目里用什么包管理器就用什么装；如果在写 Deno 脚本或纯静态网页，直接走 `npm:` 协议或浏览器 CDN 拉下来就能跑。
 
 <Code
   title="install.sh"
@@ -34,7 +34,7 @@ deno add npm:dn-ioc`}
 
 | CDN | URL | 实际返回的文件 |
 | --- | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js`（`4.8 kB`，gzip 后 `1.9 kB`） |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js`（压缩后的 ESM 产物） |
 | unpkg | `https://unpkg.com/dn-ioc` | `index.min.js` —— 跟上面是同一个文件 |
 | esm.sh | `https://esm.sh/dn-ioc` | esm.sh 自己转译打包的产物 |
 

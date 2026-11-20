@@ -6,7 +6,7 @@ order: 2
 summary: "ثبّت dn-ioc بمدير الحزم الذي تستخدمه، أو استوردها مباشرة على Deno أو من CDN المتصفح، واضبط إعدادات TypeScript."
 ---
 
-`dn-ioc` عبارة عن حزمة ESM بدون أي تبعيات خارجية (`4.8 kB` بعد الضغط، و`1.9 kB` مضغوطة بـ gzip)، يعني تثبيتها ياخذ أمراً واحداً وما يجر معها أي حزم إضافية في `node_modules`. نزّلها بأي مدير حزم تستخدمه في مشروعك، أو اسحبها مباشرة بصيغة `npm:` على Deno أو من CDN في المتصفح.
+`dn-ioc` عبارة عن حزمة ESM خفيفة بدون أي تبعيات خارجية، يعني تثبيتها ياخذ أمراً واحداً وما يجر معها أي حزم إضافية في `node_modules`. نزّلها بأي مدير حزم تستخدمه في مشروعك، أو اسحبها مباشرة بصيغة `npm:` على Deno أو من CDN في المتصفح.
 
 <Code
   title="install.sh"
@@ -34,7 +34,7 @@ deno add npm:dn-ioc`}
 
 | الـ CDN | الرابط | ماذا يقدّم |
 | --- | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js` (`4.8 kB`، `1.9 kB` بـ gzip) |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js` (نسخة ESM مضغوطة) |
 | unpkg | `https://unpkg.com/dn-ioc` | `index.min.js` — نفس الملف بالضبط |
 | esm.sh | `https://esm.sh/dn-ioc` | نسخة esm.sh المحوّلة الخاصة بها |
 

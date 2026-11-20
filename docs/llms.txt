@@ -4,7 +4,7 @@
 
 - **Runtime:** ESM-only. TypeScript requires `"moduleResolution": "bundler"` (`NodeNext` / `Node16` unsupported). Uses no platform APIs (`process`, DOM, timers); runs identically on Node.js, Bun, Deno, browsers, workers, and edge runtimes.
 - **Install:** `npm install dn-ioc` | `pnpm add dn-ioc` | `yarn add dn-ioc` | `bun add dn-ioc` | `deno add npm:dn-ioc` (or direct `import ... from 'npm:dn-ioc'`).
-- **Browser CDN:** `https://cdn.jsdelivr.net/npm/dn-ioc` or `https://unpkg.com/dn-ioc` (`index.min.js`, 4.8 kB / 1.9 kB gzipped), or `https://esm.sh/dn-ioc`. Append a version tag in production to pin a release.
+- **Browser CDN:** `https://cdn.jsdelivr.net/npm/dn-ioc` or `https://unpkg.com/dn-ioc` (`index.min.js`), or `https://esm.sh/dn-ioc`. Append a version tag in production to pin a release.
 - **Links:** Human reference: https://dn-ioc.lyz.cloud/ — Repository: https://github.com/MunMunMiao/dn-ioc
 
 ## Constraints (Do Not Invent)

@@ -6,7 +6,7 @@ order: 2
 summary: "Instala dn-ioc con tu gestor de paquetes habitual, impórtalo directo en Deno o desde un CDN en el navegador y configura TypeScript en modo bundler."
 ---
 
-`dn-ioc` se distribuye como paquete ESM sin dependencias (`4.8 kB` minificado, `1.9 kB` con gzip), así que instalarlo lleva un solo comando y no arrastra nada extra a tu `node_modules`. Instálalo con el gestor de paquetes que ya uses en tu proyecto, o impórtalo directo con `npm:` en Deno o desde un CDN en el navegador.
+`dn-ioc` se distribuye como un paquete ESM ligero y sin dependencias, así que instalarlo lleva un solo comando y no arrastra nada extra a tu `node_modules`. Instálalo con el gestor de paquetes que ya uses en tu proyecto, o impórtalo directo con `npm:` en Deno o desde un CDN en el navegador.
 
 <Code
   title="install.sh"
@@ -34,7 +34,7 @@ Tampoco necesitas un bundler para usar `dn-ioc` en una página web. Los navegado
 
 | CDN | URL | Qué sirve |
 | --- | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js` (`4.8 kB`, `1.9 kB` con gzip) |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/dn-ioc` | `index.min.js` (compilación ESM minificada) |
 | unpkg | `https://unpkg.com/dn-ioc` | `index.min.js` — exactamente el mismo archivo |
 | esm.sh | `https://esm.sh/dn-ioc` | Build transpilado propio de esm.sh |
 
