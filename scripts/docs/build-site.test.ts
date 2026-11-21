@@ -278,8 +278,9 @@ describe('buildDocsSite', () => {
     expect(css).not.toContain('.notebook-open')
     expect(css).not.toContain('.spread-right')
     expect(css).not.toContain('.mobile-deck')
-    expect(css).not.toContain('.p-tabs')
-    expect(css).not.toContain('.p-tab ')
+    expect(css).toContain('.paper-code-tabs')
+    expect(css).toContain('.p-tabs')
+    expect(css).toContain('.p-tab')
     expect(css).toContain('.p-head')
     expect(css).toContain('.p-filename')
     expect(css).toContain('.p-tree-layout')
@@ -291,9 +292,9 @@ describe('buildDocsSite', () => {
 
     expect(js).toContain('dn-ioc-theme')
     expect(js).toContain('data-theme-set')
+    expect(js).toContain('.p-tab')
     expect(js).toContain('.p-tree-file')
     expect(js).toContain('.p-filename')
-    expect(js).not.toContain('.p-tab')
     expect(js).toContain('data-raw')
     expect(js).toContain('data-search-url')
     expect(js).toContain('doc-rail')
@@ -678,6 +679,7 @@ describe('buildDocsSite', () => {
       expect(llmsOut).toContain('https://dn-ioc.lyz.cloud/')
       expect(llmsOut).not.toMatch(/dn-ioc@\d|Version \d+\.\d+/i)
       expect(llmsOut).not.toMatch(/\b\d+(?:\.\d+)?\s*kB\b|gzip/i)
+      expect(llmsOut).not.toMatch(/\bdeno\b/i)
       await access(join(outDir, 'assets/social-preview.png'))
       await access(join(outDir, 'assets/social-preview.svg'))
       await access(join(outDir, '_redirects'))
@@ -709,8 +711,6 @@ describe('buildDocsSite', () => {
         expect(html).toContain('data-theme-set="auto"')
         expect(html).toContain('data-theme-set="light"')
         expect(html).toContain('data-theme-set="dark"')
-        expect(html).not.toContain('class="p-tabs"')
-        expect(html).not.toContain('class="p-tab')
         expect(html).not.toContain('notebook-open')
         expect(html).not.toContain('spread-right')
         expect(html).not.toContain('mobile-deck')
@@ -718,16 +718,37 @@ describe('buildDocsSite', () => {
         expect(html).not.toMatch(/\b\d+(?:\.\d+)?\s*kB\b|gzip/i)
         expect(html).not.toContain('provide(function ')
         expect(html).not.toMatch(/biome\.json|eslint\.config|\bbiome\b|\beslint\b/i)
+        expect(html).not.toMatch(/\bdeno\b/i)
 
         const normalizedPath = htmlFile.replaceAll('\\', '/')
         const expectsTree = /\/(?:architecture|mvc|ddd)\/index\.html$/.test(normalizedPath)
+        const expectsTabs = /\/installation\/index\.html$/.test(normalizedPath)
         if (expectsTree) {
           expect(html, `${normalizedPath} should render file tree`).toContain('class="paper-code paper-code-tree"')
         } else {
           expect(html, `${normalizedPath} should not render file tree`).not.toContain('paper-code-tree')
         }
-        if (/\/installation\/index\.html$/.test(normalizedPath)) {
+        if (expectsTabs) {
+          expect(html.match(/class="paper-code paper-code-tabs"/g), `${normalizedPath} should render 2 tab blocks`).toHaveLength(2)
+          expect(html, `${normalizedPath} should document npm/pnpm/yarn/bun tabs`).toContain('data-tab="0">npm</button>')
+          expect(html, `${normalizedPath} should document pnpm tab`).toContain('data-tab="1">pnpm</button>')
+          expect(html, `${normalizedPath} should document yarn tab`).toContain('data-tab="2">yarn</button>')
+          expect(html, `${normalizedPath} should document bun tab`).toContain('data-tab="3">bun</button>')
+          expect(html, `${normalizedPath} should document skill npx tab`).toContain('data-tab="0">npx</button>')
+          expect(html, `${normalizedPath} should document skill bunx tab`).toContain('data-tab="1">bunx</button>')
           expect(html, `${normalizedPath} should document skill installation`).toContain('npx skills add MunMunMiao/dn-ioc')
+          expect(html, `${normalizedPath} should preserve exact tsconfig.json indentation`).toContain(
+            'data-raw="{&#10;  &quot;compilerOptions&quot;: {&#10;    &quot;target&quot;: &quot;ES2022&quot;,&#10;    &quot;module&quot;: &quot;ESNext&quot;,&#10;    &quot;moduleResolution&quot;: &quot;bundler&quot;,&#10;    &quot;strict&quot;: true&#10;  }&#10;}"',
+          )
+          expect(html, `${normalizedPath} should preserve exact importmap.html indentation`).toContain(
+            '&lt;html lang=&quot;en&quot;&gt;&#10;  &lt;head&gt;',
+          )
+          expect(html, `${normalizedPath} should preserve exact direct-cdn.html indentation`).toContain(
+            '&lt;html lang=&quot;en&quot;&gt;&#10;  &lt;body&gt;',
+          )
+        } else {
+          expect(html, `${normalizedPath} should not render tab code blocks`).not.toContain('paper-code-tabs')
+          expect(html, `${normalizedPath} should not render .p-tabs`).not.toContain('class="p-tabs"')
         }
 
         const matches = Array.from(html.matchAll(localeLinkRe))
@@ -1135,6 +1156,23 @@ describe('buildDocsSite', () => {
       panel1.classList.add('p-pre')
       panel1.setAttribute('data-panel', '1')
 
+      const tabCode = new MockHTMLElement()
+      tabCode.classList.add('paper-code', 'paper-code-tabs')
+      const tab0 = tabCode.append(new MockHTMLElement())
+      tab0.classList.add('p-tab', 'is-active')
+      tab0.setAttribute('data-tab', '0')
+      tab0.setAttribute('aria-selected', 'true')
+      const tab1 = tabCode.append(new MockHTMLElement())
+      tab1.classList.add('p-tab')
+      tab1.setAttribute('data-tab', '1')
+      tab1.setAttribute('aria-selected', 'false')
+      const tabPanel0 = tabCode.append(new MockHTMLElement())
+      tabPanel0.classList.add('p-pre', 'is-active')
+      tabPanel0.setAttribute('data-panel', '0')
+      const tabPanel1 = tabCode.append(new MockHTMLElement())
+      tabPanel1.classList.add('p-pre')
+      tabPanel1.setAttribute('data-panel', '1')
+
       const docListeners = new Map<string, ((event: Record<string, unknown>) => void)[]>()
       const mediaListeners: (() => void)[] = []
       const mql = {
@@ -1205,10 +1243,32 @@ describe('buildDocsSite', () => {
         file1,
         panel0,
         panel1,
+        tab0,
+        tab1,
+        tabPanel0,
+        tabPanel1,
         clickDoc: (target: MockElement) => {
           for (const handler of docListeners.get('click') ?? []) {
             handler({ target })
           }
+        },
+        keydownDoc: (active: MockElement, key: string) => {
+          mockDoc.activeElement = active as MockHTMLElement
+          let prevented = false
+          for (const handler of docListeners.get('keydown') ?? []) {
+            handler({
+              key,
+              isComposing: false,
+              keyCode: 0,
+              metaKey: false,
+              ctrlKey: false,
+              altKey: false,
+              preventDefault: () => {
+                prevented = true
+              },
+            })
+          }
+          return prevented
         },
         setOsDark: (dark: boolean) => {
           mql.matches = dark
@@ -1241,6 +1301,21 @@ describe('buildDocsSite', () => {
     expect(page1.panel0.classList.contains('is-active')).toBe(false)
     expect(page1.panel1.classList.contains('is-active')).toBe(true)
     expect(page1.filenameEl.textContent).toBe('domain/ports.ts')
+
+    // Click second tab in .paper-code-tabs -> activates tab 1 & panel 1; ArrowLeft cycles back
+    page1.clickDoc(page1.tab1)
+    expect(page1.tab0.classList.contains('is-active')).toBe(false)
+    expect(page1.tab0.getAttribute('aria-selected')).toBe('false')
+    expect(page1.tab1.classList.contains('is-active')).toBe(true)
+    expect(page1.tab1.getAttribute('aria-selected')).toBe('true')
+    expect(page1.tabPanel0.classList.contains('is-active')).toBe(false)
+    expect(page1.tabPanel1.classList.contains('is-active')).toBe(true)
+
+    expect(page1.keydownDoc(page1.tab1, 'ArrowLeft')).toBe(true)
+    expect(page1.tab0.classList.contains('is-active')).toBe(true)
+    expect(page1.tabPanel0.classList.contains('is-active')).toBe(true)
+    expect(page1.tab1.classList.contains('is-active')).toBe(false)
+    expect(page1.tabPanel1.classList.contains('is-active')).toBe(false)
 
     // 2. Manual selection persists to localStorage and ignores OS theme changes
     page1.btnDark.listeners.get('click')?.[0]?.({})

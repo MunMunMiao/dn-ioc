@@ -39,7 +39,6 @@ Shutdown signals have no common denominator across JavaScript runtimes, so the k
 | Runtime | Trigger | Async cleanup |
 | --- | --- | --- |
 | Node.js, Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | Awaited, if the handler keeps the process alive |
-| Deno | `Deno.addSignalListener('SIGINT', handler)` | Awaited |
 | Browser sub-app | Your own unmount call (React `useEffect`, Vue `onScopeDispose`, router leave) | Awaited |
 | Browser page | `addEventListener('pagehide', handler)` | Not reliable — keep hooks synchronous |
 | Web Worker | A message from the host before `worker.terminate()` | Only if the host waits before terminating |
@@ -47,7 +46,7 @@ Shutdown signals have no common denominator across JavaScript runtimes, so the k
 
 A few practical details to watch for in each environment:
 
-- **Node.js & Bun (`node-server.ts`):** Register `SIGINT` / `SIGTERM` listeners *before* `await app.start()`. Because `bootstrapApp()` doesn't run any provider yet, `app` already exists before port `3000` opens. On Deno, the exact same graph just swaps the listener to `Deno.addSignalListener('SIGINT', () => void app.stop())`.
+- **Node.js & Bun (`node-server.ts`):** Register `SIGINT` / `SIGTERM` listeners *before* `await app.start()`. Because `bootstrapApp()` doesn't run any provider yet, `app` already exists before port `3000` opens.
 - **Browser widgets (`browser-unmount.ts`):** Whenever possible, scope browser graphs to a component or route you unmount yourself (`await ready; await app.stop()`), where async cleanup hooks are properly awaited while the page stays open.
 - **Browser tab unload (`browser-pagehide.ts`):** Prefer `pagehide` over `beforeunload` (which breaks or gets skipped by the back/forward cache). Even with `pagehide`, browsers routinely discard the page before an `async` Promise settles—so keep unload hooks strictly synchronous, like `navigator.sendBeacon()`.
 

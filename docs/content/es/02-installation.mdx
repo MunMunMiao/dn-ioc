@@ -3,29 +3,19 @@ title: "Instalación y entornos"
 slug: "installation"
 part: start
 order: 2
-summary: "Instala dn-ioc con tu gestor de paquetes habitual, impórtalo directo en Deno o desde un CDN en el navegador y configura TypeScript en modo bundler."
+summary: "Instala dn-ioc con tu gestor de paquetes habitual, cárgalo desde un CDN en el navegador y configura TypeScript en modo bundler."
 ---
 
-`dn-ioc` se distribuye como un paquete ESM ligero y sin dependencias, así que instalarlo lleva un solo comando y no arrastra nada extra a tu `node_modules`. Instálalo con el gestor de paquetes que ya uses en tu proyecto, o impórtalo directo con `npm:` en Deno o desde un CDN en el navegador.
+`dn-ioc` se distribuye como un paquete ESM ligero y sin dependencias, así que instalarlo lleva un solo comando y no arrastra nada extra a tu `node_modules`. Instálalo con el gestor de paquetes que ya uses en tu proyecto, o cárgalo directamente desde un CDN en el navegador.
 
-<Code
-  title="install.sh"
-  lang="bash"
-  code={`npm install dn-ioc
-pnpm add dn-ioc
-yarn add dn-ioc
-bun add dn-ioc
-deno add npm:dn-ioc`}
-/>
-
-## Sin instalación previa en Deno
-
-¿Quieres levantar un script rápido de un solo archivo en Deno sin ponerte a configurar primero un `deno.json`? Deno puede importar `dn-ioc` directamente mediante el especificador `npm:`.
-
-<Code
-  title="deno-import.ts"
-  lang="ts"
-  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc'`}
+<CodeTabs
+  layout="tabs"
+  files={[
+    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
+    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
+    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
+    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
+  ]}
 />
 
 ## CDN en navegador e Import Maps
@@ -42,10 +32,8 @@ Sin sufijo de versión, el CDN sirve la última publicación; en producción, a�
 
 Si añades un `<script type="importmap">`, podrás seguir escribiendo imports limpios con `'dn-ioc'` en tus módulos, de modo que el mismo código funcione con o sin bundler.
 
-<Code
-  title="importmap.html"
-  lang="html"
-  code={`<!doctype html>
+```html title="importmap.html"
+<!doctype html>
 <html lang="en">
   <head>
     <script type="importmap">
@@ -68,13 +56,11 @@ Si añades un `<script type="importmap">`, podrás seguir escribiendo imports li
       await app.start()
     </script>
   </body>
-</html>`}
-/>
+</html>
+```
 
-<Code
-  title="direct-cdn.html"
-  lang="html"
-  code={`<!doctype html>
+```html title="direct-cdn.html"
+<!doctype html>
 <html lang="en">
   <body>
     <script type="module">
@@ -88,27 +74,25 @@ Si añades un `<script type="importmap">`, podrás seguir escribiendo imports li
       await app.start()
     </script>
   </body>
-</html>`}
-/>
+</html>
+```
 
 ## Configuración de ESM y TypeScript
 
 `dn-ioc` es **exclusivamente ESM**: cárgalo siempre con `import`, nunca con el `require()` de CommonJS.
 
-En proyectos TypeScript, usa `"moduleResolution": "bundler"` en tu `tsconfig.json`. Herramientas modernas como Vite, Bun, Deno, Next.js, Astro y `tsdown` ya traen este modo activado de serie.
+En proyectos TypeScript, usa `"moduleResolution": "bundler"` en tu `tsconfig.json`. Herramientas modernas como Vite, Bun, Next.js, Astro y `tsdown` ya traen este modo activado de serie.
 
-<Code
-  title="tsconfig.json"
-  lang="json"
-  code={`{
+```json title="tsconfig.json"
+{
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true
   }
-}`}
-/>
+}
+```
 
 <Callout kind="caution" title="Resolución de tipos con NodeNext y Node16">
 
@@ -116,17 +100,18 @@ La resolución de declaraciones con `NodeNext` y `Node16` **no está soportada**
 
 </Callout>
 
-Como el núcleo no toca `process`, APIs del DOM ni temporizadores, tus providers son 100 % portables entre Node.js, Bun, Deno, navegadores, Web Workers y entornos edge.
+Como el núcleo no toca `process`, APIs del DOM ni temporizadores, tus providers son 100 % portables entre Node.js, Bun, navegadores, Web Workers y entornos edge.
 
 ## Instalar el Skill para agentes de IA
 
 Si trabajas con agentes de código como Claude Code, Codex, Cursor, Antigravity o Gemini CLI, puedes instalar el Skill oficial en inglés (`skills/dn-ioc/SKILL.md`) para que el agente conozca la API pública exacta, la regla entre `Ref` y `Token`, el ciclo de vida y los mensajes de error literales sin inventar decoradores ni contenedores globales:
 
-<Code
-  title="install-skill.sh"
-  lang="bash"
-  code={`npx skills add MunMunMiao/dn-ioc
-bunx skills add MunMunMiao/dn-ioc`}
+<CodeTabs
+  layout="tabs"
+  files={[
+    { title: 'npx', lang: 'bash', code: 'npx skills add MunMunMiao/dn-ioc' },
+    { title: 'bunx', lang: 'bash', code: 'bunx skills add MunMunMiao/dn-ioc' },
+  ]}
 />
 
 Si tu herramienta lee directamente contexto en texto plano, apúntala a [`/llms.txt`](/llms.txt).

@@ -24,10 +24,9 @@ npm install dn-ioc
 pnpm add dn-ioc
 yarn add dn-ioc
 bun add dn-ioc
-deno add npm:dn-ioc
 ```
 
-Deno can also import `npm:dn-ioc` without installing. The package is ESM-only.
+The package is ESM-only.
 
 ## Start
 

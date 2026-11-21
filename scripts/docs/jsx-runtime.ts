@@ -21,6 +21,7 @@ export type VNode =
       children: VChild[]
       label: string
       tabs: RenderedCodeTab[]
+      layout?: 'tree' | 'tabs'
     }
 
 export type ComponentFn = (props: any) => VNode
@@ -110,12 +111,15 @@ function serializeProps(props: Record<string, unknown>): string {
   return out
 }
 
-export function renderVChildToHtml(node: VChild, renderDeck?: (tabs: readonly RenderedCodeTab[], label: string) => string): string {
+export function renderVChildToHtml(
+  node: VChild,
+  renderDeck?: (tabs: readonly RenderedCodeTab[], label: string, layout: 'tree' | 'tabs') => string,
+): string {
   if (typeof node === 'string') {
     return escapeHtml(node)
   }
   if (node.kind === 'deck') {
-    return renderDeck ? renderDeck(node.tabs, node.label) : ''
+    return renderDeck ? renderDeck(node.tabs, node.label, node.layout ?? 'tree') : ''
   }
   if (node.tag === '') {
     return node.children.map(child => renderVChildToHtml(child, renderDeck)).join('')

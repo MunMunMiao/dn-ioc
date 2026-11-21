@@ -3,29 +3,19 @@ title: "설치 및 실행 환경"
 slug: "installation"
 part: start
 order: 2
-summary: "패키지 매니저로 dn-ioc를 설치하거나 Deno·브라우저 CDN에서 바로 불러오는 방법, 그리고 TypeScript bundler 해상도 설정을 안내해요."
+summary: "패키지 매니저로 dn-ioc를 설치하거나 브라우저 CDN에서 바로 불러오는 방법, 그리고 TypeScript bundler 해상도 설정을 안내해요."
 ---
 
-`dn-ioc`는 외부 의존성이 하나도 없는 가벼운 순수 ESM 패키지로 배포돼요. 명령어 한 줄이면 설치가 끝나고 `node_modules`에 불필요한 하위 패키지를 잔뜩 끌고 오지도 않죠. 프로젝트에서 쓰던 패키지 매니저로 바로 설치하거나, Deno의 `npm:` 지정자나 브라우저 CDN에서 곧장 불러와 보세요.
+`dn-ioc`는 외부 의존성이 하나도 없는 가벼운 순수 ESM 패키지로 배포돼요. 명령어 한 줄이면 설치가 끝나고 `node_modules`에 불필요한 하위 패키지를 잔뜩 끌고 오지도 않죠. 프로젝트에서 쓰던 패키지 매니저로 바로 설치하거나, 브라우저 CDN에서 곧장 불러와 보세요.
 
-<Code
-  title="install.sh"
-  lang="bash"
-  code={`npm install dn-ioc
-pnpm add dn-ioc
-yarn add dn-ioc
-bun add dn-ioc
-deno add npm:dn-ioc`}
-/>
-
-## Deno에서 설치 없이 바로 쓰기
-
-가볍게 단일 파일 Deno 스크립트를 짜는데 굳이 `deno.json`부터 만들고 싶지 않을 때가 있죠? Deno에서는 `npm:` 지정자로 `dn-ioc`를 바로 `import`할 수 있어요.
-
-<Code
-  title="deno-import.ts"
-  lang="ts"
-  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc'`}
+<CodeTabs
+  layout="tabs"
+  files={[
+    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
+    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
+    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
+    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
+  ]}
 />
 
 ## 브라우저 CDN과 Import Map
@@ -42,10 +32,8 @@ deno add npm:dn-ioc`}
 
 여기에 `<script type="importmap">`을 곁들이면 모듈 코드 안에서 `'dn-ioc'`라는 짧은 이름을 그대로 유지할 수 있어서, 번들러가 있든 없든 똑같은 코드가 그대로 돌아가요.
 
-<Code
-  title="importmap.html"
-  lang="html"
-  code={`<!doctype html>
+```html title="importmap.html"
+<!doctype html>
 <html lang="en">
   <head>
     <script type="importmap">
@@ -68,13 +56,11 @@ deno add npm:dn-ioc`}
       await app.start()
     </script>
   </body>
-</html>`}
-/>
+</html>
+```
 
-<Code
-  title="direct-cdn.html"
-  lang="html"
-  code={`<!doctype html>
+```html title="direct-cdn.html"
+<!doctype html>
 <html lang="en">
   <body>
     <script type="module">
@@ -88,27 +74,25 @@ deno add npm:dn-ioc`}
       await app.start()
     </script>
   </body>
-</html>`}
-/>
+</html>
+```
 
 ## ESM 및 TypeScript 설정
 
 `dn-ioc`는 **ESM 전용**이에요. CommonJS의 `require()` 대신 항상 `import` 문으로 불러와 주세요.
 
-TypeScript 프로젝트에서는 `tsconfig.json`에 `"moduleResolution": "bundler"`를 설정하면 돼요. 요즘 많이 쓰는 Vite, Bun, Deno, Next.js, Astro, `tsdown` 환경이라면 이미 기본값으로 켜져 있을 거예요.
+TypeScript 프로젝트에서는 `tsconfig.json`에 `"moduleResolution": "bundler"`를 설정하면 돼요. 요즘 많이 쓰는 Vite, Bun, Next.js, Astro, `tsdown` 환경이라면 이미 기본값으로 켜져 있을 거예요.
 
-<Code
-  title="tsconfig.json"
-  lang="json"
-  code={`{
+```json title="tsconfig.json"
+{
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true
   }
-}`}
-/>
+}
+```
 
 <Callout kind="caution" title="NodeNext와 Node16 타입 선언 해석은 지원하지 않아요">
 
@@ -116,17 +100,18 @@ TypeScript 프로젝트에서는 `tsconfig.json`에 `"moduleResolution": "bundle
 
 </Callout>
 
-커널이 `process`나 DOM API, 타이머를 전혀 쓰지 않는 덕분에, 한 번 작성한 프로바이더는 Node.js, Bun, Deno, 브라우저, Web Worker, 엣지 런타임 어디서나 100% 그대로 재사용할 수 있어요.
+커널이 `process`나 DOM API, 타이머를 전혀 쓰지 않는 덕분에, 한 번 작성한 프로바이더는 Node.js, Bun, 브라우저, Web Worker, 엣지 런타임 어디서나 100% 그대로 재사용할 수 있어요.
 
 ## AI 에이전트 Skill 설치
 
 Claude Code, Codex, Cursor, Antigravity, Gemini CLI 같은 AI 코딩 에이전트를 쓰고 있다면 공식 영문 Skill(`skills/dn-ioc/SKILL.md`)을 설치해 두세요. 공개 API, `Ref` vs `Token` 기준, 라이프사이클 규칙, 정확한 런타임 오류 문자열을 그대로 전달해서 없는 데코레이터나 전역 컨테이너를 지어내는 일을 막아 줍니다.
 
-<Code
-  title="install-skill.sh"
-  lang="bash"
-  code={`npx skills add MunMunMiao/dn-ioc
-bunx skills add MunMunMiao/dn-ioc`}
+<CodeTabs
+  layout="tabs"
+  files={[
+    { title: 'npx', lang: 'bash', code: 'npx skills add MunMunMiao/dn-ioc' },
+    { title: 'bunx', lang: 'bash', code: 'bunx skills add MunMunMiao/dn-ioc' },
+  ]}
 />
 
 단일 플레인 텍스트 문서를 직접 읽는 도구라면 [`/llms.txt`](/llms.txt)를 바로 넘겨주면 돼요.

@@ -106,6 +106,16 @@ describe('compileMdxFile & renderChapterPage', () => {
           `import untouched from './missing.ts' with { type: 'text' }`,
           '```',
           '',
+          '```json title="tsconfig.json"',
+          '{',
+          '  "compilerOptions": {',
+          '    "moduleResolution": "bundler"',
+          '  }',
+          '}',
+          '```',
+          '',
+          `<CodeTabs layout="tabs" files={[{ title: 'npm', lang: 'bash', code: 'npm install dn-ioc' }, { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' }]} />`,
+          '',
           '## Region & Callout',
           '',
           '<Callout kind="caution" title="Heads <Up>">',
@@ -124,6 +134,15 @@ describe('compileMdxFile & renderChapterPage', () => {
       expect(ch.sections[0]?.html).toContain('style="text-align:right"')
       expect(ch.sections[0]?.html).toContain('class="paper-code"')
       expect(ch.sections[0]?.html).toContain('./missing.ts')
+      expect(ch.sections[0]?.html).toContain('<span class="p-filename">tsconfig.json</span>')
+      expect(ch.sections[0]?.html).toContain(
+        'data-raw="{&#10;  &quot;compilerOptions&quot;: {&#10;    &quot;moduleResolution&quot;: &quot;bundler&quot;&#10;  }&#10;}"',
+      )
+      expect(ch.sections[0]?.html).toContain('class="paper-code paper-code-tabs"')
+      expect(ch.sections[0]?.html).toContain('role="tablist"')
+      expect(ch.sections[0]?.html).toContain('data-tab="0">npm</button>')
+      expect(ch.sections[0]?.html).toContain('data-tab="1">bun</button>')
+      expect(ch.sections[0]?.html).not.toContain('paper-code-tree')
 
       expect(ch.sections[1]?.html).toContain('class="callout callout-caution"')
       expect(ch.sections[1]?.html).toContain('Heads &lt;Up&gt;')

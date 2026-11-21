@@ -44,7 +44,7 @@ function inferLang(title?: string, explicitLang?: string): string {
   return 'ts'
 }
 
-export function CodeTabs(props: { files: readonly CodeFileTab[] }): VNode {
+export function CodeTabs(props: { files: readonly CodeFileTab[]; layout?: 'tree' | 'tabs' }): VNode {
   if (!props.files || props.files.length === 0) {
     throw new Error('CodeTabs requires at least one file tab')
   }
@@ -67,6 +67,7 @@ export function CodeTabs(props: { files: readonly CodeFileTab[] }): VNode {
     children: [],
     label: tabs[0]!.title,
     tabs,
+    layout: props.layout ?? 'tree',
   }
 }
 

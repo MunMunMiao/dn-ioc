@@ -39,7 +39,6 @@ import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' wit
 | 執行環境 | 觸發時機 | 非同步清理是否可靠 |
 | --- | --- | --- |
 | Node.js、Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | 可等待（只要監聽函式讓執行程序維持存活到清理完成） |
-| Deno | `Deno.addSignalListener('SIGINT', handler)` | 可等待 |
 | 瀏覽器局部子應用 | 前端自己的卸載呼叫（React `useEffect`、Vue `onScopeDispose`、路由離開） | 可等待 |
 | 瀏覽器整頁關閉 | `addEventListener('pagehide', handler)` | 不可靠 —— 請維持純同步清理邏輯 |
 | Web Worker | 主執行緒呼叫 `worker.terminate()` 前先傳送通知訊息 | 僅在主執行緒願意等待回覆後才終止時可靠 |
@@ -47,7 +46,7 @@ import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' wit
 
 實際串接時，有幾個環境細節特別值得留意：
 
-- **Node.js 與 Bun（`node-server.ts`）：** 請在呼叫 `await app.start()` *之前* 先註冊好 `SIGINT` / `SIGTERM` 監聽器。因為 `bootstrapApp()` 還不會執行任何 provider，在 `3000` 埠開啟之前你就已經拿到 `app` 了。換到 Deno 環境時，同一張依賴圖只要把監聽器改成 `Deno.addSignalListener('SIGINT', () => void app.stop())` 就能直接運作。
+- **Node.js 與 Bun（`node-server.ts`）：** 請在呼叫 `await app.start()` *之前* 先註冊好 `SIGINT` / `SIGTERM` 監聽器。因為 `bootstrapApp()` 還不會執行任何 provider，在 `3000` 埠開啟之前你就已經拿到 `app` 了。
 - **瀏覽器局部元件（`browser-unmount.ts`）：** 在前端盡可能把依賴圖綁定在由你自己控制卸載時機的元件或路由上（`await ready; await app.stop()`），因為只要頁面還活著，非同步清理掛鉤就能完整被 `await` 執行完畢。
 - **瀏覽器分頁關閉（`browser-pagehide.ts`）：** 請優先使用 `pagehide` 而不要用 `beforeunload`（後者會破壞瀏覽器的往返快取 bfcache，甚至直接被略過）。即便改用 `pagehide`，瀏覽器通常也不會等 `async` Promise 解析完就把頁面銷毀了——因此分頁關閉時的清理邏輯請務必保持純同步，例如直接呼叫 `navigator.sendBeacon()`。
 

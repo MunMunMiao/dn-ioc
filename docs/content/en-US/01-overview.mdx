@@ -44,7 +44,7 @@ The entire public runtime API fits in six functions. Once you've seen how they f
 
 `dn-ioc` ships as a lightweight, zero-dependency ESM package.
 
-More importantly, the kernel touches **zero platform APIs**—no `process`, no DOM globals, and no timers. The exact same dependency graph runs unchanged on Node.js, Bun, Deno, browsers, Web Workers, and serverless or edge runtimes. Since shutdown signals look different on every platform, the kernel doesn't guess; you wire `app.stop()` to your runtime's own signal or unmount hook when needed (see [Lifecycle & Cleanup](/lifecycle/)).
+More importantly, the kernel touches **zero platform APIs**—no `process`, no DOM globals, and no timers. The exact same dependency graph runs unchanged on Node.js, Bun, browsers, Web Workers, and serverless or edge runtimes. Since shutdown signals look different on every platform, the kernel doesn't guess; you wire `app.stop()` to your runtime's own signal or unmount hook when needed (see [Lifecycle & Cleanup](/lifecycle/)).
 
 ## What dn-ioc Deliberately Leaves Out
 

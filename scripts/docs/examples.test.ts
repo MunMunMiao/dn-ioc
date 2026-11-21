@@ -155,6 +155,7 @@ describe('docs/examples suite', () => {
     expect(readme).toContain('skills/dn-ioc/SKILL.md')
     expect(readme).toContain('./docs/assets/social-preview.svg')
     expect(readme).not.toContain('./docs/assets/social-preview.png')
+    expect(readme).not.toMatch(/\bdeno\b/i)
 
     const socialSvg = await readFile(SOCIAL_PREVIEW_SVG_PATH, 'utf8')
     expect(socialSvg).toContain('<svg ')
@@ -170,11 +171,13 @@ describe('docs/examples suite', () => {
     expect(llms).not.toMatch(/dn-ioc@\d|Version \d+\.\d+/i)
     expect(llms).not.toMatch(/\b\d+(?:\.\d+)?\s*kB\b|gzip/i)
     expect(llms).not.toMatch(/\bbiome\b|\beslint\b/i)
+    expect(llms).not.toMatch(/\bdeno\b/i)
 
     expect(skill).toMatch(/^---\nname: dn-ioc\ndescription: Use when [^\n]+\n---/)
     expect(skill).not.toMatch(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\u0600-\u06ff]/)
     expect(skill).not.toMatch(/dn-ioc@\d|Version \d+\.\d+/i)
     expect(skill).not.toMatch(/\b\d+(?:\.\d+)?\s*kB\b|gzip/i)
+    expect(skill).not.toMatch(/\bdeno\b/i)
     expect(skill.split('\n').length).toBeLessThanOrEqual(120)
 
     const requiredFunctions = ['token', 'provide', 'provideFor', 'bundleProviders', 'isProvideRef', 'bootstrapApp']

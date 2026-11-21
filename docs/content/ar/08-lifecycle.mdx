@@ -39,7 +39,6 @@ import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' wit
 | بيئة التشغيل | المُطلق | التنظيف غير المتزامن |
 | --- | --- | --- |
 | Node.js، Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | يُنتظر بـ `await`، إذا أبقى المعالج العملية حيّة |
-| Deno | `Deno.addSignalListener('SIGINT', handler)` | يُنتظر بـ `await` |
 | تطبيق فرعي في المتصفح | استدعاء الإلغاء الخاص بك (`useEffect` في React، `onScopeDispose` في Vue، مغادرة المسار) | يُنتظر بـ `await` |
 | صفحة متصفح | `addEventListener('pagehide', handler)` | غير مضمون — خلّ الخطافات متزامنة |
 | Web Worker | رسالة من المضيف قبل `worker.terminate()` | فقط إذا انتظر المضيف قبل الإنهاء |
@@ -47,7 +46,7 @@ import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' wit
 
 وهذه بعض التفاصيل العملية التي تستاهل تنتبه لها في كل بيئة:
 
-- **Node.js وBun (`node-server.ts`):** سجّل مستمعي `SIGINT` و`SIGTERM` *قبل* `await app.start()`. بما أن `bootstrapApp()` ما تشغّل ولا مزوّد بعد، مقبض `app` يكون موجوداً أصلاً قبل ما ينفتح المنفذ `3000`. وعلى Deno، نفس المخطط بالضبط بس تبدّل المستمع إلى `Deno.addSignalListener('SIGINT', () => void app.stop())`.
+- **Node.js وBun (`node-server.ts`):** سجّل مستمعي `SIGINT` و`SIGTERM` *قبل* `await app.start()`. بما أن `bootstrapApp()` ما تشغّل ولا مزوّد بعد، مقبض `app` يكون موجوداً أصلاً قبل ما ينفتح المنفذ `3000`.
 - **مكوّنات المتصفح (`browser-unmount.ts`):** كلّما أمكن، اربط مخططات المتصفح بمكوّن أو مسار تفصله أنت بنفسك (`await ready; await app.stop()`)، حيث يتم انتظار خطافات التنظيف غير المتزامنة بشكل سليم بينما الصفحة لا تزال مفتوحة.
 - **إغلاق تبويب المتصفح (`browser-pagehide.ts`):** فضّل `pagehide` على `beforeunload` (لأن `beforeunload` تتعطّل أو يتجاوزها كاش الرجوع للأمام والخلف bfcache). وحتى مع `pagehide`، المتصفحات تقفل الصفحة غالباً قبل ما يكتمل أي `Promise` غير متزامن — فخلّ خطافات إغلاق الصفحة متزامنة تماماً، مثل `navigator.sendBeacon()`.
 

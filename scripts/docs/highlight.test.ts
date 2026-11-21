@@ -43,15 +43,15 @@ describe('renderCodeLines', () => {
     expect(out.html).not.toContain('[!hl]')
     expect(out.rawClean).toBe('const a = 1\nconst b = 2')
 
-    const shOut = renderCodeLines(`# install\nbun add -d dn-ioc # [!hl]\ndeno add npm:dn-ioc\n`, { lang: 'bash' })
+    const shOut = renderCodeLines(`# install\nbun add -d dn-ioc # [!hl]\nbunx skills add MunMunMiao/dn-ioc\n`, { lang: 'bash' })
     expect(shOut.highlightedLines).toEqual([2])
     expect(shOut.html).toContain('class="pl hl"')
     expect(shOut.html).toContain('<span class="cm"># install</span>')
     expect(shOut.html).toContain('<span class="fn">bun</span> add <span class="kw">-d</span> dn-ioc')
-    expect(shOut.html).toContain('<span class="fn">deno</span> add npm:dn-ioc')
+    expect(shOut.html).toContain('<span class="fn">bunx</span> skills add MunMunMiao/dn-ioc')
     expect(shOut.html).not.toContain('<span class="kw">-ioc</span>')
     expect(shOut.html).not.toContain('[!hl]')
-    expect(shOut.rawClean).toBe('# install\nbun add -d dn-ioc\ndeno add npm:dn-ioc')
+    expect(shOut.rawClean).toBe('# install\nbun add -d dn-ioc\nbunx skills add MunMunMiao/dn-ioc')
   })
 
   test('slices named #region blocks, strips region comments in full-file mode, and throws on missing region', () => {

@@ -3,29 +3,19 @@ title: "التثبيت وبيئات التشغيل"
 slug: "installation"
 part: start
 order: 2
-summary: "ثبّت dn-ioc بمدير الحزم الذي تستخدمه، أو استوردها مباشرة على Deno أو من CDN المتصفح، واضبط إعدادات TypeScript."
+summary: "ثبّت dn-ioc بمدير الحزم الذي تستخدمه، أو حمّلها من CDN المتصفح، واضبط إعدادات TypeScript."
 ---
 
-`dn-ioc` عبارة عن حزمة ESM خفيفة بدون أي تبعيات خارجية، يعني تثبيتها ياخذ أمراً واحداً وما يجر معها أي حزم إضافية في `node_modules`. نزّلها بأي مدير حزم تستخدمه في مشروعك، أو اسحبها مباشرة بصيغة `npm:` على Deno أو من CDN في المتصفح.
+`dn-ioc` عبارة عن حزمة ESM خفيفة بدون أي تبعيات خارجية، يعني تثبيتها ياخذ أمراً واحداً وما يجر معها أي حزم إضافية في `node_modules`. نزّلها بأي مدير حزم تستخدمه في مشروعك، أو حمّلها مباشرة من CDN في المتصفح.
 
-<Code
-  title="install.sh"
-  lang="bash"
-  code={`npm install dn-ioc
-pnpm add dn-ioc
-yarn add dn-ioc
-bun add dn-ioc
-deno add npm:dn-ioc`}
-/>
-
-## التشغيل المباشر على Deno بدون تثبيت
-
-تكتب سكربت Deno في ملف واحد وما تريد تجهّز ملف `deno.json` أول؟ تقدر في Deno تستورد `dn-ioc` مباشرة عبر صيغة `npm:`.
-
-<Code
-  title="deno-import.ts"
-  lang="ts"
-  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc'`}
+<CodeTabs
+  layout="tabs"
+  files={[
+    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
+    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
+    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
+    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
+  ]}
 />
 
 ## التشغيل في المتصفح عبر CDN و Import Maps
@@ -42,10 +32,8 @@ deno add npm:dn-ioc`}
 
 إضافة `<script type="importmap">` تخليك تكتب استيراد `'dn-ioc'` مباشرة في ملفاتك، فيشتغل نفس الكود بالضبط سواء بوجود bundler أو بدونه.
 
-<Code
-  title="importmap.html"
-  lang="html"
-  code={`<!doctype html>
+```html title="importmap.html"
+<!doctype html>
 <html lang="en">
   <head>
     <script type="importmap">
@@ -68,13 +56,11 @@ deno add npm:dn-ioc`}
       await app.start()
     </script>
   </body>
-</html>`}
-/>
+</html>
+```
 
-<Code
-  title="direct-cdn.html"
-  lang="html"
-  code={`<!doctype html>
+```html title="direct-cdn.html"
+<!doctype html>
 <html lang="en">
   <body>
     <script type="module">
@@ -88,27 +74,25 @@ deno add npm:dn-ioc`}
       await app.start()
     </script>
   </body>
-</html>`}
-/>
+</html>
+```
 
 ## إعدادات ESM و TypeScript
 
 `dn-ioc` **تعمل بنظام ESM فقط** — استوردها دائماً بـ `import` بدل `require()` الخاصة بـ CommonJS.
 
-في مشاريع TypeScript، حط `"moduleResolution": "bundler"` داخل ملف `tsconfig.json`. إعدادات Vite وBun وDeno وNext.js وAstro و`tsdown` الحديثة أصلاً تستخدم هذا الوضع افتراضياً.
+في مشاريع TypeScript، حط `"moduleResolution": "bundler"` داخل ملف `tsconfig.json`. إعدادات Vite وBun وNext.js وAstro و`tsdown` الحديثة أصلاً تستخدم هذا الوضع افتراضياً.
 
-<Code
-  title="tsconfig.json"
-  lang="json"
-  code={`{
+```json title="tsconfig.json"
+{
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true
   }
-}`}
-/>
+}
+```
 
 <Callout kind="caution" title="إعدادات NodeNext و Node16 غير مدعومة">
 
@@ -116,17 +100,18 @@ deno add npm:dn-ioc`}
 
 </Callout>
 
-ولأن النواة تتجنّب `process` وواجهات DOM والمؤقّتات، تظل مزوّداتك محمولة 100% بين Node.js وBun وDeno والمتصفحات وWeb Workers وبيئات edge.
+ولأن النواة تتجنّب `process` وواجهات DOM والمؤقّتات، تظل مزوّداتك محمولة 100% بين Node.js وBun والمتصفحات وWeb Workers وبيئات edge.
 
 ## تثبيت Skill لوكلاء الذكاء الاصطناعي
 
 إذا كنت تستخدم وكيل برمجة مثل Claude Code أو Codex أو Cursor أو Antigravity أو Gemini CLI، ثبّت الـ Skill الإنجليزي الرسمي (`skills/dn-ioc/SKILL.md`) حتى يعرف الوكيل واجهة `dn-ioc` العامة بالضبط، وقواعد الاختيار بين `Ref` و`Token`، ودورة الحياة، ورسائل الأخطاء الحرفية بدون ما يختلق decorators أو حاوية عامة غير موجودة:
 
-<Code
-  title="install-skill.sh"
-  lang="bash"
-  code={`npx skills add MunMunMiao/dn-ioc
-bunx skills add MunMunMiao/dn-ioc`}
+<CodeTabs
+  layout="tabs"
+  files={[
+    { title: 'npx', lang: 'bash', code: 'npx skills add MunMunMiao/dn-ioc' },
+    { title: 'bunx', lang: 'bash', code: 'bunx skills add MunMunMiao/dn-ioc' },
+  ]}
 />
 
 وإذا كانت أداتك تقرأ مرجع نصي واحد مباشرة، وجّهها إلى [`/llms.txt`](/llms.txt).

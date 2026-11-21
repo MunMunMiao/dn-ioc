@@ -39,7 +39,6 @@ import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' wit
 | ランタイム | トリガー | 非同期クリーンアップ |
 | --- | --- | --- |
 | Node.js, Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | ハンドラがプロセスを生かしている限り `await` 可能 |
-| Deno | `Deno.addSignalListener('SIGINT', handler)` | `await` 可能 |
 | ブラウザの部分 UI | コンポーネントのアンマウント（React `useEffect`, Vue `onScopeDispose`, ルーター遷移） | `await` 可能 |
 | ブラウザのページ離脱 | `addEventListener('pagehide', handler)` | 完了保証なし — 同期処理に限定すること |
 | Web Worker | `worker.terminate()` 前にホストから送る終了メッセージ | ホスト側が終了完了を待ってから terminate する場合のみ |
@@ -47,7 +46,7 @@ import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' wit
 
 環境ごとに押さえておきたい実務上のポイントです。
 
-- **Node.js & Bun (`node-server.ts`):** `SIGINT` / `SIGTERM` リスナーは `await app.start()` の **前** に登録しましょう。`bootstrapApp()` はまだプロバイダを実行しないため、ポート `3000` が開くより前に `app` ハンドルを受け取れます。Deno でもグラフ自体はまったく同じで、リスナーを `Deno.addSignalListener('SIGINT', () => void app.stop())` に変えるだけです。
+- **Node.js & Bun (`node-server.ts`):** `SIGINT` / `SIGTERM` リスナーは `await app.start()` の **前** に登録しましょう。`bootstrapApp()` はまだプロバイダを実行しないため、ポート `3000` が開くより前に `app` ハンドルを受け取れます。
 - **ブラウザのウィジェット (`browser-unmount.ts`):** ブラウザで使う場合は、ページ全体よりもコンポーネントやルート単位にグラフを閉じ込め、アンマウント時に自分で止める（`await ready; await app.stop()`）のが一番確実です。ページが生きている間なので、非同期のクリーンアップフックも最後までしっかり待てます。
 - **ブラウザのタブ離脱 (`browser-pagehide.ts`):** bfcache（戻る・進むキャッシュ）を阻害したりスキップされたりする `beforeunload` ではなく、`pagehide` を使いましょう。ただし `pagehide` でも、`async` の `Promise` が完了する前にブラウザがページを破棄してしまうのが普通なので、離脱時のフックは `navigator.sendBeacon()` のような同期処理だけに留めてください。
 

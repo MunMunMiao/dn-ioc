@@ -39,7 +39,6 @@ Las señales de apagado no tienen nada en común entre los distintos entornos Ja
 | Entorno | Disparador | Limpieza asíncrona |
 | --- | --- | --- |
 | Node.js, Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | Se espera, si el handler mantiene vivo el proceso |
-| Deno | `Deno.addSignalListener('SIGINT', handler)` | Se espera |
 | Sub-app en navegador | Tu propio desmontaje (`useEffect` en React, `onScopeDispose` en Vue, cambio de ruta) | Se espera |
 | Página en navegador | `addEventListener('pagehide', handler)` | No es fiable: mantén los hooks síncronos |
 | Web Worker | Un mensaje desde el host antes de `worker.terminate()` | Solo si el host espera antes de terminar |
@@ -47,7 +46,7 @@ Las señales de apagado no tienen nada en común entre los distintos entornos Ja
 
 Unos cuantos detalles prácticos que conviene vigilar en cada entorno:
 
-- **Node.js y Bun (`node-server.ts`):** Registra los listeners de `SIGINT` / `SIGTERM` *antes* de `await app.start()`. Como `bootstrapApp()` no ejecuta ningún provider todavía, `app` ya existe antes de que se abra el puerto `3000`. En Deno, el mismo grafo solo cambia el listener por `Deno.addSignalListener('SIGINT', () => void app.stop())`.
+- **Node.js y Bun (`node-server.ts`):** Registra los listeners de `SIGINT` / `SIGTERM` *antes* de `await app.start()`. Como `bootstrapApp()` no ejecuta ningún provider todavía, `app` ya existe antes de que se abra el puerto `3000`.
 - **Widgets en el navegador (`browser-unmount.ts`):** Siempre que puedas, acota los grafos del navegador a un componente o ruta que tú mismo desmontes (`await ready; await app.stop()`); ahí los hooks asíncronos sí se esperan de verdad mientras la página sigue abierta.
 - **Cierre de pestaña (`browser-pagehide.ts`):** Prefiere `pagehide` frente a `beforeunload` (que rompe o se salta con la caché atrás/adelante del navegador). Incluso con `pagehide`, los navegadores suelen descartar la página antes de que resuelva una `Promise` asíncrona, así que deja ahí únicamente trabajo síncrono como `navigator.sendBeacon()`.
 

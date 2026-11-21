@@ -3,29 +3,19 @@ title: "安裝與執行環境"
 slug: "installation"
 part: start
 order: 2
-summary: "用習慣的套件管理工具安裝 dn-ioc、在 Deno 或瀏覽器 CDN 直接匯入，並設定好 TypeScript bundler 模組解析模式。"
+summary: "用習慣的套件管理工具安裝 dn-ioc、從瀏覽器 CDN 直接載入，並設定好 TypeScript bundler 模組解析模式。"
 ---
 
-`dn-ioc` 是一個輕量、零外部相依性的純 ESM 套件，一行指令就能裝好，完全不會在 `node_modules` 裡塞進一堆來路不明的間接相依套件。不管團隊平常習慣哪套套件管理工具都能直接安裝，在 Deno 透過 `npm:` 或是在瀏覽器直接從 CDN 載入也同樣順手。
+`dn-ioc` 是一個輕量、零外部相依性的純 ESM 套件，一行指令就能裝好，完全不會在 `node_modules` 裡塞進一堆來路不明的間接相依套件。不管團隊平常習慣哪套套件管理工具都能直接安裝，在瀏覽器直接從 CDN 載入也同樣順手。
 
-<Code
-  title="install.sh"
-  lang="bash"
-  code={`npm install dn-ioc
-pnpm add dn-ioc
-yarn add dn-ioc
-bun add dn-ioc
-deno add npm:dn-ioc`}
-/>
-
-## 在 Deno 免安裝直接匯入
-
-只是想隨手寫一支單檔 Deno 腳本，懶得先建 `deno.json` 嗎？Deno 可以直接透過 `npm:` 前綴匯入 `dn-ioc`。
-
-<Code
-  title="deno-import.ts"
-  lang="ts"
-  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc'`}
+<CodeTabs
+  layout="tabs"
+  files={[
+    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
+    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
+    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
+    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
+  ]}
 />
 
 ## 瀏覽器 CDN 與 Import Maps
@@ -42,10 +32,8 @@ deno add npm:dn-ioc`}
 
 搭配 `<script type="importmap">` 使用，就能在模組裡保留乾淨的 `'dn-ioc'` 裸模組匯入寫法，不論有沒有經過打包工具都能共用同一份程式碼。
 
-<Code
-  title="importmap.html"
-  lang="html"
-  code={`<!doctype html>
+```html title="importmap.html"
+<!doctype html>
 <html lang="en">
   <head>
     <script type="importmap">
@@ -68,13 +56,11 @@ deno add npm:dn-ioc`}
       await app.start()
     </script>
   </body>
-</html>`}
-/>
+</html>
+```
 
-<Code
-  title="direct-cdn.html"
-  lang="html"
-  code={`<!doctype html>
+```html title="direct-cdn.html"
+<!doctype html>
 <html lang="en">
   <body>
     <script type="module">
@@ -88,27 +74,25 @@ deno add npm:dn-ioc`}
       await app.start()
     </script>
   </body>
-</html>`}
-/>
+</html>
+```
 
 ## ESM 與 TypeScript 設定
 
 `dn-ioc` **僅提供純 ESM 格式**——請一律使用標準 `import` 語法匯入，不要使用舊式的 CommonJS `require()`。
 
-在 TypeScript 專案中，請將 `tsconfig.json` 裡的 `"moduleResolution"` 設為 `"bundler"`。目前主流的 Vite、Bun、Deno、Next.js、Astro 與 `tsdown` 專案範本預設都已經採用這個模式，基本上不用額外調整。
+在 TypeScript 專案中，請將 `tsconfig.json` 裡的 `"moduleResolution"` 設為 `"bundler"`。目前主流的 Vite、Bun、Next.js、Astro 與 `tsdown` 專案範本預設都已經採用這個模式，基本上不用額外調整。
 
-<Code
-  title="tsconfig.json"
-  lang="json"
-  code={`{
+```json title="tsconfig.json"
+{
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true
   }
-}`}
-/>
+}
+```
 
 <Callout kind="caution" title="關於 NodeNext 與 Node16 型別宣告解析">
 
@@ -116,17 +100,18 @@ deno add npm:dn-ioc`}
 
 </Callout>
 
-因為核心完全不碰 `process`、DOM API 與計時器，你寫好的每個 provider 都能在 Node.js、Bun、Deno、瀏覽器、Web Worker 與邊緣執行環境之間 100% 無痛移植。
+因為核心完全不碰 `process`、DOM API 與計時器，你寫好的每個 provider 都能在 Node.js、Bun、瀏覽器、Web Worker 與邊緣執行環境之間 100% 無痛移植。
 
 ## 安裝 AI Agent Skill
 
 如果你平常有搭配 Claude Code、Codex、Cursor、Antigravity 或 Gemini CLI 等 AI 開發助理，可以直接安裝官方英文 Skill（`skills/dn-ioc/SKILL.md`），讓 Agent 精準掌握 `dn-ioc` 的公開 API、`Ref` 與 `Token` 選用原則、生命週期規範與完整錯誤訊息，避免虛構不存在的裝飾器或全域容器：
 
-<Code
-  title="install-skill.sh"
-  lang="bash"
-  code={`npx skills add MunMunMiao/dn-ioc
-bunx skills add MunMunMiao/dn-ioc`}
+<CodeTabs
+  layout="tabs"
+  files={[
+    { title: 'npx', lang: 'bash', code: 'npx skills add MunMunMiao/dn-ioc' },
+    { title: 'bunx', lang: 'bash', code: 'bunx skills add MunMunMiao/dn-ioc' },
+  ]}
 />
 
 若工具支援直接讀取純文字參考文件，也可以直接提供 [`/llms.txt`](/llms.txt)。

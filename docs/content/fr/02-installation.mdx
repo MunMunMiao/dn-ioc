@@ -3,29 +3,19 @@ title: "Installation et environnements"
 slug: "installation"
 part: start
 order: 2
-summary: "Installe dn-ioc avec ton gestionnaire de paquets, importe-le directement sur Deno ou depuis un CDN navigateur, et configure la résolution TypeScript en mode bundler."
+summary: "Installe dn-ioc avec ton gestionnaire de paquets, charge-le depuis un CDN navigateur, et configure la résolution TypeScript en mode bundler."
 ---
 
-`dn-ioc` est distribué sous forme de paquet ESM léger et sans aucune dépendance : une seule commande suffit et rien de superflu ne vient alourdir ton `node_modules`. Installe-le avec le gestionnaire de paquets déjà en place sur ton projet, ou charge-le directement via `npm:` sur Deno ou depuis un CDN dans le navigateur.
+`dn-ioc` est distribué sous forme de paquet ESM léger et sans aucune dépendance : une seule commande suffit et rien de superflu ne vient alourdir ton `node_modules`. Installe-le avec le gestionnaire de paquets déjà en place sur ton projet, ou charge-le directement depuis un CDN dans le navigateur.
 
-<Code
-  title="install.sh"
-  lang="bash"
-  code={`npm install dn-ioc
-pnpm add dn-ioc
-yarn add dn-ioc
-bun add dn-ioc
-deno add npm:dn-ioc`}
-/>
-
-## Sans installation préalable sur Deno
-
-Envie de lancer un petit script Deno en un seul fichier sans créer de `deno.json` d’abord ? Deno sait importer `dn-ioc` directement via son préfixe `npm:`.
-
-<Code
-  title="deno-import.ts"
-  lang="ts"
-  code={`import { bootstrapApp, provide, provideFor, token } from 'npm:dn-ioc'`}
+<CodeTabs
+  layout="tabs"
+  files={[
+    { title: 'npm', lang: 'bash', code: 'npm install dn-ioc' },
+    { title: 'pnpm', lang: 'bash', code: 'pnpm add dn-ioc' },
+    { title: 'yarn', lang: 'bash', code: 'yarn add dn-ioc' },
+    { title: 'bun', lang: 'bash', code: 'bun add dn-ioc' },
+  ]}
 />
 
 ## CDN navigateur et Import Maps
@@ -42,10 +32,8 @@ Sans numéro de version, le CDN sert la dernière sortie publiée ; en productio
 
 En ajoutant un `<script type="importmap">`, tu gardes des imports courts `'dn-ioc'` dans tes modules, pour que le même code tourne tel quel avec ou sans bundler.
 
-<Code
-  title="importmap.html"
-  lang="html"
-  code={`<!doctype html>
+```html title="importmap.html"
+<!doctype html>
 <html lang="en">
   <head>
     <script type="importmap">
@@ -68,13 +56,11 @@ En ajoutant un `<script type="importmap">`, tu gardes des imports courts `'dn-io
       await app.start()
     </script>
   </body>
-</html>`}
-/>
+</html>
+```
 
-<Code
-  title="direct-cdn.html"
-  lang="html"
-  code={`<!doctype html>
+```html title="direct-cdn.html"
+<!doctype html>
 <html lang="en">
   <body>
     <script type="module">
@@ -88,27 +74,25 @@ En ajoutant un `<script type="importmap">`, tu gardes des imports courts `'dn-io
       await app.start()
     </script>
   </body>
-</html>`}
-/>
+</html>
+```
 
 ## Configuration ESM et TypeScript
 
 `dn-ioc` est **100 % ESM** : charge-le toujours avec `import`, jamais avec le `require()` de CommonJS.
 
-Dans tes projets TypeScript, règle `"moduleResolution": "bundler"` dans ton `tsconfig.json`. Les configurations modernes sous Vite, Bun, Deno, Next.js, Astro et `tsdown` utilisent déjà ce mode par défaut.
+Dans tes projets TypeScript, règle `"moduleResolution": "bundler"` dans ton `tsconfig.json`. Les configurations modernes sous Vite, Bun, Next.js, Astro et `tsdown` utilisent déjà ce mode par défaut.
 
-<Code
-  title="tsconfig.json"
-  lang="json"
-  code={`{
+```json title="tsconfig.json"
+{
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true
   }
-}`}
-/>
+}
+```
 
 <Callout kind="caution" title="Résolution des déclarations avec NodeNext et Node16">
 
@@ -116,17 +100,18 @@ La résolution de types avec `NodeNext` et `Node16` **n’est pas prise en charg
 
 </Callout>
 
-Comme le noyau n’utilise ni `process`, ni API DOM, ni timers, tes providers restent 100 % portables entre Node.js, Bun, Deno, navigateurs, Web Workers et runtimes edge.
+Comme le noyau n’utilise ni `process`, ni API DOM, ni timers, tes providers restent 100 % portables entre Node.js, Bun, navigateurs, Web Workers et runtimes edge.
 
 ## Installer le Skill pour agent IA
 
 Tu utilises un agent de code comme Claude Code, Codex, Cursor, Antigravity ou Gemini CLI ? Installe le Skill officiel en anglais (`skills/dn-ioc/SKILL.md`) pour qu’il connaisse exactement l’API publique de `dn-ioc`, le choix entre `Ref` et `Token`, les règles de cycle de vie et les erreurs exactes sans inventer de décorateurs ni de conteneur global :
 
-<Code
-  title="install-skill.sh"
-  lang="bash"
-  code={`npx skills add MunMunMiao/dn-ioc
-bunx skills add MunMunMiao/dn-ioc`}
+<CodeTabs
+  layout="tabs"
+  files={[
+    { title: 'npx', lang: 'bash', code: 'npx skills add MunMunMiao/dn-ioc' },
+    { title: 'bunx', lang: 'bash', code: 'bunx skills add MunMunMiao/dn-ioc' },
+  ]}
 />
 
 Tu préfères donner un seul fichier texte brut à ton outil ? Pointe-le directement vers [`/llms.txt`](/llms.txt).

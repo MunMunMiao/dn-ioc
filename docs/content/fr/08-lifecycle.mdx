@@ -39,7 +39,6 @@ Les signaux d’arrêt n’ont aucun dénominateur commun entre les runtimes Jav
 | Environnement | Déclencheur | Nettoyage asynchrone |
 | --- | --- | --- |
 | Node.js, Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | Attendu, si le handler garde le processus en vie |
-| Deno | `Deno.addSignalListener('SIGINT', handler)` | Attendu |
 | Sous-appli navigateur | Ton propre démontage (`useEffect` React, `onScopeDispose` Vue, changement de route) | Attendu |
 | Page navigateur | `addEventListener('pagehide', handler)` | Non fiable — garde des hooks synchrones |
 | Web Worker | Un message envoyé par l’hôte avant `worker.terminate()` | Seulement si l’hôte attend avant de terminer |
@@ -47,7 +46,7 @@ Les signaux d’arrêt n’ont aucun dénominateur commun entre les runtimes Jav
 
 Quelques détails pratiques à garder à l’œil selon l’environnement :
 
-- **Node.js et Bun (`node-server.ts`) :** Enregistre tes écouteurs `SIGINT` / `SIGTERM` *avant* `await app.start()`. Comme `bootstrapApp()` n’exécute encore aucun provider, `app` existe déjà avant l’ouverture du port `3000`. Sur Deno, le même graphe remplace simplement l’écouteur par `Deno.addSignalListener('SIGINT', () => void app.stop())`.
+- **Node.js et Bun (`node-server.ts`) :** Enregistre tes écouteurs `SIGINT` / `SIGTERM` *avant* `await app.start()`. Comme `bootstrapApp()` n’exécute encore aucun provider, `app` existe déjà avant l’ouverture du port `3000`.
 - **Widgets navigateur (`browser-unmount.ts`) :** Dès que possible, rattache tes graphes navigateur à un composant ou une route que tu démontes toi-même (`await ready; await app.stop()`), là où les hooks asynchrones sont réellement attendus pendant que la page reste ouverte.
 - **Fermeture d’onglet (`browser-pagehide.ts`) :** Préfère `pagehide` à `beforeunload` (qui casse ou est ignoré par le cache avant/arrière du navigateur). Même avec `pagehide`, les navigateurs détruisent régulièrement la page avant la résolution d’une `Promise` asynchrone : garde donc des hooks strictement synchrones, comme `navigator.sendBeacon()`.
 

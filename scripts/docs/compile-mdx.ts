@@ -341,8 +341,26 @@ function renderFileTreeNodes(nodes: readonly FileTreeNode[], depth = 0): string 
     .join('')
 }
 
-function renderPaperCode(tabs: readonly RenderedCodeTab[], localeCfg: LocaleConfig): string {
+function renderPaperCode(tabs: readonly RenderedCodeTab[], localeCfg: LocaleConfig, layout: 'tree' | 'tabs' = 'tree'): string {
   const { ui } = localeCfg
+
+  if (tabs.length > 1 && layout === 'tabs') {
+    const tabButtons = tabs
+      .map(
+        (tab, t) =>
+          `<button type="button" class="p-tab${t === 0 ? ' is-active' : ''}" role="tab" aria-selected="${t === 0 ? 'true' : 'false'}" data-tab="${t}">${escapeHtml(tab.title)}</button>`,
+      )
+      .join('')
+    const tabHead = `<div class="p-head"><div class="p-tabs" role="tablist">${tabButtons}</div><button type="button" class="p-copy" data-copy="${escapeAttr(ui.copy)}" data-copied="${escapeAttr(ui.copied)}">${escapeHtml(ui.copy)}</button></div>`
+    const tabPanels = tabs
+      .map(
+        (tab, t) =>
+          `<pre class="p-pre${t === 0 ? ' is-active' : ''}" role="tabpanel" data-panel="${t}" data-lang="${escapeAttr(tab.lang)}" data-raw="${escapeAttr(tab.rawClean)}">${tab.html}</pre>`,
+      )
+      .join('')
+    return `<div class="paper-code paper-code-tabs" dir="ltr">${tabHead}<div class="p-panels">${tabPanels}</div></div>`
+  }
+
   const activeTitle = tabs[0]?.title ?? ''
   const headerHtml = `<div class="p-head"><span class="p-filename">${escapeHtml(activeTitle)}</span><button type="button" class="p-copy" data-copy="${escapeAttr(ui.copy)}" data-copied="${escapeAttr(ui.copied)}">${escapeHtml(ui.copy)}</button></div>`
 
@@ -359,6 +377,30 @@ function renderPaperCode(tabs: readonly RenderedCodeTab[], localeCfg: LocaleConf
 
   const treeHtml = renderFileTreeNodes(buildFileTree(tabs))
   return `<div class="paper-code paper-code-tree" dir="ltr">${headerHtml}<div class="p-tree-layout"><div class="p-tree" role="tree" aria-label="${escapeAttr(ui.files)}"><ul class="p-tree-list" role="none">${treeHtml}</ul></div><div class="p-panels">${prePanels}</div></div></div>`
+}
+
+function remarkFenceTitle() {
+  return (tree: unknown) => {
+    const visit = (node: unknown) => {
+      if (!node || typeof node !== 'object') {
+        return
+      }
+      const n = node as { type?: string; meta?: string | null; data?: { hProperties?: Record<string, unknown> }; children?: unknown[] }
+      if (n.type === 'code' && typeof n.meta === 'string') {
+        const match = n.meta.match(/\btitle=(?:"([^"]+)"|'([^']+)')/)
+        const title = match?.[1] ?? match?.[2]
+        if (title) {
+          n.data = { ...n.data, hProperties: { ...n.data?.hProperties, title } }
+        }
+      }
+      if (Array.isArray(n.children)) {
+        for (const child of n.children) {
+          visit(child)
+        }
+      }
+    }
+    visit(tree)
+  }
 }
 
 function flattenTopLevel(node: VChild): VChild[] {
@@ -450,7 +492,7 @@ export async function compileMdxFile(filePath: string, locale: LocaleCode): Prom
   const compiledFile = await compile(inlinedBody, {
     outputFormat: 'program',
     jsxImportSource: SCRIPTS_DOCS_DIR,
-    remarkPlugins: [remarkGfm],
+    remarkPlugins: [remarkGfm, remarkFenceTitle],
   })
 
   const rewrittenJs = rewriteCompiledModuleSpecifiers(String(compiledFile), filePath)
@@ -505,7 +547,8 @@ export async function compileMdxFile(filePath: string, locale: LocaleCode): Prom
   }
 
   const rawSections: Array<{ section: CompiledSection; proseExcerpt: string }> = []
-  const renderInlineDeck = (tabs: readonly RenderedCodeTab[]) => renderPaperCode(tabs, localeCfg)
+  const renderInlineDeck = (tabs: readonly RenderedCodeTab[], _label: string, layout: 'tree' | 'tabs') =>
+    renderPaperCode(tabs, localeCfg, layout)
 
   for (const bucket of buckets) {
     const transformedNodes = bucket.nodes.map(node => transformSectionNode(node, seenIds))

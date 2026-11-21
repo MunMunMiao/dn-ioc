@@ -44,7 +44,7 @@ import minimalCode from '../../examples/overview/minimal.ts' with { type: 'text'
 
 `dn-ioc` 係一個輕量、零外部依賴嘅純 ESM 套件。
 
-更緊要嘅係，個核心**完全唔掂任何平台專屬 API**——唔讀 `process`、唔掂 DOM 全域變數、亦唔會自己開 timer。同一套依賴圖搬去 Node.js、Bun、Deno、瀏覽器、Web Worker，甚至 Serverless 同 Edge runtime，一行 code 都唔使改就照行如儀。因為每個平台嘅熄機訊號都唔同樣，核心唔會幫你亂估；需要優雅收工嗰陣，由你自己將 `app.stop()` 駁落對應 runtime 嘅 signal 或者元件 unmount hook 就得（詳見[生命週期與資源清理](/zh-hant-hk/lifecycle/)）。
+更緊要嘅係，個核心**完全唔掂任何平台專屬 API**——唔讀 `process`、唔掂 DOM 全域變數、亦唔會自己開 timer。同一套依賴圖搬去 Node.js、Bun、瀏覽器、Web Worker，甚至 Serverless 同 Edge runtime，一行 code 都唔使改就照行如儀。因為每個平台嘅熄機訊號都唔同樣，核心唔會幫你亂估；需要優雅收工嗰陣，由你自己將 `app.stop()` 駁落對應 runtime 嘅 signal 或者元件 unmount hook 就得（詳見[生命週期與資源清理](/zh-hant-hk/lifecycle/)）。
 
 ## dn-ioc 刻意唔包啲咩
 

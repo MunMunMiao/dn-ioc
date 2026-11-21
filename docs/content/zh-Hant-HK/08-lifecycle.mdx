@@ -39,7 +39,6 @@ JavaScript 各個執行環境嘅熄機訊號完全冇統一標準，所以核心
 | 執行環境 | 觸發時機 | 非同步清理可唔可靠 |
 | --- | --- | --- |
 | Node.js、Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | 可等待（只要個 handler 頂住個 process 未即刻退出） |
-| Deno | `Deno.addSignalListener('SIGINT', handler)` | 可等待 |
 | 瀏覽器局部子應用 | 框架自己嘅卸載時機（React `useEffect`、Vue `onScopeDispose`、路由切換） | 可等待 |
 | 瀏覽器成頁關閉 | `addEventListener('pagehide', handler)` | 唔可靠 —— 清理邏輯請保持純同步 |
 | Web Worker | 主執行緒 call `worker.terminate()` 之前發過嚟嘅通知訊息 | 視乎主執行緒肯唔肯等埋先 terminate |
@@ -47,7 +46,7 @@ JavaScript 各個執行環境嘅熄機訊號完全冇統一標準，所以核心
 
 落手寫嗰陣，有幾個環境細節特別值得留意：
 
-- **Node.js 與 Bun（`node-server.ts`）：** 記得喺 `await app.start()` *之前* 就掛好 `SIGINT` / `SIGTERM` listener。因為 `bootstrapApp()` 唔會提早行任何 provider，早喺 `3000` port 打開之前個 `app` 已經喺你手度。去到 Deno 環境，成張依賴圖完全唔使改，淨係將個 listener 換做 `Deno.addSignalListener('SIGINT', () => void app.stop())` 就得。
+- **Node.js 與 Bun（`node-server.ts`）：** 記得喺 `await app.start()` *之前* 就掛好 `SIGINT` / `SIGTERM` listener。因為 `bootstrapApp()` 唔會提早行任何 provider，早喺 `3000` port 打開之前個 `app` 已經喺你手度。
 - **瀏覽器局部元件（`browser-unmount.ts`）：** 喺前端盡量將依賴圖綁喺某個你自己控制卸載嘅元件或者路由上面（`await ready; await app.stop()`），事關頁面仲開住嗰陣，非同步清理 hook 可以穩穩陣陣 `await` 到做完為止。
 - **瀏覽器閂 Tab 離場（`browser-pagehide.ts`）：** 請優先用 `pagehide` 而唔好再用 `beforeunload`（後者成日破壞 bfcache 往返快取或者乾脆被跳過）。就算用咗 `pagehide`，瀏覽器都好大機會喺 `async` Promise 完成之前就直接清走成頁——所以離場 hook 務必保持純同步，例如直接射個 `navigator.sendBeacon()`。
 

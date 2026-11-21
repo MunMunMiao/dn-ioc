@@ -48,9 +48,33 @@
     document.body.removeChild(area)
   }
 
+  const activateCodeTab = (tabBtn: Element): void => {
+    const paperCode = tabBtn.closest('.paper-code')
+    const tabIndex = tabBtn.getAttribute('data-tab')
+    if (!paperCode || tabIndex === null) {
+      return
+    }
+    const tabButtons = paperCode.querySelectorAll('.p-tab')
+    for (const btn of tabButtons) {
+      const isSelected = btn.getAttribute('data-tab') === tabIndex
+      btn.classList.toggle('is-active', isSelected)
+      btn.setAttribute('aria-selected', isSelected ? 'true' : 'false')
+    }
+    const panels = paperCode.querySelectorAll('.p-pre')
+    for (const panel of panels) {
+      panel.classList.toggle('is-active', panel.getAttribute('data-panel') === tabIndex)
+    }
+  }
+
   document.addEventListener('click', event => {
     const target = event.target
     if (!(target instanceof Element)) {
+      return
+    }
+
+    const tabBtn = target.closest('.p-tab')
+    if (tabBtn) {
+      activateCodeTab(tabBtn)
       return
     }
 
@@ -537,6 +561,37 @@
         langMenu.removeAttribute('open')
       }
       return
+    }
+    if (event.key === 'ArrowRight' || event.key === 'ArrowLeft' || event.key === 'Home' || event.key === 'End') {
+      const active = document.activeElement
+      if (active instanceof Element && active.classList.contains('p-tab')) {
+        const paperCode = active.closest('.paper-code')
+        if (paperCode) {
+          const tabs = Array.from(paperCode.querySelectorAll('.p-tab'))
+          const idx = tabs.indexOf(active)
+          if (idx !== -1 && tabs.length > 1) {
+            event.preventDefault()
+            let nextIdx = idx
+            if (event.key === 'ArrowRight') {
+              nextIdx = (idx + 1) % tabs.length
+            } else if (event.key === 'ArrowLeft') {
+              nextIdx = (idx - 1 + tabs.length) % tabs.length
+            } else if (event.key === 'Home') {
+              nextIdx = 0
+            } else if (event.key === 'End') {
+              nextIdx = tabs.length - 1
+            }
+            const nextTab = tabs[nextIdx]
+            if (nextTab) {
+              activateCodeTab(nextTab)
+              if (nextTab instanceof HTMLElement) {
+                nextTab.focus()
+              }
+            }
+          }
+        }
+        return
+      }
     }
     if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey) {
       const active = document.activeElement

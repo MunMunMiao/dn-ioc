@@ -39,7 +39,6 @@ import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' wit
 | 运行时 | 触发时机 | 异步清理靠不靠谱 |
 | --- | --- | --- |
 | Node.js、Bun | `process.on('SIGINT' \| 'SIGTERM', handler)` | 靠谱（只要回调里等它跑完再退出进程） |
-| Deno | `Deno.addSignalListener('SIGINT', handler)` | 靠谱 |
 | 浏览器局部子应用 | 组件自己的卸载钩子（React `useEffect`、Vue `onScopeDispose`、路由切走） | 靠谱 |
 | 浏览器整页关闭 | `addEventListener('pagehide', handler)` | 不靠谱 —— 钩子里只写同步逻辑 |
 | Web Worker | 宿主在调 `worker.terminate()` 之前发消息通知 | 取决于宿主愿不愿意等清理完再强杀 |
@@ -47,7 +46,7 @@ import browserUnmountCode from '../../examples/lifecycle/browser-unmount.ts' wit
 
 落地时有几个实战细节值得留意：
 
-- **Node.js 与 Bun（`node-server.ts`）：** 在调 `await app.start()` **之前**就把 `SIGINT` / `SIGTERM` 监听器挂好。因为 `bootstrapApp()` 当下不跑任何工厂，在 `3000` 端口打开前你就已经拿到 `app` 引用了。换到 Deno 上代码一模一样，只用把监听换成 `Deno.addSignalListener('SIGINT', () => void app.stop())`。
+- **Node.js 与 Bun（`node-server.ts`）：** 在调 `await app.start()` **之前**就把 `SIGINT` / `SIGTERM` 监听器挂好。因为 `bootstrapApp()` 当下不跑任何工厂，在 `3000` 端口打开前你就已经拿到 `app` 引用了。
 - **浏览器局部组件（`browser-unmount.ts`）：** 只要条件允许，尽量把前端依赖图绑在你能手动卸载的组件或路由生命周期上（`await ready; await app.stop()`）。页面还活着，异步清理钩子就能稳稳当当地 `await` 完。
 - **浏览器整页卸载（`browser-pagehide.ts`）：** 优先用 `pagehide`，别用 `beforeunload`（容易破坏往返缓存 bfcache，在移动端还经常不触发）。不过就算用了 `pagehide`，浏览器也经常不等 `async` Promise 跑完就直接把页面销毁了——所以卸载钩子里只放纯同步操作，比如 `navigator.sendBeacon()`。
 

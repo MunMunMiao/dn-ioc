@@ -2,8 +2,8 @@
 
 > Small, zero-dependency TypeScript dependency-injection kernel. A provider is a factory function. No decorators, reflection, runtime dependencies, or global container.
 
-- **Runtime:** ESM-only. TypeScript requires `"moduleResolution": "bundler"` (`NodeNext` / `Node16` unsupported). Uses no platform APIs (`process`, DOM, timers); runs identically on Node.js, Bun, Deno, browsers, workers, and edge runtimes.
-- **Install:** `npm install dn-ioc` | `pnpm add dn-ioc` | `yarn add dn-ioc` | `bun add dn-ioc` | `deno add npm:dn-ioc` (or direct `import ... from 'npm:dn-ioc'`).
+- **Runtime:** ESM-only. TypeScript requires `"moduleResolution": "bundler"` (`NodeNext` / `Node16` unsupported). Uses no platform APIs (`process`, DOM, timers); runs identically on Node.js, Bun, browsers, workers, and edge runtimes.
+- **Install:** `npm install dn-ioc` | `pnpm add dn-ioc` | `yarn add dn-ioc` | `bun add dn-ioc`.
 - **Browser CDN:** `https://cdn.jsdelivr.net/npm/dn-ioc` or `https://unpkg.com/dn-ioc` (`index.min.js`), or `https://esm.sh/dn-ioc`. Append a version tag in production to pin a release.
 - **Links:** Human reference: https://dn-ioc.lyz.cloud/ — Repository: https://github.com/MunMunMiao/dn-ioc
 
@@ -66,7 +66,7 @@ interface App extends AsyncDisposable { start(): Promise<void>; stop(): Promise<
 - Repeated/concurrent `stop()` calls share one `Promise` and run each hook once. All hooks run even if one fails: single failure rethrows unchanged; multiple failures throw `AggregateError('App stop failed')`.
 - `start()` failure automatically runs `stop()` before rejecting (combined failures throw `AggregateError('App startup and stop failed')`). Successful `start()` and post-start runtime errors never auto-stop the app.
 - `App` implements `AsyncDisposable` (`Symbol.asyncDispose` + `Symbol.for('Symbol.asyncDispose')`) for `await using app = bootstrapApp(...)`.
-- Wire shutdown yourself: `SIGINT`/`SIGTERM` (Node/Bun), `Deno.addSignalListener` (Deno), framework unmount (browser sub-apps), or synchronous-only `pagehide` hooks (`navigator.sendBeacon`) for tab unload.
+- Wire shutdown yourself: `SIGINT`/`SIGTERM` (Node/Bun), framework unmount (browser sub-apps), or synchronous-only `pagehide` hooks (`navigator.sendBeacon`) for tab unload.
 
 ## Layered Architecture & Testing
 

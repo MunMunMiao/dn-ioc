@@ -44,7 +44,7 @@ Toda la API pública en tiempo de ejecución cabe en seis funciones. En cuanto v
 
 `dn-ioc` es un paquete ESM ligero y sin dependencias en tiempo de ejecución.
 
-Mejor aún: el núcleo **no toca ninguna API específica de plataforma** — ni `process`, ni globales del DOM, ni temporizadores. El mismo grafo de dependencias corre sin tocar una coma en Node.js, Bun, Deno, navegadores, Web Workers y entornos serverless o edge. Como cada plataforma gestiona el apagado a su manera, el núcleo no adivina nada por su cuenta: cuando lo necesites, conectas `app.stop()` a la señal del sistema o al evento de desmontaje de tu entorno (mira [Ciclo de vida y limpieza](/es/lifecycle/)).
+Mejor aún: el núcleo **no toca ninguna API específica de plataforma** — ni `process`, ni globales del DOM, ni temporizadores. El mismo grafo de dependencias corre sin tocar una coma en Node.js, Bun, navegadores, Web Workers y entornos serverless o edge. Como cada plataforma gestiona el apagado a su manera, el núcleo no adivina nada por su cuenta: cuando lo necesites, conectas `app.stop()` a la señal del sistema o al evento de desmontaje de tu entorno (mira [Ciclo de vida y limpieza](/es/lifecycle/)).
 
 ## Lo que dn-ioc deja fuera a propósito
 

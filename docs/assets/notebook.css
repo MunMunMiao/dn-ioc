@@ -140,6 +140,7 @@ body::after {
 .rail-tool:focus-visible,
 .theme-opt:focus-visible,
 .lang-option:focus-visible,
+.p-tab:focus-visible,
 .p-tree-file:focus-visible,
 .p-copy:focus-visible,
 .chapter-pager-link:focus-visible,
@@ -697,6 +698,53 @@ html[dir="rtl"] .callout {
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
+}
+
+.paper-code-tabs .p-head {
+  padding: 0 6px 0 8px;
+  gap: 8px;
+}
+
+.p-tabs {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.p-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.p-tab {
+  position: relative;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.p-tab:hover {
+  color: var(--ink-primary);
+}
+
+.p-tab.is-active {
+  color: var(--ink-primary);
+  border-bottom-color: var(--accent);
 }
 
 .p-copy {
